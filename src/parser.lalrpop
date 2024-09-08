@@ -1,0 +1,29 @@
+use crate::lexer::{LexToken};
+
+grammar<'input>(input: &'input str);
+//grammar;
+
+extern {
+    type Location = ();
+    type Error = ();
+
+    enum LexToken<'input> {
+        "word" => LexToken::Word(<&'input str>),
+        "atom" => LexToken::Atom(<&'input str>),
+        "string" => LexToken::String(<&'input str>),
+        "pstr" => LexToken::PoisonString(<&'input str>),
+        "UK" => LexToken::Unknowen(<&'input str>),
+    }
+}
+
+// Main rule to collect adjacent strings into a Vec<String>
+pub StringList: Vec<String> = {
+    <first:"string"> <rest:"string"+> => {
+        let mut strings = vec![first.to_string()];
+        strings.extend(rest.into_iter().map(|s| s.to_string()));
+        strings
+    },
+
+    // Handle a single string case
+    <single:"string"> => vec![single.to_string()],
+};
