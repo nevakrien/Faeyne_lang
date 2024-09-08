@@ -1,0 +1,16 @@
+[package]
+name = "Faeyne_lang"
+version = "0.1.0"
+edition = "2021"
+
+
+# Add a build-time dependency on the lalrpop library:
+[build-dependencies]
+lalrpop = "0.21.0"
+
+[dependencies]
+codespan = "0.11.1"
+codespan-reporting = "0.11.1"
+lalrpop-util = "0.21.0"
+nom = "7.1.3"
+
