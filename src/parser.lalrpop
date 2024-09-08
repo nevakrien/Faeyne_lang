@@ -16,14 +16,15 @@ extern {
     }
 }
 
-// Main rule to collect adjacent strings into a Vec<String>
-pub StringList: Vec<String> = {
+// Main rule to collect adjacent strings into a Vec<&'input str>
+pub StringList: Vec<&'input str> = {
+    // Collect multiple adjacent strings into a Vec<&'input str>
     <first:"string"> <rest:"string"+> => {
-        let mut strings = vec![first.to_string()];
-        strings.extend(rest.into_iter().map(|s| s.to_string()));
+        let mut strings = vec![first];
+        strings.extend(rest);
         strings
     },
 
-    // Handle a single string case
-    <single:"string"> => vec![single.to_string()],
+    // Handle a single string case and prepend a fixed string
+    <single:"string"> => vec!["THIS IS A STRING LIST", single],
 };
