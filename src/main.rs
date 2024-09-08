@@ -4,9 +4,10 @@ use Faeyne_lang::parser;
 #[test]
 fn integration_test() {
     let input = r#"
-    "hello"
+	"hello"
     "world"
     "foo"
+    :atom
     "bar" 
     "baz"
     "#;

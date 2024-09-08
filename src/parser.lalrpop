@@ -34,5 +34,9 @@ pub StringList: Vec<&'input str> = {
         ];
 
         strings
+    },
+
+    ! => {
+        vec!["ERROR RECOVERY MODE"]
     }
 };
