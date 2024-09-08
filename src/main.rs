@@ -7,7 +7,8 @@ fn integration_test() {
     "hello"
     "world"
     "foo"
-    "bar"
+    "bar" 
+    "baz"
     "#;
 
     let lexer = Lexer::new(input);
@@ -15,6 +16,7 @@ fn integration_test() {
     // Feed lexer tokens into parser
     let result = parser.parse(input,lexer);
 
+    println!("input '''{}'''", input);
     match result {
         Ok(parsed_strings) => println!("Parsed: {:?}", parsed_strings),
         Err(err) => println!("Error: {:?}", err),

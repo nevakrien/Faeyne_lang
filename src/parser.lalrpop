@@ -1,30 +1,38 @@
-use crate::lexer::{LexToken};
-
+use crate::lexer::{LexTag};
 grammar<'input>(input: &'input str);
-//grammar;
 
 extern {
-    type Location = ();
+    type Location = usize;
     type Error = ();
 
-    enum LexToken<'input> {
-        "word" => LexToken::Word(<&'input str>),
-        "atom" => LexToken::Atom(<&'input str>),
-        "string" => LexToken::String(<&'input str>),
-        "pstr" => LexToken::PoisonString(<&'input str>),
-        "UK" => LexToken::Unknowen(<&'input str>),
+    enum LexTag {
+        "name" => LexTag::Name,
+        "atom" => LexTag::Atom,
+        "string" => LexTag::String,
+        "pstr" => LexTag::PoisonString,
+        "UK" => LexTag::Unknown,
     }
 }
 
 // Main rule to collect adjacent strings into a Vec<&'input str>
 pub StringList: Vec<&'input str> = {
-    // Collect multiple adjacent strings into a Vec<&'input str>
-    <first:"string"> <rest:"string"+> => {
-        let mut strings = vec![first];
-        strings.extend(rest);
+    // First case: handle the rest (add_on) first and prepend the current string
+    <add_on:StringList> <current_start: @L> "string" <current_end: @R>  => {
+        // First, handle the rest of the list
+        let mut strings = add_on; // Start with the rest (add_on)
+
+        // Prepend the current string
+        strings.push(&input[current_start as usize..current_end as usize]);
         strings
     },
 
-    // Handle a single string case and prepend a fixed string
-    <single:"string"> => vec!["THIS IS A STRING LIST", single],
+    // Second case: single string as the base case
+    <current_start: @L> "string" <current_end: @R> => {
+        let strings = vec![
+            "THIS IS A STRING LIST", // Start with this string
+            &input[current_start as usize..current_end as usize], // Add the current string
+        ];
+
+        strings
+    }
 };
