@@ -12,6 +12,58 @@ pub enum LexTag {
     String,
     PoisonString,
     Unknown,
+
+    Import,
+    FuncDec,
+    Lamda,
+
+    Match,
+
+    Float(f64),//we can parse in a way that never overflows
+    Int(Result<i64,f64>), //if we get a float here we know that it overflowed
+
+    Dot,
+    Ender,
+    Comma,
+
+    //parens
+    OpenParen,
+    CloseParen,
+
+    OpenCurly,
+    CloseCurly,
+
+    OpenSquare,
+    CloseSquare,
+
+    Pipe,
+
+    //ops
+    Plus,
+    Minus,
+    Mul,
+    Div,
+    IntDiv,
+    Pow,
+
+    Modolo,
+    DoubleAnd,
+    DoubleOr,
+    DoubleXor,
+
+    Eq,
+    DoubleEq,
+    
+   	And,
+    Or,
+    Xor,
+    
+    Smaller,
+    SmallerEq,
+    Bigger,
+
+    Arrow,
+    SmallArrow
 }
 
 pub struct Lexer<'input> {
