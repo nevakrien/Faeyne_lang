@@ -370,6 +370,55 @@ impl<'input> Iterator for Lexer<'input> {
 }
 
 #[test]
+fn test_lexer_end_to_end() {
+    let source = r#"
+        def my_function() {
+            let x = 123_456;
+            let y = 99999999999999999999; # This should overflow to float
+            let z = 3.14159;
+            let a = fn lambda => x + y * z;
+            return a;
+        }
+    "#;
+
+    let mut lexer = Lexer::new(source);
+
+    // Expected lexemes
+    let expected_lexemes = vec![
+        "def", "my_function", "(", ")", "{", "let", "x", "=", "123_456", ";",
+        "let", "y", "=", "99999999999999999999", ";", "let", "z", "=", "3.14159", ";",
+        "let", "a", "=", "fn", "lambda", "=>", "x", "+", "y", "*", "z", ";", 
+        "return", "a", ";", "}"
+    ];
+
+    // Expected tokens
+    let expected_tags = vec![
+        LexTag::FuncDec, LexTag::Name, LexTag::OpenParen, LexTag::CloseParen, LexTag::OpenCurly,
+        LexTag::Name, LexTag::Name, LexTag::Eq, LexTag::Int(Ok(123456)), LexTag::Ender,
+        LexTag::Name, LexTag::Name, LexTag::Eq, LexTag::Float(1e20), LexTag::Ender,  // Large int overflow to float
+        LexTag::Name, LexTag::Name, LexTag::Eq, LexTag::Float(3.14159), LexTag::Ender,
+        LexTag::Name, LexTag::Name, LexTag::Eq, LexTag::Lambda, LexTag::Name, LexTag::Arrow, 
+        LexTag::Name, LexTag::Plus, LexTag::Name, LexTag::Mul, LexTag::Name, LexTag::Ender,
+        LexTag::Name, LexTag::Name, LexTag::Ender, LexTag::CloseCurly
+    ];
+
+    for (expected_tag, expected_lexeme) in expected_tags.iter().zip(expected_lexemes.iter()) {
+        let (start, tag, end) = lexer.next().unwrap().unwrap();
+        let lexeme = &source[start..end];
+
+        println!("Token: {:?}, Lexeme: '{}'", tag, lexeme);
+
+        // Compare the token and lexeme
+        assert!(matches!(tag, expected_tag));
+        assert_eq!(&lexeme, expected_lexeme);
+    }
+
+    // Ensure no more tokens are left
+    assert!(lexer.next().is_none());
+}
+
+
+#[test]
 fn test_lex_operator_with_delimiters() {
     let source = "(+,-); {} []";
     let mut lexer = Lexer::new(source);
