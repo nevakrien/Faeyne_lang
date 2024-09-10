@@ -29,7 +29,7 @@ fn test_subslice_span_and_diagnostic_reporting() {
 
     // Use codespan to map byte indices to line/column information
     use codespan_reporting::diagnostic::{Diagnostic, Label};
-    use codespan_reporting::term::{self, termcolor::{ColorChoice, StandardStream}};
+    use codespan_reporting::term::{self, termcolor::{ColorChoice, Buffer, WriteColor}};
     use codespan_reporting::files::SimpleFiles;
 
     let mut files = SimpleFiles::new();
@@ -42,14 +42,18 @@ fn test_subslice_span_and_diagnostic_reporting() {
                 .with_message(format!("This should be '{}'", subslice)),
         ]);
 
-    // Setup a writer for the output (e.g., to stdout)
-    let writer = StandardStream::stderr(ColorChoice::Always);
-    
+    // Create a buffer to collect the diagnostic output instead of writing directly to stdout
+    let mut buffer = Buffer::ansi();
+
     // Configure reporting
     let config = term::Config::default();
     
-    // Write the diagnostic message
-    term::emit(&mut writer.lock(), &config, &files, &diagnostic).unwrap();
+    // Write the diagnostic message to the buffer
+    term::emit(&mut buffer, &config, &files, &diagnostic).unwrap();
+
+    // Convert the buffer to a string and print it (or use it for other purposes)
+    let output = String::from_utf8(buffer.into_inner()).expect("Buffer should contain valid UTF-8");
+    println!("{}", output);
 
     // Assertion to ensure the span correctly maps back to the original subslice
     let start_index = span.start().to_usize();
@@ -59,4 +63,3 @@ fn test_subslice_span_and_diagnostic_reporting() {
     // Ensure the extracted subslice matches the original one
     assert_eq!(extracted_subslice, subslice, "The extracted subslice does not match the original subslice.");
 }
-

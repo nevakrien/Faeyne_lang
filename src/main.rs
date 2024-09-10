@@ -8,6 +8,7 @@ fn integration_test() {
     "world"
     "foo"
     :atom
+    "poison
     "bar" 
     "baz"
     "#;

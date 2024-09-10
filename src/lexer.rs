@@ -16,11 +16,12 @@ pub enum LexTag {
     PoisonString,
     Unknowen,
 
+    //keywords
     Import,
     FuncDec,
     Lambda,
 
-    Match,
+    // Match, //for now not implemented
 
     Float(f64), // We can parse in a way that never overflows
     Int(Result<i64, f64>), // If we get a float here, we know it overflowed
@@ -129,13 +130,100 @@ fn lex_string<'a>(input: &'a str) -> LexResult<'a> {
     }
 }
 
+fn lex_atom<'a>(input: &'a str) -> LexResult<'a> {
+    let (input, ans) = recognize(preceded(
+        one_of("%:"),
+        pair(
+            take_while1(|c: char| c.is_alphabetic() || c == '_'),
+            take_while(|c: char| c.is_alphanumeric() || c == '_'),
+        ),
+    ))(input)?;
+    Ok((input, LexTag::Atom))
+}
+
+fn lex_operator<'a>(input: &'a str) -> LexResult<'a> {
+    let (input, token) = alt((
+        recognize(one_of("(){}[]+.%;,")),
+        // Match multi-character operators first
+        recognize(is_a("=>")),
+        recognize(is_a("->")),
+        recognize(is_a("==")),
+        recognize(is_a("!=")),
+        recognize(is_a("<=")),
+        recognize(is_a(">=")),
+        recognize(is_a("&&")),
+        recognize(is_a("||")),
+        recognize(is_a("^^")),
+        recognize(is_a("**")),
+        recognize(is_a("//")),
+        recognize(is_a("|>")),
+        // Then match single-character operators and delimiters
+        recognize(one_of("-=*<>|^/")),
+    ))(input)?;
+
+    let op_tag = match token {
+        "+" => LexTag::Plus,
+        "-" => LexTag::Minus,
+        "*" => LexTag::Mul,
+        "/" => LexTag::Div,
+        "//" => LexTag::IntDiv,
+        "%" => LexTag::Modolo,
+        "**" => LexTag::Pow,
+        "^" => LexTag::Xor,
+        "<" => LexTag::Smaller,
+        ">" => LexTag::Bigger,
+        "=" => LexTag::Eq,
+        "|" => LexTag::Or,
+        "|>" => LexTag::Pipe,
+        "&&" => LexTag::DoubleAnd,
+        "||" => LexTag::DoubleOr,
+        "^^" => LexTag::DoubleXor,
+        "==" => LexTag::DoubleEq,
+        "!=" => LexTag::DoubleEq,
+        "<=" => LexTag::SmallerEq,
+        ">=" => LexTag::SmallerEq,
+        "=>" => LexTag::Arrow,
+        "->" => LexTag::SmallArrow,
+        "(" => LexTag::OpenParen,
+        ")" => LexTag::CloseParen,
+        "{" => LexTag::OpenCurly,
+        "}" => LexTag::CloseCurly,
+        "[" => LexTag::OpenSquare,
+        "]" => LexTag::CloseSquare,
+        "." => LexTag::Dot,
+        ";" => LexTag::Ender,
+        "," => LexTag::Comma,
+        _ => LexTag::Unknowen, // Handle unexpected cases
+    };
+
+    Ok((input, op_tag))
+}
+
+
+
+fn lex_word<'a>(input: &'a str) -> LexResult<'a> {
+    let (input, word) = recognize(pair(
+        take_while1(|c: char| c.is_alphabetic() || c == '_'),
+        take_while(|c: char| c.is_alphanumeric() || c == '_'),
+    ))(input)?;
+
+    let tag = match word {
+        "import" => LexTag::Import,
+        "def" => LexTag::FuncDec,
+        "fn" => LexTag::Lambda,
+        _ => LexTag::Name
+    };
+    Ok((input, tag)) 
+}
+
+
 fn lext_token<'a>(input: &'a str) -> LexResult<'a>{
     alt((
-        // lex_word,
-        // lex_atom,
+        lex_word,
+        lex_atom,
         // lex_ender,
         // lex_delimiter,
-        // lex_operator,
+        lex_operator,
         // lex_number,
         lex_string,
         lex_unknowen,
@@ -190,11 +278,7 @@ impl<'input> Iterator for Lexer<'input> {
     type Item = Result<(usize, LexTag, usize), ()>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.skip();
-        // if self.line.len() == 0 {
-        //     //println!("End of input reached."); // Debug output
-        //     return None;
-        // }
+        self.skip(); //setup a non empty line
 
         match lext_token(self.line) {
             Err(_) => {
@@ -214,4 +298,232 @@ impl<'input> Iterator for Lexer<'input> {
             }
         }
     }
+}
+
+#[test]
+fn test_lex_operator_with_delimiters() {
+    let source = "(+,-); {} []";
+    let mut lexer = Lexer::new(source);
+
+    let tokens = vec![
+        LexTag::OpenParen,
+        LexTag::Plus,
+        LexTag::Comma,
+        LexTag::Minus,
+        LexTag::CloseParen,
+        LexTag::Ender,
+        LexTag::OpenCurly,
+        LexTag::CloseCurly,
+        LexTag::OpenSquare,
+        LexTag::CloseSquare,
+    ];
+
+    for expected_tag in tokens {
+        let (start, tag, end) = lexer.next().unwrap().unwrap();
+        let lexeme = &source[start..end];
+        println!("Token: {:?}, Lexeme: '{}'", tag, lexeme);
+        assert_eq!(tag, expected_tag);
+    }
+
+    assert!(lexer.next().is_none()); // No more tokens
+}
+
+#[test]
+fn test_lex_simple_input() {
+    let source = "func +,; * -> () {}";
+    let mut lexer = Lexer::new(source);
+
+    let tokens = vec![
+        LexTag::Name,        // func
+        LexTag::Plus,        // +
+        LexTag::Comma,       // ,
+        LexTag::Ender,       // ;
+        LexTag::Mul,         // *
+        LexTag::SmallArrow,  // ->
+        LexTag::OpenParen,   // (
+        LexTag::CloseParen,  // )
+        LexTag::OpenCurly,   // {
+        LexTag::CloseCurly,  // }
+    ];
+
+    for expected_tag in tokens {
+        let (start, tag, end) = lexer.next().unwrap().unwrap();
+        let lexeme = &source[start..end];
+        println!("Token: {:?}, Lexeme: '{}'", tag, lexeme);
+        assert_eq!(tag, expected_tag);
+    }
+
+    assert!(lexer.next().is_none()); // No more tokens
+}
+
+#[test]
+fn test_lex_string_and_operators() {
+    let source = "\"string\" => , func ()";
+    let mut lexer = Lexer::new(source);
+
+    let tokens = vec![
+        LexTag::String,      // "string"
+        LexTag::Arrow,       // =>
+        LexTag::Comma,       // ,
+        LexTag::Name,        // func
+        LexTag::OpenParen,   // (
+        LexTag::CloseParen,  // )
+    ];
+
+    for expected_tag in tokens {
+        let (start, tag, end) = lexer.next().unwrap().unwrap();
+        let lexeme = &source[start..end];
+        println!("Token: {:?}, Lexeme: '{}'", tag, lexeme);
+        assert_eq!(tag, expected_tag);
+    }
+
+    assert!(lexer.next().is_none()); // No more tokens
+}
+#[test]
+fn test_lex_operator_with_equals() {
+    let source = "=> = == -> >=";
+    let mut lexer = Lexer::new(source);
+
+    let tokens = vec![
+        LexTag::Arrow,      // =>
+        LexTag::Eq,         // =
+        LexTag::DoubleEq,   // ==
+        LexTag::SmallArrow, // ->
+        LexTag::SmallerEq,  // >=
+    ];
+
+    for expected_tag in tokens {
+        let (start, tag, end) = lexer.next().unwrap().unwrap();
+        let lexeme = &source[start..end];
+        println!("Token: {:?}, Lexeme: '{}'", tag, lexeme);
+        assert_eq!(tag, expected_tag);
+    }
+
+    assert!(lexer.next().is_none()); // No more tokens
+}
+
+#[test]
+fn test_lex_operators_keywords_strings_with_comments_and_newlines() {
+    let source = r#"
+        import def fn # This is a comment
+        + - * / // % ** ^ == != <= >= => -> () {} [] ,
+        "valid string" "poison # no closing
+        "#;
+
+    let mut lexer = Lexer::new(source);
+
+    let tokens = vec![
+        // Keywords
+        LexTag::Import,     // import
+        LexTag::FuncDec,    // func
+        LexTag::Lambda,     // fn
+
+        // Operators
+        LexTag::Plus,       // +
+        LexTag::Minus,      // -
+        LexTag::Mul,        // *
+        LexTag::Div,        // /
+        LexTag::IntDiv,     // //
+        LexTag::Modolo,     // %
+        LexTag::Pow,        // **
+        LexTag::Xor,        // ^
+        LexTag::DoubleEq,   // ==
+        LexTag::DoubleEq,   // !=
+        LexTag::SmallerEq,  // <=
+        LexTag::SmallerEq,  // >=
+        LexTag::Arrow,      // =>
+        LexTag::SmallArrow, // ->
+        LexTag::OpenParen,  // (
+        LexTag::CloseParen, // )
+        LexTag::OpenCurly,  // {
+        LexTag::CloseCurly, // }
+        LexTag::OpenSquare, // [
+        LexTag::CloseSquare,// ]
+        LexTag::Comma,      // ,
+
+        // Strings
+        LexTag::String,     // "valid string"
+        LexTag::PoisonString // "poison # no closing
+    ];
+
+    for expected_tag in tokens {
+        let (start, tag, end) = lexer.next().unwrap().unwrap();
+        let lexeme = &source[start..end];
+        println!("Token: {:?}, Lexeme: '{}'", tag, lexeme);
+        assert_eq!(tag, expected_tag);
+    }
+
+    assert!(lexer.next().is_none()); // No more tokens
+}
+
+#[test]
+fn test_lex_operators_with_comments_newlines() {
+    let source = r#"
+        + - * / # Comment here
+        // % ** ^ # Another comment
+        == != <= >= => -> () {} [] ,
+        "#;
+
+    let mut lexer = Lexer::new(source);
+
+    let tokens = vec![
+        LexTag::Plus,       // +
+        LexTag::Minus,      // -
+        LexTag::Mul,        // *
+        LexTag::Div,        // /
+        LexTag::IntDiv,     // //
+        LexTag::Modolo,     // %
+        LexTag::Pow,        // **
+        LexTag::Xor,        // ^
+        LexTag::DoubleEq,   // ==
+        LexTag::DoubleEq,   // !=
+        LexTag::SmallerEq,  // <=
+        LexTag::SmallerEq,  // >=
+        LexTag::Arrow,      // =>
+        LexTag::SmallArrow, // ->
+        LexTag::OpenParen,  // (
+        LexTag::CloseParen, // )
+        LexTag::OpenCurly,  // {
+        LexTag::CloseCurly, // }
+        LexTag::OpenSquare, // [
+        LexTag::CloseSquare,// ]
+        LexTag::Comma,      // ,
+    ];
+
+    for expected_tag in tokens {
+        let (start, tag, end) = lexer.next().unwrap().unwrap();
+        let lexeme = &source[start..end];
+        println!("Token: {:?}, Lexeme: '{}'", tag, lexeme);
+        assert_eq!(tag, expected_tag);
+    }
+
+    assert!(lexer.next().is_none()); // No more tokens
+}
+
+#[test]
+fn test_lex_keywords_and_strings() {
+    let source = r#"
+        import def fn name # Another comment
+        "string with content" "unclosed
+    "#;
+
+    let mut lexer = Lexer::new(source);
+
+    let tokens = vec![
+        LexTag::Import,     // import
+        LexTag::FuncDec,    // func
+        LexTag::Lambda,     // fn
+        LexTag::Name,
+        LexTag::String,     // "string with content"
+        LexTag::PoisonString, // "unclosed
+    ];
+
+    for expected_tag in tokens {
+        let (start, tag, end) = lexer.next().unwrap().unwrap();
+        let lexeme = &source[start..end];
+        println!("Token: {:?}, Lexeme: '{}'", tag, lexeme);
+        assert_eq!(tag, expected_tag);
+    }
+
+    assert!(lexer.next().is_none()); // No more tokens
 }
