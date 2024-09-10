@@ -2,10 +2,10 @@ use crate::reporting::get_subslice_span;
 use nom::bytes::complete::{is_a,is_not,take_till,take_while,take_while1};
 use nom::combinator::{opt, recognize};
 use nom::branch::alt;
-use nom::multi::many0_count;
+use nom::multi::{fold_many0,many0_count};
 use nom::IResult;
 use nom::sequence::{preceded,pair,terminated};
-use nom::character::complete::{anychar,one_of};
+use nom::character::complete::{anychar,one_of,digit1};
 
 
 #[derive(Debug, PartialEq, Clone)]
@@ -193,7 +193,7 @@ fn lex_operator<'a>(input: &'a str) -> LexResult<'a> {
         "." => LexTag::Dot,
         ";" => LexTag::Ender,
         "," => LexTag::Comma,
-        _ => LexTag::Unknowen, // Handle unexpected cases
+        _ => LexTag::Unknowen, //impossible but just in case
     };
 
     Ok((input, op_tag))
@@ -216,15 +216,84 @@ fn lex_word<'a>(input: &'a str) -> LexResult<'a> {
     Ok((input, tag)) 
 }
 
+fn lex_digits<'a>(input: &'a str) -> IResult<&'a str, Result<i64, f64>, ()> {
+    // Lex the first set of digits
+    let (input, d) = digit1(input)?;
+
+    // Try to parse the first value as i64
+    let mut result: Result<i64, f64> = match d.parse::<i64>() {
+        Ok(i) => Ok(i),
+        Err(_) => Err(d.parse::<f64>().unwrap()), // Already overflows, so convert to f64
+    };
+
+    // Handle additional groups of digits after underscores (if any)
+    let (input, _) = fold_many0(
+        preceded(is_a("_"), digit1),
+        || (),
+        |_, digits: &str| {
+            // Try to handle as i64, else convert the entire number to f64
+            match result {
+                Ok(acc) => {
+                    // Perform checked multiplication and addition
+                    match acc.checked_mul(10_i64.pow(digits.len() as u32))
+                        .and_then(|acc| acc.checked_add(digits.parse::<i64>().unwrap_or(0)))
+                    {
+                        Some(i) => result = Ok(i),
+                        None => result = Err((acc as f64) + digits.parse::<f64>().unwrap_or(0.0)),
+                    }
+                }
+                Err(f_acc) => {
+                    // Already in overflow, keep adding as f64
+                    result = Err(f_acc + digits.parse::<f64>().unwrap_or(0.0));
+                }
+            }
+        },
+    )(input)?;
+
+    Ok((input, result))
+}
+
+fn to_float(res : Result<i64, f64>) -> f64 {
+    match res {
+        Ok(i) => i as f64,
+        Err(f) => f,
+    }
+}
+
+fn lex_number<'a>(input: &'a str) -> LexResult<'a> {
+    fn dot<'a>(input: &'a str) -> RawResult<'a> {
+        is_a(".")(input)
+    }
+
+    let (input, n) = lex_digits(input)?;
+
+    let input = match dot(input) {
+        Err(_) => return Ok((input, LexTag::Int(n))),
+        Ok((input, _)) => input,
+    };
+
+    let f = to_float(n);
+
+    match lex_digits(input) {
+        Err(_) => Ok((input, LexTag::Float(f))),
+        Ok((input, n2)) => {
+            // Use log10 to calculate the scaling factor for the fractional part
+            let fractional_part = to_float(n2);
+            let scale_factor = 10f64.powi(fractional_part.log10().ceil() as i32);
+
+            Ok((input, LexTag::Float(f + fractional_part / scale_factor)))
+        }
+    }
+}
+
+
 
 fn lext_token<'a>(input: &'a str) -> LexResult<'a>{
     alt((
         lex_word,
         lex_atom,
-        // lex_ender,
-        // lex_delimiter,
         lex_operator,
-        // lex_number,
+        lex_number, 
         lex_string,
         lex_unknowen,
     ))(input)
@@ -526,4 +595,98 @@ fn test_lex_keywords_and_strings() {
     }
 
     assert!(lexer.next().is_none()); // No more tokens
+}
+
+#[test]
+fn test_simple_digits() {
+    let input = "1_234_567";
+    let (remaining, result) = lex_digits(input).unwrap();
+
+    match result {
+        Ok(i) => println!("Parsed i64: {}", i),
+        Err(f) => println!("Parsed f64 due to overflow: {}", f),
+    }
+    assert_eq!(remaining, ""); // Should consume the entire input
+}
+
+#[test]
+fn test_overflow_numbers() {
+    // Number that is too large for i64
+    let input = "9223372036854775808";  // Just beyond the range of i64 for positive numbers
+    let (remaining, result) = lex_digits(input).unwrap();
+    assert_eq!(remaining, "");
+    match result {
+        Ok(_) => panic!("Expected overflow but got i64"),
+        Err(f) => println!("Parsed f64 due to overflow: {}", f),
+    }
+
+    // Numbers with underscores causing overflow
+    let input = "9999999999_9999999999_9999999999";
+    let (remaining, result) = lex_digits(input).unwrap();
+    assert_eq!(remaining, "");
+    match result {
+        Ok(_) => panic!("Expected overflow but got i64"),
+        Err(f) => println!("Parsed f64 due to overflow: {}", f),
+    }
+}
+
+#[test]
+fn test_underscored_valid_numbers() {
+    // Test with underscores
+    let input = "111_222_333xyz";
+    let (remaining, result) = lex_digits(input).unwrap();
+    assert_eq!(remaining, "xyz");
+    assert_eq!(result, Ok(111_222_333));
+
+    let input = "123_6_22 as";
+    let (remaining, result) = lex_digits(input).unwrap();
+    assert_eq!(remaining, " as");
+    assert_eq!(result, Ok(123_6_22));
+
+    let input = "987654";
+    let (remaining, result) = lex_digits(input).unwrap();
+    assert_eq!(remaining, "");
+    assert_eq!(result, Ok(987654));
+}
+
+#[test]
+fn test_lex_number_valid() {
+    // Simple integer
+    let input = "123";
+    let (remaining, tag) = lex_number(input).unwrap();
+    assert_eq!(remaining, "");
+    assert!(matches!(tag, LexTag::Int(_)));
+
+    // Integer with underscore
+    let input = "123_456";
+    let (remaining, tag) = lex_number(input).unwrap();
+    assert_eq!(remaining, "");
+    assert!(matches!(tag, LexTag::Int(_)));
+
+    // Floating-point number
+    let input = "123.456";
+    let (remaining, tag) = lex_number(input).unwrap();
+    assert_eq!(remaining, "");
+    assert!(matches!(tag, LexTag::Float(_)));
+
+    // Floating-point with underscores
+    let input = "123_456.789_012";
+    let (remaining, tag) = lex_number(input).unwrap();
+    assert_eq!(remaining, "");
+    assert!(matches!(tag, LexTag::Float(_)));
+}
+
+#[test]
+fn test_lex_number_overflow() {
+    // Integer overflow
+    let input = "9223372036854775808";
+    let (remaining, tag) = lex_number(input).unwrap();
+    assert_eq!(remaining, "");
+    assert!(matches!(tag, LexTag::Int(Err(_)))); // Should be parsed as f64 due to overflow
+
+    // Floating-point number that overflows
+    let input = "999999999999999999999.999999999999999999999";
+    let (remaining, tag) = lex_number(input).unwrap();
+    assert_eq!(remaining, "");
+    assert!(matches!(tag, LexTag::Float(_))); // Should be parsed as f64 due to overflow
 }
