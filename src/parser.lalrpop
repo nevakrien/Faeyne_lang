@@ -10,7 +10,7 @@ extern {
         "atom" => LexTag::Atom,
         "string" => LexTag::String,
         "pstr" => LexTag::PoisonString,
-        "UK" => LexTag::Unknown,
+        "UK" => LexTag::Unknowen,
     }
 }
 
