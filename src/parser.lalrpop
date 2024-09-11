@@ -1,5 +1,5 @@
 use crate::lexer::LexTag;
-use crate::ast::{StringTable,Value,FunctionCall,FuncDec};
+use crate::ast::{StringTable,Value,FunctionCall,FuncSig,FuncBlock,Statment};
 
 grammar<'input>(input: &'input str, table: &mut StringTable<'input>);
 
@@ -19,6 +19,7 @@ extern {
         "import" => LexTag::Import,
         "def" => LexTag::FuncDec,
         "fn" => LexTag::Lambda,
+        "return" => LexTag::Return,
 
         // Numbers
         "float" => LexTag::Float(<f64>),
@@ -61,6 +62,8 @@ extern {
     }
 }
 
+//basic types:
+
 Atom: usize = {
     <start: @L> "pre_atom" <end: @R> => {
         table.get_id(&input[start..end])
@@ -85,37 +88,26 @@ Name: usize = {
     }
 };
 
-pub FuncDec: FuncDec = {
-    "def" <name:Name> <args:ArgList> => FuncDec{name, args},
+
+//functions
+pub FuncSig: FuncSig = {
+    "def" <name:Name> <args:ArgList> => FuncSig{name, args},
 };
 
-
-//Function arguments
 ArgList: Vec<usize> = {
-    // Multiple arguments separated by commas
     "(" <args:CommaSepArgs> ")" => args,
 
-    // No arguments
     "(" ")" => vec![],
 };
 
 CommaSepArgs: Vec<usize> = {
-    // Base case: multiple arguments
     <args:CommaSepArgs> "," <arg:Name> => {
         let mut arguments = args;
         arguments.push(arg);
         arguments
     },
     
-    // Single argument
     <arg:Name> => vec![arg]
-};
-
-pub Value: Value = {
-    <x:Name> => Value::Variable(x),
-    <x:FuncCall> => Value::FuncCall(x),
-    <x:"int"> => Value::Int(x),
-    <x:"float"> => Value::Float(x),
 };
 
 pub FuncCall: FunctionCall = {
@@ -137,4 +129,57 @@ CommaSepValue: Vec<Value> = {
     },
     
     <arg:Value> => vec![arg],
+};
+
+//expressions
+pub Value: Value = {
+    <x:Name> => Value::Variable(x),
+    <x:FuncCall> => Value::FuncCall(x),
+    <x:"int"> => Value::Int(x),
+    <x:"float"> => Value::Float(x),
+};
+
+
+Statment : Statment = {
+    <func:FuncCall> ";" => Statment::Call(func),
+    <n:Name> "=" <x:Value> ";" => Statment::Assign(n,x),
+}
+
+// Function block, with optional return statement
+pub FuncBlock: FuncBlock = {
+    "{" <body:Statements> <ret:Return> "}" => FuncBlock {
+        body: body,
+        ret: Some(ret),
+    },
+
+    "{" <body:Statements> "}" => FuncBlock {
+        body: body,
+        ret: None,
+    },
+
+    "{" <ret:Return> "}" => FuncBlock {
+        body: vec![],
+        ret: Some(ret),
+    },
+
+    "{" "}" => FuncBlock {
+        body: vec![],
+        ret: None,
+    },
+};
+
+
+Statements: Vec<Statment> = {
+    <stmts:Statements> <stmt:Statment> => {
+        let mut statements = stmts;
+        statements.push(stmt);
+        statements
+    },
+    
+    <stmt:Statment> => vec![stmt],
+};
+
+Return: Value = {
+    "return" <val:Value> ";" => val,
+    <val:Value> => val,
 };

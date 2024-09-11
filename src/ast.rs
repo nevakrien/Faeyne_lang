@@ -1,12 +1,22 @@
 use std::collections::HashMap;
 
-
 #[derive(Debug)]
-pub struct FuncDec {
-    pub name: usize,     // Function name ID from the StringTable
-    pub args: Vec<usize> // names of args
+pub enum Statment {
+    Assign(usize,Value),
+    Call(FunctionCall),
 }
 
+#[derive(Debug)]
+pub struct FuncSig {
+    pub name: usize,     // Function name ID from the StringTable
+    pub args: Vec<usize>, // names of args
+}
+
+#[derive(Debug)]
+pub struct FuncBlock{
+    pub body: Vec<Statment>, 
+    pub ret: Option<Value>,
+}
 
 #[derive(Debug)]
 pub struct FunctionCall {

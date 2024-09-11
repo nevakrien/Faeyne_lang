@@ -21,6 +21,8 @@ pub enum LexTag {
     FuncDec,
     Lambda,
 
+    Return,
+
     // Match, //for now not implemented
 
     Float(f64), // We can parse in a way that never overflows
@@ -211,6 +213,7 @@ fn lex_word<'a>(input: &'a str) -> LexResult<'a> {
         "import" => LexTag::Import,
         "def" => LexTag::FuncDec,
         "fn" => LexTag::Lambda,
+        "return" => LexTag::Return,
         _ => LexTag::Name
     };
     Ok((input, tag)) 

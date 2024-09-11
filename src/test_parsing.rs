@@ -2,7 +2,7 @@
 
 use crate::lexer::Lexer;
 use crate::parser;
-use crate::ast::{StringTable,Value,FunctionCall};
+use crate::ast::*;
 
 #[test]
 fn func_dec_single_arg() {
@@ -11,7 +11,7 @@ fn func_dec_single_arg() {
     let lexer = Lexer::new(input);
     let mut table = StringTable::new();
 
-    let parser = parser::FuncDecParser::new();
+    let parser = parser::FuncSigParser::new();
     let result = parser.parse(input, &mut table, lexer);
 
     // Assert that parsing was successful
@@ -32,7 +32,7 @@ fn func_dec_multiple_args() {
     let lexer = Lexer::new(input);
     let mut table = StringTable::new();
 
-    let parser = parser::FuncDecParser::new();
+    let parser = parser::FuncSigParser::new();
     let result = parser.parse(input, &mut table, lexer);
 
     // Assert that parsing was successful
@@ -55,7 +55,7 @@ fn func_dec_no_args() {
     let lexer = Lexer::new(input);
     let mut table = StringTable::new();
 
-    let parser = parser::FuncDecParser::new();
+    let parser = parser::FuncSigParser::new();
     let result = parser.parse(input, &mut table, lexer);
 
     // Assert that parsing was successful
@@ -121,4 +121,88 @@ fn function_call_no_args() {
     } else {
         panic!("Expected a function call");
     }
+}
+
+
+
+#[test]
+fn func_block_with_statements_and_return() {
+    let input = "{ a = b; s(); c }";
+
+    let lexer = Lexer::new(input);
+    let mut table = StringTable::new();
+
+    let parser = parser::FuncBlockParser::new();
+    let result = parser.parse(input, &mut table, lexer);
+
+    // assert!(result.is_ok(), "Failed to parse function block with statements and return");
+
+    let func_block = result.unwrap();
+
+    // Check body length and return value
+    assert_eq!(func_block.body.len(), 2);
+    match &func_block.body[1] {
+        Statment::Call(fc) => {
+            assert_eq!("s",table.get_string(fc.name).unwrap());
+        },
+        _ => unreachable!()
+    };
+    assert!(matches!(func_block.ret, Some(Value::Variable(_))));
+}
+
+#[test]
+fn func_block_with_statements_no_return() {
+    let input = "{ a = b; c = d; }";
+
+    let lexer = Lexer::new(input);
+    let mut table = StringTable::new();
+
+    let parser = parser::FuncBlockParser::new();
+    let result = parser.parse(input, &mut table, lexer);
+
+    // assert!(result.is_ok(), "Failed to parse function block with statements and no return");
+
+    let func_block = result.unwrap();
+
+    // Check body length and ensure no return
+    assert_eq!(func_block.body.len(), 2);
+    assert!(func_block.ret.is_none());
+}
+
+#[test]
+fn func_block_only_return() {
+    let input = "{ return x; }";
+
+    let lexer = Lexer::new(input);
+    let mut table = StringTable::new();
+
+    let parser = parser::FuncBlockParser::new();
+    let result = parser.parse(input, &mut table, lexer);
+
+    assert!(result.is_ok(), "Failed to parse function block with only return");
+
+    let func_block = result.unwrap();
+
+    // Check empty body and return value
+    assert_eq!(func_block.body.len(), 0);
+    assert!(matches!(func_block.ret, Some(Value::Variable(_))));
+}
+
+#[test]
+fn func_block_empty() {
+    let input = "{}";
+
+    let lexer = Lexer::new(input);
+    let mut table = StringTable::new();
+
+    let parser = parser::FuncBlockParser::new();
+    let result = parser.parse(input, &mut table, lexer);
+
+    assert!(result.is_ok(), "Failed to parse empty function block");
+
+    let func_block = result.unwrap();
+
+    // Check empty body and no return
+    assert_eq!(func_block.body.len(), 0);
+    assert!(func_block.ret.is_none());
 }
