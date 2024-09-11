@@ -8,6 +8,7 @@ pub enum Statment {
     Call(FunctionCall),
 }
 
+
 #[derive(Debug)]
 pub struct FuncDec {
     pub sig: FuncSig,
@@ -27,6 +28,12 @@ pub struct FuncBlock{
 }
 
 #[derive(Debug)]
+pub struct Lammda {
+    pub sig: Vec<usize>,
+    pub body: FuncBlock,
+}
+
+#[derive(Debug)]
 pub struct FunctionCall {
     pub name: FValue,     //
     pub args: Vec<Value> // Arguments to the function call
@@ -36,6 +43,7 @@ pub struct FunctionCall {
 pub enum FValue {
     Name(usize),
     FuncCall(Box<FunctionCall>),
+    Lammda(Box<Lammda>)
 }
 
 #[derive(Debug)]
@@ -46,6 +54,7 @@ pub enum Value {
     String(usize),
     Variable(usize),
     FuncCall(FunctionCall),
+    Lammda(Box<Lammda>),
 }
 
 pub struct StringTable<'input> {

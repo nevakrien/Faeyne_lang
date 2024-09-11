@@ -23,6 +23,41 @@ fn simple_parse_hello_world_function() {
 }
 
 #[test]
+fn simple_parse_blocky_function() {
+    let input = "def main(system) { x=system(:println)('hello world'); x(w(z)); return z; }";
+    
+    let lexer = Lexer::new(input);
+    let mut table = StringTable::new();
+    
+    let parser = parser::FuncDecParser::new();  // Assuming you create this parser
+    let result = parser.parse(input, &mut table, lexer);
+    
+    assert!(result.is_ok(), "Failed to parse function declaration");
+    
+    let func_dec = result.unwrap();
+    
+    assert!(func_dec.body.body.len() == 2, "Expected one statement in function body");
+    assert!(func_dec.body.ret.is_some(), "Expected return statment");
+}
+#[test]
+fn simple_parse_lammda_function() {
+    let input = "def main(system) { f = fn (x,y) -> {x}; fn (x) {} }";
+    
+    let lexer = Lexer::new(input);
+    let mut table = StringTable::new();
+    
+    let parser = parser::FuncDecParser::new();  // Assuming you create this parser
+    let result = parser.parse(input, &mut table, lexer);
+    
+    // assert!(result.is_ok(), "Failed to parse function declaration");
+    
+    let func_dec = result.unwrap();
+    
+    assert_eq!(table.get_string(func_dec.sig.name), Some("main"));
+    assert!(func_dec.body.body.len() == 1, "Expected one statement in function body");
+}
+
+#[test]
 fn parse_hello_world_function() {
     let input = "def main(system) { system(:println)('hello world'); }";
     
