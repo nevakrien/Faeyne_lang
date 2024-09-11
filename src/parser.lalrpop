@@ -132,12 +132,16 @@ CommaSepArgs: Vec<usize> = {
 };
 
 FValue : FValue = {
+    #[precedence(level="0")]
     <x:Name> => FValue::Name(x),
+
+    #[precedence(level="1")] #[assoc(side="left")]
     <x:FuncCall> => FValue::FuncCall(Box::new(x)),
     <x:Lammda> => FValue::Lammda(Box::new(x)),
 }
 
 pub FuncCall: FunctionCall = {
+    #[precedence(level="0")]
     <name:FValue> "(" <args:CommaSepValue> ")" => FunctionCall {
         name: name,
         args: args
@@ -146,6 +150,16 @@ pub FuncCall: FunctionCall = {
         name: name,
         args: vec![]
     },
+
+    //#[precedence(level="1")] #[assoc(side="left")]
+    //<a:Value> "|>" <b:FuncCall> => {
+     //   let mut new_args = vec![a];
+      //  new_args.extend(b.args);
+       // FunctionCall {
+        //    name: b.name,
+         //   args: new_args
+        //}
+    //},
 };
 
 CommaSepValue: Vec<Value> = {
@@ -159,13 +173,13 @@ CommaSepValue: Vec<Value> = {
 };
 
 //expressions
+// Expressions with different precedence levels
 pub Value: Value = {
     
-    #[precedence(level="0")]
-    <x:Name> => Value::Variable(x),
-    <x:Lammda> => Value::Lammda(Box::new(x)),
-    <x:FuncCall> => Value::FuncCall(x),
-    
+    #[precedence(level="0")]  // No operators at this level, only simple values
+    <x:FValue> => x.into(),
+
+    #[precedence(level="1")]
     <x:Atom> => Value::Atom(x),
     <x:String> => Value::String(x),
 
@@ -176,24 +190,43 @@ pub Value: Value = {
         Ok(i) => Ok(-i),
         Err(f) => Err(-f),
     }),
-    "-" <x:"float"> => Value::Float(x),
 
-    #[precedence(level="1")] #[assoc(side="left")]
-    <a:Value> <op:Op> <b:Value> => Value::FuncCall(FunctionCall {
+    "-" <x:"float"> => Value::Float(-x),
+
+    #[precedence(level="2")] #[assoc(side="left")]
+    <a:Value> <op:MulOp> <b:Value> => Value::FuncCall(FunctionCall {
         name: FValue::BuildIn(op),
         args: vec![a, b]
-    })
+    }),
 
+    #[precedence(level="3")] #[assoc(side="left")]
+    <a:Value> <op:AddOp> <b:Value> => Value::FuncCall(FunctionCall {
+        name: FValue::BuildIn(op),
+        args: vec![a, b]
+    }),
+
+    #[precedence(level="4")] #[assoc(side="left")]
+    <a:Value> <op:LogicalOp> <b:Value> => Value::FuncCall(FunctionCall {
+        name: FValue::BuildIn(op),
+        args: vec![a, b]
+    }),
 };
 
-Op: BuildIn = {
-    "-" => BuildIn::Sub,
-    "+" => BuildIn::Add,
+// Define operator groups for each precedence level
+MulOp: BuildIn = {
     "*" => BuildIn::Mul,
     "/" => BuildIn::Div,
     "//" => BuildIn::IntDiv,
     "%" => BuildIn::Modulo,
-    "**" => BuildIn::Pow,
+    "**" => BuildIn::Pow, // Exponentiation
+};
+
+AddOp: BuildIn = {
+    "+" => BuildIn::Add,
+    "-" => BuildIn::Sub,
+};
+
+LogicalOp: BuildIn = {
     "==" => BuildIn::Equal,
     "<" => BuildIn::Smaller,
     ">" => BuildIn::Bigger,
@@ -203,7 +236,7 @@ Op: BuildIn = {
     "^^" => BuildIn::DoubleXor,
     "|" => BuildIn::Or,
     "^" => BuildIn::Xor,
-    "|>" => BuildIn::Pipe,
+    //"|>" => BuildIn::Pipe, // Esoteric
 };
 
 

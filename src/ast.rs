@@ -2,44 +2,44 @@ use std::collections::HashMap;
 
 //names are represented as a usize which is a key into our table names
 
-#[derive(Debug)]
+#[derive(Debug,PartialEq)]
 pub enum Statment {
     Assign(usize,Value),
     Call(FunctionCall),
 }
 
 
-#[derive(Debug)]
+#[derive(Debug,PartialEq)]
 pub struct FuncDec {
     pub sig: FuncSig,
     pub body: FuncBlock,
 }
 
-#[derive(Debug)]
+#[derive(Debug,PartialEq)]
 pub struct FuncSig {
     pub name: usize,     // Function name ID from the StringTable
     pub args: Vec<usize>, // names of args
 }
 
-#[derive(Debug)]
+#[derive(Debug,PartialEq)]
 pub struct FuncBlock{
     pub body: Vec<Statment>, 
     pub ret: Option<Value>,
 }
 
-#[derive(Debug)]
+#[derive(Debug,PartialEq)]
 pub struct Lammda {
     pub sig: Vec<usize>,
     pub body: FuncBlock,
 }
 
-#[derive(Debug)]
+#[derive(Debug,PartialEq)]
 pub struct FunctionCall {
     pub name: FValue,     //
     pub args: Vec<Value> // Arguments to the function call
 }
 
-#[derive(Debug)]
+#[derive(Debug,PartialEq)]
 pub enum FValue {
     Name(usize),
     FuncCall(Box<FunctionCall>),
@@ -47,7 +47,31 @@ pub enum FValue {
     BuildIn(BuildIn),
 }
 
-#[derive(Debug)]
+#[derive(Debug,PartialEq)]
+pub enum Value {
+    Int(Result<i64, f64>),
+    Float(f64),
+    Atom(usize),
+    String(usize),
+    Variable(usize),
+    FuncCall(FunctionCall),
+    Lammda(Box<Lammda>),
+    BuildIn(BuildIn),
+}
+
+impl From<FValue> for Value {
+    fn from(fval: FValue) -> Self {
+        match fval {
+            FValue::Name(name) => Value::Variable(name),
+            FValue::FuncCall(func_call) => Value::FuncCall(*func_call),
+            FValue::Lammda(lam) => Value::Lammda(lam),
+            FValue::BuildIn(build_in) => Value::BuildIn(build_in)
+        }
+    }
+}
+
+
+#[derive(Debug,PartialEq)]
 pub enum BuildIn {
     Add,
     Sub,
@@ -73,16 +97,7 @@ pub enum BuildIn {
     DoubleXor,
 }
 
-#[derive(Debug)]
-pub enum Value {
-    Int(Result<i64, f64>),
-    Float(f64),
-    Atom(usize),
-    String(usize),
-    Variable(usize),
-    FuncCall(FunctionCall),
-    Lammda(Box<Lammda>),
-}
+
 
 pub struct StringTable<'input> {
     map: HashMap<&'input str, usize>,

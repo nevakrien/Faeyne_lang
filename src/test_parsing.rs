@@ -341,3 +341,62 @@ fn func_block_empty() {
     assert_eq!(func_block.body.len(), 0);
     assert!(func_block.ret.is_none());
 }
+
+#[test]
+fn test_arithmetic_as_func_call() {
+    let input = "1 + 2 * 3 - 4 / 2";
+    let lexer = Lexer::new(input);
+    let mut table = StringTable::new();
+
+    let parser = parser::ValueParser::new();  // Assuming you have this parser set up
+    let result = parser.parse(input, &mut table, lexer);
+
+    assert!(result.is_ok(), "Failed to parse arithmetic expression");
+
+    let parsed_value = result.unwrap();
+
+    // Check the parsed value is a subtraction `FuncCall`
+    if let Value::FuncCall(subtract_call) = parsed_value {
+        // Handle FValue::Name variant for function names
+        if let FValue::BuildIn(BuildIn::Sub) = subtract_call.name {
+            // Check the left operand is an addition `FuncCall`
+            if let Value::FuncCall(add_call) = &subtract_call.args[0] {
+                if let FValue::BuildIn(BuildIn::Add) = add_call.name {
+                    assert_eq!(add_call.args[0], Value::Int(Ok(1))); // Check the first argument of addition is 1
+
+                    // Check the right operand of addition is multiplication `FuncCall`
+                    if let Value::FuncCall(mul_call) = &add_call.args[1] {
+                        if let FValue::BuildIn(BuildIn::Mul) = mul_call.name {
+                            assert_eq!(mul_call.args[0], Value::Int(Ok(2))); // Multiplication left operand is 2
+                            assert_eq!(mul_call.args[1], Value::Int(Ok(3))); // Multiplication right operand is 3
+                        } else {
+                            panic!("Expected multiplication function");
+                        }
+                    } else {
+                        panic!("Expected multiplication as the right operand of addition");
+                    }
+                } else {
+                    panic!("Expected addition function");
+                }
+            } else {
+                panic!("Expected addition as the left operand of subtraction");
+            }
+
+            // Check the right operand of subtraction is division `FuncCall`
+            if let Value::FuncCall(div_call) = &subtract_call.args[1] {
+                if let FValue::BuildIn(BuildIn::Div) = div_call.name {
+                    assert_eq!(div_call.args[0], Value::Int(Ok(4))); // Division left operand is 4
+                    assert_eq!(div_call.args[1], Value::Int(Ok(2))); // Division right operand is 2
+                } else {
+                    panic!("Expected division function");
+                }
+            } else {
+                panic!("Expected division as the right operand of subtraction");
+            }
+        } else {
+            panic!("Expected subtraction function");
+        }
+    } else {
+        panic!("Expected a function call for arithmetic expression");
+    }
+}
