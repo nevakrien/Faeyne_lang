@@ -9,6 +9,12 @@ pub enum Statment {
 }
 
 #[derive(Debug)]
+pub struct FuncDec {
+    pub sig: FuncSig,
+    pub body: FuncBlock,
+}
+
+#[derive(Debug)]
 pub struct FuncSig {
     pub name: usize,     // Function name ID from the StringTable
     pub args: Vec<usize>, // names of args

@@ -90,8 +90,16 @@ Name: usize = {
 
 
 //functions
+pub FuncDec: FuncDec = {
+    "def" <sig:FuncSig> <body:FuncBlock> => FuncDec {
+        sig,
+        body,
+    }
+};
+
+
 pub FuncSig: FuncSig = {
-    "def" <name:Name> <args:ArgList> => FuncSig{name, args},
+    <name:Name> <args:ArgList> => FuncSig{name, args},
 };
 
 ArgList: Vec<usize> = {
