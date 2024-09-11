@@ -60,6 +60,7 @@ extern {
         "<" => LexTag::Smaller,
         "<=" => LexTag::SmallerEq,
         ">" => LexTag::Bigger,
+        ">=" => LexTag::BiggerEq,
 
         "=>" => LexTag::Arrow,
         "->" => LexTag::SmallArrow,
@@ -131,37 +132,6 @@ CommaSepArgs: Vec<usize> = {
     <arg:Name> => vec![arg]
 };
 
-FValue : FValue = {
-    #[precedence(level="0")]
-    <x:Name> => FValue::Name(x),
-
-    #[precedence(level="1")] #[assoc(side="left")]
-    <x:FuncCall> => FValue::FuncCall(Box::new(x)),
-    <x:Lammda> => FValue::Lammda(Box::new(x)),
-}
-
-pub FuncCall: FunctionCall = {
-    #[precedence(level="0")]
-    <name:FValue> "(" <args:CommaSepValue> ")" => FunctionCall {
-        name: name,
-        args: args
-    },
-    <name:FValue> "(" ")" => FunctionCall {
-        name: name,
-        args: vec![]
-    },
-
-    //#[precedence(level="1")] #[assoc(side="left")]
-    //<a:Value> "|>" <b:FuncCall> => {
-     //   let mut new_args = vec![a];
-      //  new_args.extend(b.args);
-       // FunctionCall {
-        //    name: b.name,
-         //   args: new_args
-        //}
-    //},
-};
-
 CommaSepValue: Vec<Value> = {
     <args:CommaSepValue> "," <arg:Value> => {
         let mut arguments = args;
@@ -171,6 +141,88 @@ CommaSepValue: Vec<Value> = {
     
     <arg:Value> => vec![arg],
 };
+
+FValue : FValue = {
+    #[precedence(level="0")]
+    <x:Name> => FValue::Name(x),
+
+    #[precedence(level="1")] #[assoc(side="left")]
+    <x:FuncCall> => FValue::FuncCall(Box::new(x)),
+    <x:Lammda> => FValue::Lammda(Box::new(x)),
+}
+
+ComplexFValue : FValue = {
+    <x:FuncCall> => FValue::FuncCall(Box::new(x)),
+    <x:Lammda> => FValue::Lammda(Box::new(x)),
+}
+
+BasicFuncCall: FunctionCall = {
+    <name:Name> "(" <args:CommaSepValue> ")" => FunctionCall {
+        name: FValue::Name(name),
+        args: args
+    },
+    <name:Name> "(" ")" => FunctionCall {
+        name: FValue::Name(name),
+        args: vec![]
+    },
+};
+
+pub FuncCall: FunctionCall = {
+    #[precedence(level="0")]
+    <name:ComplexFValue> "(" <args:CommaSepValue> ")" => FunctionCall {
+        name: name,
+        args: args
+    },
+    <name:ComplexFValue> "(" ")" => FunctionCall {
+        name: name,
+        args: vec![]
+    },
+
+    <b:BasicFuncCall> => b,
+
+    #[precedence(level="1")]
+    <p:Pipe> => p,
+};
+
+PipableValue: Value = {
+    // Simple integers can be piped
+    <a:"int"> => Value::Int(a),
+    <a:"float"> => Value::Float(a),
+
+    // Simple names can be piped
+    <a:Name> => Value::Variable(a),
+
+    // Basic function calls can be piped
+    <a:BasicFuncCall> => Value::FuncCall(a),
+};
+
+
+Pipe: FunctionCall = {
+    // Base case: piping between two pipable values
+    #[precedence(level="0")]
+    <a:PipableValue> "|>" <b:BasicFuncCall> => {
+        let mut new_args = vec![a];
+        new_args.extend(b.args);
+        FunctionCall {
+            name: b.name,
+            args: new_args
+        }
+    },
+
+    // Recursive case: piping multiple values
+    #[precedence(level="1")] #[assoc(side="left")]
+    <a:Pipe> "|>" <b:BasicFuncCall> => {
+        let mut new_args = vec![Value::FuncCall(a)];
+        new_args.extend(b.args);
+        FunctionCall {
+            name: b.name,
+            args: new_args
+        }
+    },
+};
+
+
+
 
 //expressions
 // Expressions with different precedence levels

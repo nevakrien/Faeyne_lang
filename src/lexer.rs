@@ -1,5 +1,5 @@
 use crate::reporting::get_subslice_span;
-use nom::bytes::complete::{is_a,is_not,take_till,take_while,take_while1};
+use nom::bytes::complete::{tag,is_not,take_till,take_while,take_while1};
 use nom::combinator::{opt, recognize};
 use nom::branch::alt;
 use nom::multi::{fold_many0,many0_count};
@@ -68,6 +68,7 @@ pub enum LexTag {
     Smaller,
     SmallerEq,
     Bigger,
+    BiggerEq,
 
     Arrow,
     SmallArrow
@@ -78,8 +79,8 @@ type LexResult<'a> = IResult<&'a str, LexTag, ()>;
 
 fn lex_comment<'a>(input: &'a str) -> RawResult<'a>{
     recognize(
-        preceded(is_a("#"), 
-            terminated(take_till(|c| c == '\n'),opt(is_a("\n")))
+        preceded(tag("#"), 
+            terminated(take_till(|c| c == '\n'),opt(tag("\n")))
     ))(input)
 }
 
@@ -121,7 +122,7 @@ fn lex_string<'a>(input: &'a str) -> LexResult<'a> {
     let (input, last) = preceded(
         // Handle either escaped delimiters (like \' or \") or any character except the delimiter
         many0_count(alt((
-            recognize(preceded(is_a("\\"), one_of(d))), // Handles escaped delimiters
+            recognize(preceded(tag("\\"), one_of(d))), // Handles escaped delimiters
             is_not(d),                     // Everything else that's not the delimiter
         ))),
         opt(one_of(d))  // Expect to match the closing delimiter
@@ -146,45 +147,36 @@ fn lex_atom<'a>(input: &'a str) -> LexResult<'a> {
 
 fn lex_operator<'a>(input: &'a str) -> LexResult<'a> {
     let (input, token) = alt((
-        recognize(one_of("(){}[]+.%;,")),
         // Match multi-character operators first
-        recognize(is_a("=>")),
-        recognize(is_a("->")),
-        recognize(is_a("==")),
-        recognize(is_a("!=")),
-        recognize(is_a("<=")),
-        recognize(is_a(">=")),
-        recognize(is_a("&&")),
-        recognize(is_a("||")),
-        recognize(is_a("^^")),
-        recognize(is_a("**")),
-        recognize(is_a("//")),
-        recognize(is_a("|>")),
+        recognize(tag("|>")),
+        recognize(tag("=>")),
+        recognize(tag("->")),
+        recognize(tag("==")),
+        recognize(tag("!=")),
+        recognize(tag("<=")),
+        recognize(tag(">=")),
+        recognize(tag("&&")),
+        recognize(tag("||")),
+        recognize(tag("^^")),
+        recognize(tag("**")),
+        recognize(tag("//")),
+        
         // Then match single-character operators and delimiters
+        recognize(one_of("(){}[]+.%;,")),
         recognize(one_of("-=*<>|^/")),
     ))(input)?;
 
     let op_tag = match token {
-        "+" => LexTag::Plus,
-        "-" => LexTag::Minus,
-        "*" => LexTag::Mul,
-        "/" => LexTag::Div,
-        "//" => LexTag::IntDiv,
-        "%" => LexTag::Modolo,
-        "**" => LexTag::Pow,
-        "^" => LexTag::Xor,
-        "<" => LexTag::Smaller,
-        ">" => LexTag::Bigger,
-        "=" => LexTag::Eq,
-        "|" => LexTag::Or,
         "|>" => LexTag::Pipe,
+        "|" => LexTag::Or,
+
         "&&" => LexTag::DoubleAnd,
         "||" => LexTag::DoubleOr,
         "^^" => LexTag::DoubleXor,
         "==" => LexTag::DoubleEq,
         "!=" => LexTag::NotEq,
         "<=" => LexTag::SmallerEq,
-        ">=" => LexTag::SmallerEq,
+        ">=" => LexTag::BiggerEq, // Bug here: `SmallerEq` should be `BiggerEq`
         "=>" => LexTag::Arrow,
         "->" => LexTag::SmallArrow,
         "(" => LexTag::OpenParen,
@@ -196,11 +188,25 @@ fn lex_operator<'a>(input: &'a str) -> LexResult<'a> {
         "." => LexTag::Dot,
         ";" => LexTag::Ender,
         "," => LexTag::Comma,
+
+        "+" => LexTag::Plus,
+        "-" => LexTag::Minus,
+        "*" => LexTag::Mul,
+        "/" => LexTag::Div,
+        "//" => LexTag::IntDiv,
+        "%" => LexTag::Modolo,
+        "**" => LexTag::Pow,
+        "^" => LexTag::Xor,
+        "<" => LexTag::Smaller,
+        ">" => LexTag::Bigger,
+        "=" => LexTag::Eq,
+
         _ => LexTag::Unknowen, //impossible but just in case
     };
 
     Ok((input, op_tag))
 }
+
 
 
 
@@ -232,7 +238,7 @@ fn lex_digits<'a>(input: &'a str) -> IResult<&'a str, Result<i64, f64>, ()> {
 
     // Handle additional groups of digits after underscores (if any)
     let (input, _) = fold_many0(
-        preceded(is_a("_"), digit1),
+        preceded(tag("_"), digit1),
         || (),
         |_, digits: &str| {
             // Try to handle as i64, else convert the entire number to f64
@@ -266,7 +272,7 @@ fn to_float(res : Result<i64, f64>) -> f64 {
 
 fn lex_number<'a>(input: &'a str) -> LexResult<'a> {
     fn dot<'a>(input: &'a str) -> RawResult<'a> {
-        is_a(".")(input)
+        tag(".")(input)
     }
 
     let (input, n) = lex_digits(input)?;
@@ -512,7 +518,7 @@ fn test_lex_operator_with_equals() {
         LexTag::Eq,         // =
         LexTag::DoubleEq,   // ==
         LexTag::SmallArrow, // ->
-        LexTag::SmallerEq,  // >=
+        LexTag::BiggerEq,  // >=
     ];
 
     for expected_tag in tokens {
@@ -553,7 +559,7 @@ fn test_lex_operators_keywords_strings_with_comments_and_newlines() {
         LexTag::DoubleEq,   // ==
         LexTag::NotEq,   // !=
         LexTag::SmallerEq,  // <=
-        LexTag::SmallerEq,  // >=
+        LexTag::BiggerEq,  // >=
         LexTag::Arrow,      // =>
         LexTag::SmallArrow, // ->
         LexTag::OpenParen,  // (
@@ -584,7 +590,7 @@ fn test_lex_operators_with_comments_newlines() {
     let source = r#"
         + - * / # Comment here
         // % ** ^ # Another comment
-        == != <= >= => -> () {} [] ,
+        == != <= >= => -> |> () {} [] ,
         "#;
 
     let mut lexer = Lexer::new(source);
@@ -601,9 +607,10 @@ fn test_lex_operators_with_comments_newlines() {
         LexTag::DoubleEq,   // ==
         LexTag::NotEq,   // !=
         LexTag::SmallerEq,  // <=
-        LexTag::SmallerEq,  // >=
+        LexTag::BiggerEq,  // >=
         LexTag::Arrow,      // =>
         LexTag::SmallArrow, // ->
+        LexTag::Pipe, // |>
         LexTag::OpenParen,  // (
         LexTag::CloseParen, // )
         LexTag::OpenCurly,  // {

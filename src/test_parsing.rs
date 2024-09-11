@@ -400,3 +400,44 @@ fn test_arithmetic_as_func_call() {
         panic!("Expected a function call for arithmetic expression");
     }
 }
+
+#[test]
+fn test_basic_piping() {
+    let input = "a() |> b() |> c()";
+    let lexer = Lexer::new(input);
+    let mut table = StringTable::new();
+
+    let parser = parser::FuncCallParser::new();  // Assuming you have this parser set up for function calls
+    let result = parser.parse(input, &mut table, lexer);
+
+    let pipe_call = result.unwrap();
+
+    // Check the last function called in the chain is `c()`
+    if let FValue::Name(c_name) = pipe_call.name {
+        assert_eq!(table.get_string(c_name).unwrap(), "c");
+
+        // Check the argument to `c()` is a `FuncCall` for `b()`
+        if let Value::FuncCall(b_call) = &pipe_call.args[0] {
+            if let FValue::Name(b_name) = b_call.name {
+                assert_eq!(table.get_string(b_name).unwrap(), "b");
+
+                // Check the argument to `b()` is a `FuncCall` for `a()`
+                if let Value::FuncCall(a_call) = &b_call.args[0] {
+                    if let FValue::Name(a_name) = a_call.name {
+                        assert_eq!(table.get_string(a_name).unwrap(), "a");
+                    } else {
+                        panic!("Expected function name 'a'");
+                    }
+                } else {
+                    panic!("Expected 'a()' as the argument to 'b()'");
+                }
+            } else {
+                panic!("Expected function name 'b'");
+            }
+        } else {
+            panic!("Expected 'b()' as the argument to 'c()'");
+        }
+    } else {
+        panic!("Expected function name 'c'");
+    }
+}
