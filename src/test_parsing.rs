@@ -108,7 +108,7 @@ fn function_calls_and_expressions() {
 
 #[test]
 fn nested_calls() {
-    let input = "system(:println)('hello world')";
+    let input = "system(:println)(format('hello world'))";
     
     let lexer = Lexer::new(input);
     let mut table = StringTable::new();
