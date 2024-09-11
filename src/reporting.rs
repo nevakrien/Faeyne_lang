@@ -29,7 +29,7 @@ fn test_subslice_span_and_diagnostic_reporting() {
 
     // Use codespan to map byte indices to line/column information
     use codespan_reporting::diagnostic::{Diagnostic, Label};
-    use codespan_reporting::term::{self, termcolor::{ColorChoice, Buffer, WriteColor}};
+    use codespan_reporting::term::{self, termcolor::{Buffer}};
     use codespan_reporting::files::SimpleFiles;
 
     let mut files = SimpleFiles::new();

@@ -131,7 +131,7 @@ fn lex_string<'a>(input: &'a str) -> LexResult<'a> {
 }
 
 fn lex_atom<'a>(input: &'a str) -> LexResult<'a> {
-    let (input, ans) = recognize(preceded(
+    let (input, _ans) = recognize(preceded(
         one_of("%:"),
         pair(
             take_while1(|c: char| c.is_alphabetic() || c == '_'),
@@ -370,6 +370,7 @@ impl<'input> Iterator for Lexer<'input> {
 }
 
 #[test]
+#[allow(unused_variables)]
 fn test_lexer_end_to_end() {
     let source = r#"
         def my_function() {
@@ -383,8 +384,8 @@ fn test_lexer_end_to_end() {
 
     let mut lexer = Lexer::new(source);
 
-    // Expected lexemes
-    let expected_lexemes = vec![
+    // Expected _lexemes
+    let _expected_lexemes = vec![
         "def", "my_function", "(", ")", "{", "let", "x", "=", "123_456", ";",
         "let", "y", "=", "99999999999999999999", ";", "let", "z", "=", "3.14159", ";",
         "let", "a", "=", "fn", "lambda", "=>", "x", "+", "y", "*", "z", ";", 
@@ -402,15 +403,15 @@ fn test_lexer_end_to_end() {
         LexTag::Name, LexTag::Name, LexTag::Ender, LexTag::CloseCurly
     ];
 
-    for (expected_tag, expected_lexeme) in expected_tags.iter().zip(expected_lexemes.iter()) {
+    for (expected_tag, _expected_lexemes) in expected_tags.iter().zip(_expected_lexemes.iter()) {
         let (start, tag, end) = lexer.next().unwrap().unwrap();
-        let lexeme = &source[start..end];
+        let _lexeme = &source[start..end];
 
-        println!("Token: {:?}, Lexeme: '{}'", tag, lexeme);
+        // println!("Token: {:?}, _lexeme: '{}'", tag, _lexeme);
 
-        // Compare the token and lexeme
+        // Compare the token and _lexeme
         assert!(matches!(tag, expected_tag));
-        assert_eq!(&lexeme, expected_lexeme);
+        assert_eq!(&_lexeme, _expected_lexemes);
     }
 
     // Ensure no more tokens are left
@@ -438,8 +439,8 @@ fn test_lex_operator_with_delimiters() {
 
     for expected_tag in tokens {
         let (start, tag, end) = lexer.next().unwrap().unwrap();
-        let lexeme = &source[start..end];
-        println!("Token: {:?}, Lexeme: '{}'", tag, lexeme);
+        let _lexeme = &source[start..end];
+        // println!("Token: {:?}, _lexeme: '{}'", tag, _lexeme);
         assert_eq!(tag, expected_tag);
     }
 
@@ -466,8 +467,8 @@ fn test_lex_simple_input() {
 
     for expected_tag in tokens {
         let (start, tag, end) = lexer.next().unwrap().unwrap();
-        let lexeme = &source[start..end];
-        println!("Token: {:?}, Lexeme: '{}'", tag, lexeme);
+        let _lexeme = &source[start..end];
+        // println!("Token: {:?}, _lexeme: '{}'", tag, _lexeme);
         assert_eq!(tag, expected_tag);
     }
 
@@ -490,8 +491,8 @@ fn test_lex_string_and_operators() {
 
     for expected_tag in tokens {
         let (start, tag, end) = lexer.next().unwrap().unwrap();
-        let lexeme = &source[start..end];
-        println!("Token: {:?}, Lexeme: '{}'", tag, lexeme);
+        let _lexeme = &source[start..end];
+        // println!("Token: {:?}, _lexeme: '{}'", tag, _lexeme);
         assert_eq!(tag, expected_tag);
     }
 
@@ -512,8 +513,8 @@ fn test_lex_operator_with_equals() {
 
     for expected_tag in tokens {
         let (start, tag, end) = lexer.next().unwrap().unwrap();
-        let lexeme = &source[start..end];
-        println!("Token: {:?}, Lexeme: '{}'", tag, lexeme);
+        let _lexeme = &source[start..end];
+        // println!("Token: {:?}, _lexeme: '{}'", tag, _lexeme);
         assert_eq!(tag, expected_tag);
     }
 
@@ -566,8 +567,8 @@ fn test_lex_operators_keywords_strings_with_comments_and_newlines() {
 
     for expected_tag in tokens {
         let (start, tag, end) = lexer.next().unwrap().unwrap();
-        let lexeme = &source[start..end];
-        println!("Token: {:?}, Lexeme: '{}'", tag, lexeme);
+        let _lexeme = &source[start..end];
+        //println!("Token: {:?}, _lexeme: '{}'", tag, _lexeme);
         assert_eq!(tag, expected_tag);
     }
 
@@ -610,8 +611,8 @@ fn test_lex_operators_with_comments_newlines() {
 
     for expected_tag in tokens {
         let (start, tag, end) = lexer.next().unwrap().unwrap();
-        let lexeme = &source[start..end];
-        println!("Token: {:?}, Lexeme: '{}'", tag, lexeme);
+        let _lexeme = &source[start..end];
+        //println!("Token: {:?}, _lexeme: '{}'", tag, _lexeme);
         assert_eq!(tag, expected_tag);
     }
 
@@ -638,8 +639,8 @@ fn test_lex_keywords_and_strings() {
 
     for expected_tag in tokens {
         let (start, tag, end) = lexer.next().unwrap().unwrap();
-        let lexeme = &source[start..end];
-        println!("Token: {:?}, Lexeme: '{}'", tag, lexeme);
+        let _lexeme = &source[start..end];
+        //println!("Token: {:?}, _lexeme: '{}'", tag, _lexeme);
         assert_eq!(tag, expected_tag);
     }
 
@@ -649,12 +650,12 @@ fn test_lex_keywords_and_strings() {
 #[test]
 fn test_simple_digits() {
     let input = "1_234_567";
-    let (remaining, result) = lex_digits(input).unwrap();
+    let (remaining, _result) = lex_digits(input).unwrap();
 
-    match result {
-        Ok(i) => println!("Parsed i64: {}", i),
-        Err(f) => println!("Parsed f64 due to overflow: {}", f),
-    }
+    // match result {
+    //     Ok(i) => println!("Parsed i64: {}", i),
+    //     Err(f) => println!("Parsed f64 due to overflow: {}", f),
+    // }
     assert_eq!(remaining, ""); // Should consume the entire input
 }
 
@@ -666,7 +667,7 @@ fn test_overflow_numbers() {
     assert_eq!(remaining, "");
     match result {
         Ok(_) => panic!("Expected overflow but got i64"),
-        Err(f) => println!("Parsed f64 due to overflow: {}", f),
+        Err(_f) => {/*println!("Parsed f64 due to overflow: {}", f)*/},
     }
 
     // Numbers with underscores causing overflow
@@ -675,7 +676,7 @@ fn test_overflow_numbers() {
     assert_eq!(remaining, "");
     match result {
         Ok(_) => panic!("Expected overflow but got i64"),
-        Err(f) => println!("Parsed f64 due to overflow: {}", f),
+        Err(_f) => {/*println!("Parsed f64 due to overflow: {}", f)*/},
     }
 }
 

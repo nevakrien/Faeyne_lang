@@ -1,5 +1,6 @@
-use Faeyne_lang::lexer::Lexer;
-use Faeyne_lang::parser;
+use faeyne_lang::lexer::Lexer;
+use faeyne_lang::parser;
+use faeyne_lang::ast::StringTable;
 
 #[test]
 fn integration_test() {
@@ -14,9 +15,11 @@ fn integration_test() {
     "#;
 
     let lexer = Lexer::new(input);
+    let mut table = StringTable::new();
+
     let parser = parser::StringListParser::new();
     // Feed lexer tokens into parser
-    let result = parser.parse(input,lexer);
+    let result = parser.parse(input,&mut table,lexer);
 
     println!("input '''{}'''", input);
     match result {

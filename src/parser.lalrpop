@@ -1,39 +1,129 @@
-use crate::lexer::{LexTag};
-grammar<'input>(input: &'input str);
+use crate::lexer::LexTag;
+use crate::ast::StringTable;
+
+grammar<'input>(input: &'input str, table: &mut StringTable<'input>);
 
 extern {
     type Location = usize;
     type Error = ();
 
+    // Enum definitions with lexer output for basic tokens
     enum LexTag {
-        "name" => LexTag::Name,
-        "atom" => LexTag::Atom,
-        "string" => LexTag::String,
-        "pstr" => LexTag::PoisonString,
+        "pre_name" => LexTag::Name,
+        "pre_atom" => LexTag::Atom,
+        "pre_string" => LexTag::String,
+        "pre_poison_str" => LexTag::PoisonString,
         "UK" => LexTag::Unknowen,
+
+        // Keywords
+        "import" => LexTag::Import,
+        "func" => LexTag::FuncDec,
+        "lambda" => LexTag::Lambda,
+
+        // Numbers
+        "float" => LexTag::Float(<f64>),
+        "int" => LexTag::Int(<Result<i64,f64>>),
+
+        // Operators and others
+        "." => LexTag::Dot,
+        ";" => LexTag::Ender,
+        "," => LexTag::Comma,
+
+        "(" => LexTag::OpenParen,
+        ")" => LexTag::CloseParen,
+        "{" => LexTag::OpenCurly,
+        "}" => LexTag::CloseCurly,
+        "[" => LexTag::OpenSquare,
+        "]" => LexTag::CloseSquare,
+        "|" => LexTag::Pipe,
+
+        "+" => LexTag::Plus,
+        "-" => LexTag::Minus,
+        "*" => LexTag::Mul,
+        "/" => LexTag::Div,
+        "div" => LexTag::IntDiv,
+        "**" => LexTag::Pow,
+
+        "%" => LexTag::Modolo,
+        "&&" => LexTag::DoubleAnd,
+        "||" => LexTag::DoubleOr,
+        "^^" => LexTag::DoubleXor,
+
+        "=" => LexTag::Eq,
+        "==" => LexTag::DoubleEq,
+
+        "<" => LexTag::Smaller,
+        "<=" => LexTag::SmallerEq,
+        ">" => LexTag::Bigger,
+
+        "->" => LexTag::Arrow,
+        "=>" => LexTag::SmallArrow,
     }
 }
 
-// Main rule to collect adjacent strings into a Vec<&'input str>
-pub StringList: Vec<&'input str> = {
-    // First case: handle the rest (add_on) first and prepend the current string
-    <add_on:StringList> <current_start: @L> "string" <current_end: @R>  => {
-        // First, handle the rest of the list
-        let mut strings = add_on; // Start with the rest (add_on)
+// Rule for Atom, returns the ID from the table
+pub Atom: usize = {
+    <start: @L> "pre_atom" <end: @R> => {
+        table.get_id(&input[start..end])
+    }
+};
 
-        // Prepend the current string
-        strings.push(&input[current_start as usize..current_end as usize]);
+// Rule for String, returns the ID from the table
+pub String: usize = {
+    <start: @L> "pre_string" <end: @R> => {
+        table.get_id(&input[start..end])
+    }
+};
+
+// Rule for String, returns the ID from the table
+pub PoisonString: usize = {
+    <start: @L> "pre_poison_str" <end: @R> => {
+        table.get_id(&input[start..end])
+    }
+};
+
+// Rule for Name, returns the ID from the table
+pub Name: usize = {
+    <start: @L> "pre_name" <end: @R> => {
+        table.get_id(&input[start..end])
+    }
+};
+
+// Main rule to collect adjacent tokens into a list of strings
+pub StringList: Vec<&'input str> = {
+    <add_on: StringList> <x:String> => {
+        // Get the string associated with the ID from the table
+        let string = table.get_string(x).unwrap();
+        let mut strings = add_on;
+        strings.push(string);
         strings
     },
 
-    // Second case: single string as the base case
-    <current_start: @L> "string" <current_end: @R> => {
-        let strings = vec![
-            "THIS IS A STRING LIST", // Start with this string
-            &input[current_start as usize..current_end as usize], // Add the current string
-        ];
-
+    <add_on: StringList> <x:Name> => {
+        let name = table.get_string(x).unwrap();
+        let mut strings = add_on;
+        strings.push(name);
         strings
+    },
+
+    <add_on: StringList> <x:Atom> => {
+        let atom = table.get_string(x).unwrap();
+        let mut strings = add_on;
+        strings.push(atom);
+        strings
+    },
+
+    // Base case for a single token
+    <x:String> => {
+        vec![table.get_string(x).unwrap()]
+    },
+
+    <x:Name> => {
+        vec![table.get_string(x).unwrap()]
+    },
+
+    <x:Atom> => {
+        vec![table.get_string(x).unwrap()]
     },
 
     ! => {
