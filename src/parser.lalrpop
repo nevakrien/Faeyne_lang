@@ -1,5 +1,5 @@
 use crate::lexer::LexTag;
-use crate::ast::StringTable;
+use crate::ast::{StringTable,Value};
 
 grammar<'input>(input: &'input str, table: &mut StringTable<'input>);
 
@@ -17,8 +17,8 @@ extern {
 
         // Keywords
         "import" => LexTag::Import,
-        "func" => LexTag::FuncDec,
-        "lambda" => LexTag::Lambda,
+        "def" => LexTag::FuncDec,
+        "fn" => LexTag::Lambda,
 
         // Numbers
         "float" => LexTag::Float(<f64>),
@@ -61,72 +61,79 @@ extern {
     }
 }
 
-// Rule for Atom, returns the ID from the table
 pub Atom: usize = {
     <start: @L> "pre_atom" <end: @R> => {
         table.get_id(&input[start..end])
     }
 };
 
-// Rule for String, returns the ID from the table
 pub String: usize = {
     <start: @L> "pre_string" <end: @R> => {
         table.get_id(&input[start..end])
     }
 };
 
-// Rule for String, returns the ID from the table
 pub PoisonString: usize = {
     <start: @L> "pre_poison_str" <end: @R> => {
         table.get_id(&input[start..end])
     }
 };
 
-// Rule for Name, returns the ID from the table
 pub Name: usize = {
     <start: @L> "pre_name" <end: @R> => {
         table.get_id(&input[start..end])
     }
 };
 
-// Main rule to collect adjacent tokens into a list of strings
-pub StringList: Vec<&'input str> = {
-    <add_on: StringList> <x:String> => {
-        // Get the string associated with the ID from the table
-        let string = table.get_string(x).unwrap();
-        let mut strings = add_on;
-        strings.push(string);
-        strings
-    },
+// Rule to parse a function declaration with arguments
+pub FuncDec: (usize, Vec<usize>) = {
+    "def" <name:Name> <args:ArgList> => (name, args),
+};
 
-    <add_on: StringList> <x:Name> => {
-        let name = table.get_string(x).unwrap();
-        let mut strings = add_on;
-        strings.push(name);
-        strings
-    },
 
-    <add_on: StringList> <x:Atom> => {
-        let atom = table.get_string(x).unwrap();
-        let mut strings = add_on;
-        strings.push(atom);
-        strings
-    },
+//Function arguments
+ArgList: Vec<usize> = {
+    // Multiple arguments separated by commas
+    "(" <args:CommaSepArgs> ")" => args,
 
-    // Base case for a single token
-    <x:String> => {
-        vec![table.get_string(x).unwrap()]
-    },
+    // No arguments
+    "(" ")" => vec![],
+};
 
-    <x:Name> => {
-        vec![table.get_string(x).unwrap()]
+CommaSepArgs: Vec<usize> = {
+    // Base case: multiple arguments
+    <args:CommaSepArgs> "," <arg:Name> => {
+        let mut arguments = args;
+        arguments.push(arg);
+        arguments
     },
+    
+    // Single argument
+    <arg:Name> => vec![arg]
+};
 
-    <x:Atom> => {
-        vec![table.get_string(x).unwrap()]
-    },
+// Rule for parsing a value
+pub Value: Value = {
+    <x:Name> => Value::Variable(x),
+    <x:FuncCall> => x,
+    <x:"int"> => Value::Int(x),
+    <x:"float"> => Value::Float(x),
+};
 
-    ! => {
-        vec!["ERROR RECOVERY MODE"]
+pub FuncCall: Value = {
+    <name:Name> "(" <args:CommaSepValue> ")" => Value::FuncCall {
+        name: name,
+        args: args
     }
+};
+
+// Rule for comma-separated values (function arguments)
+pub CommaSepValue: Vec<Value> = {
+    <args:CommaSepValue> "," <arg:Value> => {
+        let mut arguments = args;
+        arguments.push(arg);
+        arguments
+    },
+    
+    <arg:Value> => vec![arg],
 };
