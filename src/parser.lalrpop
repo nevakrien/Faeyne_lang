@@ -1,5 +1,5 @@
 use crate::lexer::LexTag;
-use crate::ast::{StringTable,Value};
+use crate::ast::{StringTable,Value,FunctionCall,FuncDec};
 
 grammar<'input>(input: &'input str, table: &mut StringTable<'input>);
 
@@ -61,33 +61,32 @@ extern {
     }
 }
 
-pub Atom: usize = {
+Atom: usize = {
     <start: @L> "pre_atom" <end: @R> => {
         table.get_id(&input[start..end])
     }
 };
 
-pub String: usize = {
+String: usize = {
     <start: @L> "pre_string" <end: @R> => {
         table.get_id(&input[start..end])
     }
 };
 
-pub PoisonString: usize = {
+PoisonString: usize = {
     <start: @L> "pre_poison_str" <end: @R> => {
         table.get_id(&input[start..end])
     }
 };
 
-pub Name: usize = {
+Name: usize = {
     <start: @L> "pre_name" <end: @R> => {
         table.get_id(&input[start..end])
     }
 };
 
-// Rule to parse a function declaration with arguments
-pub FuncDec: (usize, Vec<usize>) = {
-    "def" <name:Name> <args:ArgList> => (name, args),
+pub FuncDec: FuncDec = {
+    "def" <name:Name> <args:ArgList> => FuncDec{name, args},
 };
 
 
@@ -112,23 +111,21 @@ CommaSepArgs: Vec<usize> = {
     <arg:Name> => vec![arg]
 };
 
-// Rule for parsing a value
 pub Value: Value = {
     <x:Name> => Value::Variable(x),
-    <x:FuncCall> => x,
+    <x:FuncCall> => Value::FuncCall(x),
     <x:"int"> => Value::Int(x),
     <x:"float"> => Value::Float(x),
 };
 
-pub FuncCall: Value = {
-    <name:Name> "(" <args:CommaSepValue> ")" => Value::FuncCall {
+pub FuncCall: FunctionCall = {
+    <name:Name> "(" <args:CommaSepValue> ")" => FunctionCall {
         name: name,
         args: args
     }
 };
 
-// Rule for comma-separated values (function arguments)
-pub CommaSepValue: Vec<Value> = {
+CommaSepValue: Vec<Value> = {
     <args:CommaSepValue> "," <arg:Value> => {
         let mut arguments = args;
         arguments.push(arg);

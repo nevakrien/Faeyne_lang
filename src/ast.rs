@@ -1,17 +1,27 @@
 use std::collections::HashMap;
 
-// Define an enum to represent different types of values
+
 #[derive(Debug)]
-pub enum Value {
-    Int(Result<i64,f64>),
-    Float(f64),
-    Variable(usize), // Variable is represented by its ID in the StringTable
-    FuncCall {
-        name: usize,     // Function name ID
-        args: Vec<Value> // Arguments to the function
-    }
+pub struct FuncDec {
+    pub name: usize,     // Function name ID from the StringTable
+    pub args: Vec<usize> // names of args
 }
 
+
+#[derive(Debug)]
+pub struct FunctionCall {
+    pub name: usize,     // Function name ID from the StringTable
+    pub args: Vec<Value> // Arguments to the function call
+}
+
+
+#[derive(Debug)]
+pub enum Value {
+    Int(Result<i64, f64>),
+    Float(f64),
+    Variable(usize),  // Variable is represented by its ID in the StringTable
+    FuncCall(FunctionCall),
+}
 
 pub struct StringTable<'input> {
     map: HashMap<&'input str, usize>,
