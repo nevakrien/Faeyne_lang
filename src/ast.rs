@@ -43,7 +43,34 @@ pub struct FunctionCall {
 pub enum FValue {
     Name(usize),
     FuncCall(Box<FunctionCall>),
-    Lammda(Box<Lammda>)
+    Lammda(Box<Lammda>),
+    BuildIn(BuildIn),
+}
+
+#[derive(Debug)]
+pub enum BuildIn {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    IntDiv,
+    Modulo,
+    Pow,
+
+    Equal,
+    NotEqual,
+    Smaller,
+    Bigger,
+    SmallerEq,
+
+    Pipe,
+
+    Or,
+    Xor,
+
+    DoubleAnd,
+    DoubleOr,
+    DoubleXor,
 }
 
 #[derive(Debug)]

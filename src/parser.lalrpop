@@ -9,10 +9,10 @@ extern {
 
     // Enum definitions with lexer output for basic tokens
     enum LexTag {
-        "pre_name" => LexTag::Name,
-        "pre_atom" => LexTag::Atom,
-        "pre_string" => LexTag::String,
-        "pre_poison_str" => LexTag::PoisonString,
+        "name" => LexTag::Name,
+        "atom" => LexTag::Atom,
+        "string" => LexTag::String,
+        "poison_str" => LexTag::PoisonString,
         "UK" => LexTag::Unknowen,
 
         // Keywords
@@ -36,13 +36,13 @@ extern {
         "}" => LexTag::CloseCurly,
         "[" => LexTag::OpenSquare,
         "]" => LexTag::CloseSquare,
-        "|" => LexTag::Pipe,
+        "|>" => LexTag::Pipe,
 
         "+" => LexTag::Plus,
         "-" => LexTag::Minus,
         "*" => LexTag::Mul,
         "/" => LexTag::Div,
-        "div" => LexTag::IntDiv,
+        "//" => LexTag::IntDiv,
         "**" => LexTag::Pow,
 
         "%" => LexTag::Modolo,
@@ -50,8 +50,12 @@ extern {
         "||" => LexTag::DoubleOr,
         "^^" => LexTag::DoubleXor,
 
+        "|" => LexTag::Or,
+        "^" => LexTag::Xor,
+
         "=" => LexTag::Eq,
         "==" => LexTag::DoubleEq,
+        "!=" => LexTag::NotEq,
 
         "<" => LexTag::Smaller,
         "<=" => LexTag::SmallerEq,
@@ -65,29 +69,28 @@ extern {
 //basic types:
 
 Atom: usize = {
-    <start: @L> "pre_atom" <end: @R> => {
+    <start: @L> "atom" <end: @R> => {
         table.get_id(&input[start..end])
     }
 };
 
 String: usize = {
-    <start: @L> "pre_string" <end: @R> => {
+    <start: @L> "string" <end: @R> => {
         table.get_id(&input[start..end])
     }
 };
 
 PoisonString: usize = {
-    <start: @L> "pre_poison_str" <end: @R> => {
+    <start: @L> "poison_str" <end: @R> => {
         table.get_id(&input[start..end])
     }
 };
 
 Name: usize = {
-    <start: @L> "pre_name" <end: @R> => {
+    <start: @L> "name" <end: @R> => {
         table.get_id(&input[start..end])
     }
 };
-
 
 //functions
 Lammda: Lammda = {
@@ -142,7 +145,7 @@ pub FuncCall: FunctionCall = {
     <name:FValue> "(" ")" => FunctionCall {
         name: name,
         args: vec![]
-    }
+    },
 };
 
 CommaSepValue: Vec<Value> = {
@@ -157,14 +160,50 @@ CommaSepValue: Vec<Value> = {
 
 //expressions
 pub Value: Value = {
+    
+    #[precedence(level="0")]
     <x:Name> => Value::Variable(x),
     <x:Lammda> => Value::Lammda(Box::new(x)),
     <x:FuncCall> => Value::FuncCall(x),
+    
+    <x:Atom> => Value::Atom(x),
+    <x:String> => Value::String(x),
+
     <x:"int"> => Value::Int(x),
     <x:"float"> => Value::Float(x),
 
-    <x:Atom> => Value::Atom(x),
-    <x:String> => Value::String(x),
+    "-" <x:"int"> => Value::Int(match x {
+        Ok(i) => Ok(-i),
+        Err(f) => Err(-f),
+    }),
+    "-" <x:"float"> => Value::Float(x),
+
+    #[precedence(level="1")] #[assoc(side="left")]
+    <a:Value> <op:Op> <b:Value> => Value::FuncCall(FunctionCall {
+        name: FValue::BuildIn(op),
+        args: vec![a, b]
+    })
+
+};
+
+Op: BuildIn = {
+    "-" => BuildIn::Sub,
+    "+" => BuildIn::Add,
+    "*" => BuildIn::Mul,
+    "/" => BuildIn::Div,
+    "//" => BuildIn::IntDiv,
+    "%" => BuildIn::Modulo,
+    "**" => BuildIn::Pow,
+    "==" => BuildIn::Equal,
+    "<" => BuildIn::Smaller,
+    ">" => BuildIn::Bigger,
+    "<=" => BuildIn::SmallerEq,
+    "&&" => BuildIn::DoubleAnd,
+    "||" => BuildIn::DoubleOr,
+    "^^" => BuildIn::DoubleXor,
+    "|" => BuildIn::Or,
+    "^" => BuildIn::Xor,
+    "|>" => BuildIn::Pipe,
 };
 
 

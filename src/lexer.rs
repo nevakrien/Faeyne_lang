@@ -59,6 +59,7 @@ pub enum LexTag {
 
     Eq,
     DoubleEq,
+    NotEq,
     
     And,
     Or,
@@ -181,7 +182,7 @@ fn lex_operator<'a>(input: &'a str) -> LexResult<'a> {
         "||" => LexTag::DoubleOr,
         "^^" => LexTag::DoubleXor,
         "==" => LexTag::DoubleEq,
-        "!=" => LexTag::DoubleEq,
+        "!=" => LexTag::NotEq,
         "<=" => LexTag::SmallerEq,
         ">=" => LexTag::SmallerEq,
         "=>" => LexTag::Arrow,
@@ -550,7 +551,7 @@ fn test_lex_operators_keywords_strings_with_comments_and_newlines() {
         LexTag::Pow,        // **
         LexTag::Xor,        // ^
         LexTag::DoubleEq,   // ==
-        LexTag::DoubleEq,   // !=
+        LexTag::NotEq,   // !=
         LexTag::SmallerEq,  // <=
         LexTag::SmallerEq,  // >=
         LexTag::Arrow,      // =>
@@ -598,7 +599,7 @@ fn test_lex_operators_with_comments_newlines() {
         LexTag::Pow,        // **
         LexTag::Xor,        // ^
         LexTag::DoubleEq,   // ==
-        LexTag::DoubleEq,   // !=
+        LexTag::NotEq,   // !=
         LexTag::SmallerEq,  // <=
         LexTag::SmallerEq,  // >=
         LexTag::Arrow,      // =>
