@@ -1,5 +1,5 @@
 use crate::lexer::LexTag;
-use crate::ast::{StringTable,Value,FunctionCall,FuncSig,FuncBlock,Statment};
+use crate::ast::*;//{StringTable,Value,FunctionCall,FuncSig,FuncBlock,Statment};
 
 grammar<'input>(input: &'input str, table: &mut StringTable<'input>);
 
@@ -110,12 +110,17 @@ CommaSepArgs: Vec<usize> = {
     <arg:Name> => vec![arg]
 };
 
+FValue : FValue = {
+    <x:Name> => FValue::Name(x),
+    <x:FuncCall> => FValue::FuncCall(Box::new(x)),
+}
+
 pub FuncCall: FunctionCall = {
-    <name:Name> "(" <args:CommaSepValue> ")" => FunctionCall {
+    <name:FValue> "(" <args:CommaSepValue> ")" => FunctionCall {
         name: name,
         args: args
     },
-    <name:Name> "(" ")" => FunctionCall {
+    <name:FValue> "(" ")" => FunctionCall {
         name: name,
         args: vec![]
     }
@@ -137,6 +142,9 @@ pub Value: Value = {
     <x:FuncCall> => Value::FuncCall(x),
     <x:"int"> => Value::Int(x),
     <x:"float"> => Value::Float(x),
+
+    <x:Atom> => Value::Atom(x),
+    <x:String> => Value::String(x),
 };
 
 

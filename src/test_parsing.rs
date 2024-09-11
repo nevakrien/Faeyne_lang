@@ -82,6 +82,10 @@ fn function_calls_and_expressions() {
     
     let value = result.unwrap();
     if let Value::FuncCall (FunctionCall {name, args }) = value {
+        let name = match name {
+            FValue::Name(n) => n,
+            _ => unreachable!()
+        };
         assert_eq!(table.get_string(name).unwrap(), "foo");
         assert_eq!(args.len(), 3);
         
@@ -103,6 +107,19 @@ fn function_calls_and_expressions() {
 }
 
 #[test]
+fn nested_calls() {
+    let input = "system(:println)('hello world')";
+    
+    let lexer = Lexer::new(input);
+    let mut table = StringTable::new();
+    
+    let parser = parser::ValueParser::new();
+    let result = parser.parse(input, &mut table, lexer);
+    
+    assert!(result.is_ok(), "Failed to parse function call with mixed expressions");
+}
+
+#[test]
 fn function_call_no_args() {
     let input = "foo()";
     
@@ -116,6 +133,10 @@ fn function_call_no_args() {
     
     let value = result.unwrap();
     if let Value::FuncCall(FunctionCall { name, args }) = value {
+        let name = match name {
+            FValue::Name(n) => n,
+            _ => unreachable!()
+        };
         assert_eq!(table.get_string(name).unwrap(), "foo");
         assert_eq!(args.len(), 0, "Expected no arguments");
     } else {
@@ -143,7 +164,11 @@ fn func_block_with_statements_and_return() {
     assert_eq!(func_block.body.len(), 2);
     match &func_block.body[1] {
         Statment::Call(fc) => {
-            assert_eq!("s",table.get_string(fc.name).unwrap());
+            let name = match fc.name {
+                FValue::Name(n) => n,
+                _ => unreachable!()
+            };
+            assert_eq!("s",table.get_string(name).unwrap());
         },
         _ => unreachable!()
     };

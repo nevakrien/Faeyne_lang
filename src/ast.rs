@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+//names are represented as a usize which is a key into our table names
+
 #[derive(Debug)]
 pub enum Statment {
     Assign(usize,Value),
@@ -20,16 +22,23 @@ pub struct FuncBlock{
 
 #[derive(Debug)]
 pub struct FunctionCall {
-    pub name: usize,     // Function name ID from the StringTable
+    pub name: FValue,     //
     pub args: Vec<Value> // Arguments to the function call
 }
 
+#[derive(Debug)]
+pub enum FValue {
+    Name(usize),
+    FuncCall(Box<FunctionCall>),
+}
 
 #[derive(Debug)]
 pub enum Value {
     Int(Result<i64, f64>),
     Float(f64),
-    Variable(usize),  // Variable is represented by its ID in the StringTable
+    Atom(usize),
+    String(usize),
+    Variable(usize),
     FuncCall(FunctionCall),
 }
 
