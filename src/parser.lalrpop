@@ -122,6 +122,10 @@ pub FuncCall: FunctionCall = {
     <name:Name> "(" <args:CommaSepValue> ")" => FunctionCall {
         name: name,
         args: args
+    },
+    <name:Name> "(" ")" => FunctionCall {
+        name: name,
+        args: vec![]
     }
 };
 

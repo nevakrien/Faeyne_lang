@@ -5,7 +5,7 @@ use crate::parser;
 use crate::ast::{StringTable,Value,FunctionCall};
 
 #[test]
-fn test_func_dec_single_arg() {
+fn func_dec_single_arg() {
     let input = "def main(system)";
 
     let lexer = Lexer::new(input);
@@ -26,7 +26,7 @@ fn test_func_dec_single_arg() {
 }
 
 #[test]
-fn test_func_dec_multiple_args() {
+fn func_dec_multiple_args() {
     let input = "def foo(bar, baz, qux)";
 
     let lexer = Lexer::new(input);
@@ -49,7 +49,7 @@ fn test_func_dec_multiple_args() {
 }
 
 #[test]
-fn test_func_dec_no_args() {
+fn func_dec_no_args() {
     let input = "def noop()";
 
     let lexer = Lexer::new(input);
@@ -69,7 +69,7 @@ fn test_func_dec_no_args() {
 }
 
 #[test]
-fn test_function_calls_and_expressions() {
+fn function_calls_and_expressions() {
     let input = "foo(1, 2.5, x)";
     
     let lexer = Lexer::new(input);
@@ -97,6 +97,27 @@ fn test_function_calls_and_expressions() {
             Value::Variable(id) => assert_eq!(table.get_string(id).unwrap(), "x"),
             _ => panic!("Expected third argument to be Variable 'x'"),
         }
+    } else {
+        panic!("Expected a function call");
+    }
+}
+
+#[test]
+fn function_call_no_args() {
+    let input = "foo()";
+    
+    let lexer = Lexer::new(input);
+    let mut table = StringTable::new();
+    
+    let parser = parser::ValueParser::new();
+    let result = parser.parse(input, &mut table, lexer);
+    
+    assert!(result.is_ok(), "Failed to parse function call with no arguments");
+    
+    let value = result.unwrap();
+    if let Value::FuncCall(FunctionCall { name, args }) = value {
+        assert_eq!(table.get_string(name).unwrap(), "foo");
+        assert_eq!(args.len(), 0, "Expected no arguments");
     } else {
         panic!("Expected a function call");
     }
