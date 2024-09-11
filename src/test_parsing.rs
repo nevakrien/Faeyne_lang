@@ -441,3 +441,103 @@ fn test_basic_piping() {
         panic!("Expected function name 'c'");
     }
 }
+
+#[test]
+fn test_piping_with_third_order_nesting() {
+    let input = "a(1 + 2) |> b(y, n(m(x))) |> c(3 * 4, z)";
+    let lexer = Lexer::new(input);
+    let mut table = StringTable::new();
+
+    let parser = parser::FuncCallParser::new();
+    let pipe_call = parser.parse(input, &mut table, lexer).unwrap();  // Unwrap to get full error report on failure
+
+    // Check the last function called in the chain is `c()`
+    if let FValue::Name(c_name) = pipe_call.name {
+        assert_eq!(table.get_string(c_name).unwrap(), "c");
+
+        // Check the arguments to `c()` (total 3 arguments, reverse order)
+        assert_eq!(pipe_call.args.len(), 3);
+
+        // Third argument is `z` (as a variable)
+        assert_eq!(pipe_call.args[2], Value::Variable(table.get_id("z")));
+
+        // Second argument is `3 * 4`
+        if let Value::FuncCall(mul_call) = &pipe_call.args[1] {
+            if let FValue::BuildIn(BuildIn::Mul) = mul_call.name {
+                assert_eq!(mul_call.args[0], Value::Int(Ok(3)));
+                assert_eq!(mul_call.args[1], Value::Int(Ok(4)));
+            } else {
+                panic!("Expected multiplication function");
+            }
+        } else {
+            panic!("Expected multiplication as the second argument of `c()`");
+        }
+
+        // First argument is `b(a(1 + 2), y, n(m(x)))` (as a function call)
+        if let Value::FuncCall(b_call) = &pipe_call.args[0] {
+            if let FValue::Name(b_name) = b_call.name {
+                assert_eq!(table.get_string(b_name).unwrap(), "b");
+            } else {
+                panic!("Expected function name 'b'");
+            }
+
+            // Check the arguments to `b()` (total 3 arguments)
+            assert_eq!(b_call.args.len(), 3);
+
+            // First argument to `b()` is `a(1 + 2)` (as a function call)
+            if let Value::FuncCall(a_call) = &b_call.args[0] {
+                if let FValue::Name(a_name) = a_call.name {
+                    assert_eq!(table.get_string(a_name).unwrap(), "a");
+                } else {
+                    panic!("Expected function name 'a'");
+                }
+
+                // Check `a()` has one argument: `1 + 2`
+                if let Value::FuncCall(add_call) = &a_call.args[0] {
+                    if let FValue::BuildIn(BuildIn::Add) = add_call.name {
+                        assert_eq!(add_call.args[0], Value::Int(Ok(1)));
+                        assert_eq!(add_call.args[1], Value::Int(Ok(2)));
+                    } else {
+                        panic!("Expected addition function");
+                    }
+                } else {
+                    panic!("Expected `1 + 2` as the argument to `a()`");
+                }
+            } else {
+                panic!("Expected `a(1 + 2)` as the first argument of `b()`");
+            }
+
+            // Second argument to `b()` is `y` (as a variable)
+            assert_eq!(b_call.args[1], Value::Variable(table.get_id("y")));
+
+            // Third argument to `b()` is `n(m(x))`
+            if let Value::FuncCall(n_call) = &b_call.args[2] {
+                if let FValue::Name(n_name) = n_call.name {
+                    assert_eq!(table.get_string(n_name).unwrap(), "n");
+                } else {
+                    panic!("Expected function name 'n'");
+                }
+
+                // Check `n()` has one argument: `m(x)`
+                if let Value::FuncCall(m_call) = &n_call.args[0] {
+                    if let FValue::Name(m_name) = m_call.name {
+                        assert_eq!(table.get_string(m_name).unwrap(), "m");
+                    } else {
+                        panic!("Expected function name 'm'");
+                    }
+
+                    // Check `m()` has one argument: `x`
+                    assert_eq!(m_call.args[0], Value::Variable(table.get_id("x")));
+                } else {
+                    panic!("Expected `m(x)` as the argument to `n()`");
+                }
+            } else {
+                panic!("Expected `n(m(x))` as the third argument to `b()`");
+            }
+        } else {
+            panic!("Expected `b()` as the first argument of `c()`");
+        }
+    } else {
+        panic!("Expected function name 'c'");
+    }
+}
