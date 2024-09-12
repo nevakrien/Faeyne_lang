@@ -282,7 +282,7 @@ fn func_block_with_statements_and_return() {
         },
         _ => unreachable!()
     };
-    assert!(matches!(func_block.ret.unwrap().get(), Value::Variable(_)));
+    assert!(matches!(func_block.ret, Some(Ret::Imp(Value::Variable(_)))));
 }
 
 #[test]
@@ -320,7 +320,7 @@ fn func_block_only_return() {
 
     // Check empty body and return value
     assert_eq!(func_block.body.len(), 0);
-    assert!(matches!(func_block.ret.unwrap().get(), Value::Variable(_)));
+    assert!(matches!(func_block.ret, Some(Ret::Exp(Value::Variable(_)))));
 }
 
 #[test]

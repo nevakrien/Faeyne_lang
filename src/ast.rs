@@ -36,7 +36,7 @@ pub enum Ret{
 }
 
 impl Ret {
-    pub fn get(&self) -> &Value {
+    pub fn get_value(&self) -> &Value {
         match self {
             Ret::Imp(v) => v,
             Ret::Exp(v) => v,
