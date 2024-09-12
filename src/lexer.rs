@@ -137,7 +137,7 @@ fn lex_string<'a>(input: &'a str) -> LexResult<'a> {
 
 fn lex_atom<'a>(input: &'a str) -> LexResult<'a> {
     let (input, _ans) = recognize(preceded(
-        one_of("%:"),
+        tag(":"),
         pair(
             take_while1(|c: char| c.is_alphabetic() || c == '_'),
             take_while(|c: char| c.is_alphanumeric() || c == '_'),

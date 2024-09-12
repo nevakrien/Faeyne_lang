@@ -256,7 +256,7 @@ PipableValue: Value = {
 };
 
 
-//expressions
+// expressions
 pub Value: Value = {
     #[precedence(level="10")] #[assoc(side="left")]
     <x:FuncCall> => Value::FuncCall(x),
@@ -292,14 +292,21 @@ pub Value: Value = {
         debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
     }),
 
+    // Comparison operators should have higher precedence than logical operators
     #[precedence(level="4")] #[assoc(side="left")]
+    <start:@L> <a:Value> <op:ComparisonOp> <b:Value> <end:@R> => Value::FuncCall(FunctionCall {
+        name: FValue::BuildIn(op),
+        args: vec![a, b],
+        debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
+    }),
+
+    #[precedence(level="5")] #[assoc(side="left")]
     <start:@L> <a:Value> <op:LogicalOp> <b:Value> <end:@R> => Value::FuncCall(FunctionCall {
         name: FValue::BuildIn(op),
         args: vec![a, b],
         debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
     }),
 };
-
 
 // Define operator groups for each precedence level
 MulOp: BuildIn = {
@@ -315,18 +322,25 @@ AddOp: BuildIn = {
     "-" => BuildIn::Sub,
 };
 
-LogicalOp: BuildIn = {
+// Comparison operators (level 4)
+ComparisonOp: BuildIn = {
     "==" => BuildIn::Equal,
+    "!=" => BuildIn::NotEqual,
     "<" => BuildIn::Smaller,
     ">" => BuildIn::Bigger,
     "<=" => BuildIn::SmallerEq,
+    ">=" => BuildIn::BiggerEq,
+};
+
+// Logical operators (level 5)
+LogicalOp: BuildIn = {
     "&&" => BuildIn::DoubleAnd,
     "||" => BuildIn::DoubleOr,
     "^^" => BuildIn::DoubleXor,
     "|" => BuildIn::Or,
     "^" => BuildIn::Xor,
-    //"|>" => BuildIn::Pipe, // Esoteric
 };
+
 
 Statment : Statment = {
     <func:FuncCall> ";" => Statment::Call(func),

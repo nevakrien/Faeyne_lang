@@ -402,6 +402,76 @@ fn test_arithmetic_as_func_call() {
 }
 
 #[test]
+fn test_logical_as_func_call() {
+    let input = "1 == 1 && 2 != 3 || 4 < 5";
+    let lexer = Lexer::new(input);
+    let mut table = StringTable::new();
+
+    let parser = parser::ValueParser::new();  // Assuming you have this parser set up
+    let result = parser.parse(input, &mut table, lexer);
+
+    //assert!(result.is_ok(), "Failed to parse logical expression");
+
+    let parsed_value = result.unwrap();
+    //println!("\n\nparsed:\n\n{:?}\n\n",parsed_value );
+
+    // Check the parsed value is an OR `FuncCall`
+    if let Value::FuncCall(or_call) = parsed_value {
+        if let FValue::BuildIn(BuildIn::DoubleOr) = or_call.name {
+            // Check the left operand is an AND `FuncCall`
+            if let Value::FuncCall(and_call) = &or_call.args[0] {
+                if let FValue::BuildIn(BuildIn::DoubleAnd) = and_call.name {
+                    // Check the left operand of AND is an equality `FuncCall`
+                    if let Value::FuncCall(eq_call) = &and_call.args[0] {
+                        if let FValue::BuildIn(BuildIn::Equal) = eq_call.name {
+                            assert_eq!(eq_call.args[0], Value::Int(Ok(1))); // Equality left operand is 1
+                            assert_eq!(eq_call.args[1], Value::Int(Ok(1))); // Equality right operand is 1
+                        } else {
+                            panic!("Expected equality function");
+                        }
+                    } else {
+                        panic!("Expected equality as the left operand of AND");
+                    }
+
+                    // Check the right operand of AND is a not-equal `FuncCall`
+                    if let Value::FuncCall(neq_call) = &and_call.args[1] {
+                        if let FValue::BuildIn(BuildIn::NotEqual) = neq_call.name {
+                            assert_eq!(neq_call.args[0], Value::Int(Ok(2))); // NotEqual left operand is 2
+                            assert_eq!(neq_call.args[1], Value::Int(Ok(3))); // NotEqual right operand is 3
+                        } else {
+                            panic!("Expected not-equal function");
+                        }
+                    } else {
+                        panic!("Expected not-equal as the right operand of AND");
+                    }
+                } else {
+                    panic!("Expected AND function");
+                }
+            } else {
+                panic!("Expected AND as the left operand of OR");
+            }
+
+            // Check the right operand of OR is a smaller-than `FuncCall`
+            if let Value::FuncCall(smaller_call) = &or_call.args[1] {
+                if let FValue::BuildIn(BuildIn::Smaller) = smaller_call.name {
+                    assert_eq!(smaller_call.args[0], Value::Int(Ok(4))); // Smaller left operand is 4
+                    assert_eq!(smaller_call.args[1], Value::Int(Ok(5))); // Smaller right operand is 5
+                } else {
+                    panic!("Expected smaller-than function");
+                }
+            } else {
+                panic!("Expected smaller-than as the right operand of OR");
+            }
+        } else {
+            panic!("Expected OR function");
+        }
+    } else {
+        panic!("Expected a function call for logical expression");
+    }
+}
+
+
+#[test]
 fn test_basic_piping() {
     let input = "a() |> b() |> c()";
     let lexer = Lexer::new(input);

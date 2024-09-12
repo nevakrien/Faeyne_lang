@@ -88,8 +88,8 @@ pub enum BuildIn {
     Smaller,
     Bigger,
     SmallerEq,
+    BiggerEq,
 
-    Pipe,
 
     Or,
     Xor,
