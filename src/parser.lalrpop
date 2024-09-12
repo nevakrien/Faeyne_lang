@@ -143,33 +143,6 @@ CommaSepValue: Vec<Value> = {
     <arg:Value> => vec![arg],
 };
 
-FValue : FValue = {
-    #[precedence(level="0")]
-    <x:Name> => FValue::Name(x),
-
-    #[precedence(level="1")] #[assoc(side="left")]
-    <x:FuncCall> => FValue::FuncCall(Box::new(x)),
-    <x:Lammda> => FValue::Lammda(Box::new(x)),
-}
-
-ComplexFValue : FValue = {
-    <x:FuncCall> => FValue::FuncCall(Box::new(x)),
-    <x:Lammda> => FValue::Lammda(Box::new(x)),
-}
-
-PipableValue: Value = {
-    // Simple integers can be piped
-    <a:"int"> => Value::Int(a),
-    <a:"float"> => Value::Float(a),
-
-    // Simple names can be piped
-    <a:Name> => Value::Variable(a),
-
-    // Basic function calls can be piped
-    <a:BasicFuncCall> => Value::FuncCall(a),
-};
-
-// Add spans to function call rules
 
 BasicFuncCall: FunctionCall = {
     <start:@L> <name:Name> "(" <args:CommaSepValue> ")" <end:@R> => FunctionCall {
@@ -184,23 +157,17 @@ BasicFuncCall: FunctionCall = {
     },
 };
 
-pub FuncCall: FunctionCall = {
-    #[precedence(level="0")]
-    <start:@L> <name:ComplexFValue> "(" <args:CommaSepValue> ")" <end:@R> => FunctionCall {
-        name: name,
+LammdaFuncCall: FunctionCall = {
+    <start:@L> <x:Lammda> "(" <args:CommaSepValue> ")" <end:@R> => FunctionCall {
+        name: FValue::Lammda(Box::new(x)),
         args: args,
         debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
     },
-    <start:@L> <name:ComplexFValue> "(" ")" <end:@R> => FunctionCall {
-        name: name,
+    <start:@L> <x:Lammda> "(" ")" <end:@R> => FunctionCall {
+        name: FValue::Lammda(Box::new(x)),
         args: vec![],
         debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
     },
-
-    <b:BasicFuncCall> => b, // Span already included in BasicFuncCall
-
-    #[precedence(level="1")]
-    <p:Pipe> => p, // Pipe will also be updated for span
 };
 
 Pipe: FunctionCall = {
@@ -227,16 +194,84 @@ Pipe: FunctionCall = {
     },
 };
 
+pub FuncCall: FunctionCall = {
+    #[precedence(level="0")]
+    <start:@L> <func:FuncCall> "(" <args:CommaSepValue> ")" <end:@R> => FunctionCall {
+        name:  FValue::FuncCall(Box::new(func)),
+        args: args,
+        debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
+    },
+    <start:@L> <func:FuncCall> "(" ")" <end:@R> => FunctionCall {
+        name: FValue::FuncCall(Box::new(func)),
+        args: vec![],
+        debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
+    },
+
+    <b:BasicFuncCall> => b, // Span already included in BasicFuncCall
+    <l:LammdaFuncCall> => l, // Span already included in BasicFuncCall
+
+    #[precedence(level="1")]
+    <p:Pipe> => p, // Pipe will also be updated for span
+};
 
 
+
+PipableValue: Value = {
+    #[precedence(level="0")] 
+    // Basic function calls can be piped
+    <b:BasicFuncCall> => Value::FuncCall(b),
+    <x:LammdaFuncCall> => Value::FuncCall(x),
+
+    #[precedence(level="1")] 
+    // Simple names can be piped
+    <a:Name> => Value::Variable(a),
+    <x:Atom> => Value::Atom(x),
+    <x:String> => Value::String(x),
+
+    // numbers can be piped
+
+    <x:"int"> => Value::Int(x),
+    <x:"float"> => Value::Float(x),
+
+    "-" <x:"int"> => Value::Int(match x {
+        Ok(i) => Ok(-i),
+        Err(f) => Err(-f),
+    }),
+
+    "-" <x:"float"> => Value::Float(-x),
+
+    //this part I want to add but right now its an issue because if the right value is a function the grammer is ambigious
+    #[precedence(level="2")] #[assoc(side="left")]
+    <start:@L> "(" <a:PipableValue> <op:MulOp> <b:PipableValue> <end:@R> ")"=> Value::FuncCall(FunctionCall {
+        name: FValue::BuildIn(op),
+        args: vec![a, b],
+        debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
+    }),
+
+    #[precedence(level="3")] #[assoc(side="left")]
+    <start:@L> "(" <a:PipableValue> <op:AddOp> <b:PipableValue> <end:@R> ")" => Value::FuncCall(FunctionCall {
+        name: FValue::BuildIn(op),
+        args: vec![a, b],
+        debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
+    }),
+
+    #[precedence(level="4")] #[assoc(side="left")]
+    <start:@L> "(" <a:PipableValue> <op:LogicalOp> <b:PipableValue> <end:@R> ")" => Value::FuncCall(FunctionCall {
+        name: FValue::BuildIn(op),
+        args: vec![a, b],
+        debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
+    }),
+};
 
 
 //expressions
 pub Value: Value = {
-    #[precedence(level="0")]  // No operators at this level, only simple values
-    <x:FValue> => x.into(),
+    #[precedence(level="10")] #[assoc(side="left")]
+    <x:FuncCall> => Value::FuncCall(x),
+    <x:Lammda> => Value::Lammda(Box::new(x)),
 
-    #[precedence(level="1")]
+    #[precedence(level="0")]
+    <x:Name> => Value::Variable(x),
     <x:Atom> => Value::Atom(x),
     <x:String> => Value::String(x),
 
@@ -299,7 +334,6 @@ LogicalOp: BuildIn = {
     "^" => BuildIn::Xor,
     //"|>" => BuildIn::Pipe, // Esoteric
 };
-
 
 Statment : Statment = {
     <func:FuncCall> ";" => Statment::Call(func),

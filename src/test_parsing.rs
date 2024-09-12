@@ -541,3 +541,45 @@ fn test_piping_with_third_order_nesting() {
         panic!("Expected function name 'c'");
     }
 }
+
+#[test]
+fn test_piping_with_immediate_function_call() {
+    let input = "a() |> c()()";
+    let lexer = Lexer::new(input);
+    let mut table = StringTable::new();
+
+    let parser = parser::ValueParser::new();
+    let result = parser.parse(input, &mut table, lexer);
+
+    let pipe_call = result.unwrap();
+
+    // Check the last function called is `c()()`
+    if let Value::FuncCall(outer_c_call) = &pipe_call {
+        if let FValue::Name(c_name) = outer_c_call.name {
+            assert_eq!(table.get_string(c_name).unwrap(), "c");
+
+            // Now check that `c()` was called as a function, hence another `FuncCall`
+            if let Value::FuncCall(inner_c_call) = &outer_c_call.args[0] {
+                // Ensure that `inner_c_call` has no arguments, implying `c()` was called without any
+                assert_eq!(inner_c_call.args.len(), 0);
+
+                // Check that `a()` was piped to `c()`
+                if let Value::FuncCall(a_call) = &inner_c_call.args[0] {
+                    if let FValue::Name(a_name) = a_call.name {
+                        assert_eq!(table.get_string(a_name).unwrap(), "a");
+                    } else {
+                        panic!("Expected function name 'a'");
+                    }
+                } else {
+                    panic!("Expected 'a()' as the argument to 'c()'");
+                }
+            } else {
+                panic!("Expected 'c()' to be called as a function");
+            }
+        } else {
+            panic!("Expected function name 'c'");
+        }
+    } else {
+        panic!("Expected a function call as the result of the pipe expression");
+    }
+}
