@@ -163,7 +163,7 @@ fn lex_operator<'a>(input: &'a str) -> LexResult<'a> {
         recognize(tag("//")),
         
         // Then match single-character operators and delimiters
-        recognize(one_of("(){}[]+.%;,")),
+        recognize(one_of("(){}[]+.%;,&")),
         recognize(one_of("-=*<>|^/")),
     ))(input)?;
 
@@ -201,6 +201,7 @@ fn lex_operator<'a>(input: &'a str) -> LexResult<'a> {
         "<" => LexTag::Smaller,
         ">" => LexTag::Bigger,
         "=" => LexTag::Eq,
+        "&" => LexTag::And,
 
         _ => LexTag::Unknowen, //impossible but just in case
     };

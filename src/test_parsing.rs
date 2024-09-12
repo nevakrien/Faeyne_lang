@@ -470,6 +470,142 @@ fn test_logical_as_func_call() {
     }
 }
 
+#[test]
+fn test_comparison_with_logical_in_parentheses() {
+    let input = "x > (a && b)";
+    let lexer = Lexer::new(input);
+    let mut table = StringTable::new();
+
+    let parser = parser::ValueParser::new();  // Assuming you have this parser set up
+    let result = parser.parse(input, &mut table, lexer);
+
+    // Uncomment when debugging to see the parsed result
+    // println!("\n\nparsed:\n\n{:?}\n\n", parsed_value);
+
+    //assert!(result.is_ok(), "Failed to parse expression with comparison and logical operators in parentheses");
+
+    let parsed_value = result.unwrap();
+
+    // Check the parsed value is a `FuncCall` for `>`
+    if let Value::FuncCall(gt_call) = parsed_value {
+        if let FValue::BuildIn(BuildIn::Bigger) = gt_call.name {
+            // Fetch the index for variable "x" from the string table
+            let x_var_index = table.get_id("x");
+
+            // Check that the left operand is the variable `x` (index in string table)
+            assert_eq!(gt_call.args[0], Value::Variable(x_var_index));
+
+            // Check that the right operand is the `&&` logical operation inside parentheses
+            if let Value::FuncCall(and_call) = &gt_call.args[1] {
+                if let FValue::BuildIn(BuildIn::DoubleAnd) = and_call.name {
+                    // Fetch the index for variable "a" from the string table
+                    let a_var_index = table.get_id("a");
+
+                    // Check that the left operand of `&&` is the variable `a` (index in string table)
+                    assert_eq!(and_call.args[0], Value::Variable(a_var_index));
+
+                    // Fetch the index for variable "b" from the string table
+                    let b_var_index = table.get_id("b");
+
+                    // Check that the right operand of `&&` is the variable `b` (index in string table)
+                    assert_eq!(and_call.args[1], Value::Variable(b_var_index));
+                } else {
+                    panic!("Expected logical AND function inside parentheses");
+                }
+            } else {
+                panic!("Expected a function call (AND) inside parentheses as the right operand of the comparison");
+            }
+        } else {
+            panic!("Expected a greater-than comparison (>) function");
+        }
+    } else {
+        panic!("Expected a function call for the comparison expression");
+    }
+}
+
+#[test]
+fn test_complex_expression_with_nested_parentheses() {
+    let input = "(x + y) * (a && (b > c || d))";
+    let lexer = Lexer::new(input);
+    let mut table = StringTable::new();
+
+    let parser = parser::ValueParser::new();  // Assuming you have this parser set up
+    let result = parser.parse(input, &mut table, lexer);
+
+    // Unwrap the result to get a better error message if parsing fails
+    let parsed_value = result.unwrap();
+
+    // Check the parsed value is a `FuncCall` for `*`
+    if let Value::FuncCall(mul_call) = parsed_value {
+        if let FValue::BuildIn(BuildIn::Mul) = mul_call.name {
+            // Fetch the index for variable "x" and "y" from the string table
+            let x_var_index = table.get_id("x");
+            let y_var_index = table.get_id("y");
+
+            // Check that the left operand is the `(x + y)` operation
+            if let Value::FuncCall(add_call) = &mul_call.args[0] {
+                if let FValue::BuildIn(BuildIn::Add) = add_call.name {
+                    // Check that the left operand of `+` is `x`
+                    assert_eq!(add_call.args[0], Value::Variable(x_var_index));
+
+                    // Check that the right operand of `+` is `y`
+                    assert_eq!(add_call.args[1], Value::Variable(y_var_index));
+                } else {
+                    panic!("Expected addition (+) function for `(x + y)`");
+                }
+            } else {
+                panic!("Expected a function call (addition) as the left operand of the multiplication");
+            }
+
+            // Check that the right operand is the logical operation `(a && (b > c || d))`
+            if let Value::FuncCall(and_call) = &mul_call.args[1] {
+                if let FValue::BuildIn(BuildIn::DoubleAnd) = and_call.name {
+                    let a_var_index = table.get_id("a");
+
+                    // Check that the left operand of `&&` is `a`
+                    assert_eq!(and_call.args[0], Value::Variable(a_var_index));
+
+                    // Check that the right operand of `&&` is `(b > c || d)`
+                    if let Value::FuncCall(or_call) = &and_call.args[1] {
+                        if let FValue::BuildIn(BuildIn::DoubleOr) = or_call.name {
+                            let b_var_index = table.get_id("b");
+                            let c_var_index = table.get_id("c");
+                            let d_var_index = table.get_id("d");
+
+                            // Check that the left operand of `||` is `(b > c)`
+                            if let Value::FuncCall(gt_call) = &or_call.args[0] {
+                                if let FValue::BuildIn(BuildIn::Bigger) = gt_call.name {
+                                    assert_eq!(gt_call.args[0], Value::Variable(b_var_index));
+                                    assert_eq!(gt_call.args[1], Value::Variable(c_var_index));
+                                } else {
+                                    panic!("Expected greater-than (>) function for `(b > c)`");
+                                }
+                            } else {
+                                panic!("Expected a function call (>) as the left operand of `||`");
+                            }
+
+                            // Check that the right operand of `||` is `d`
+                            assert_eq!(or_call.args[1], Value::Variable(d_var_index));
+                        } else {
+                            panic!("Expected logical OR (||) function for `(b > c || d)`");
+                        }
+                    } else {
+                        panic!("Expected a function call (OR) as the right operand of the AND operation");
+                    }
+                } else {
+                    panic!("Expected logical AND (&&) function for `(a && (b > c || d))`");
+                }
+            } else {
+                panic!("Expected a function call (AND) as the right operand of the multiplication");
+            }
+        } else {
+            panic!("Expected a multiplication (*) function for the entire expression");
+        }
+    } else {
+        panic!("Expected a function call for the multiplication expression");
+    }
+}
+
 
 #[test]
 fn test_basic_piping() {

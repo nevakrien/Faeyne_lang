@@ -90,7 +90,7 @@ pub enum BuildIn {
     SmallerEq,
     BiggerEq,
 
-
+    And,
     Or,
     Xor,
 

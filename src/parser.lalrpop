@@ -49,6 +49,7 @@ extern {
 
         "%" => LexTag::Modolo,
         "&&" => LexTag::DoubleAnd,
+        "&" => LexTag::And,
         "||" => LexTag::DoubleOr,
         "^^" => LexTag::DoubleXor,
 
@@ -278,29 +279,49 @@ pub Value: Value = {
 
     "-" <x:"float"> => Value::Float(-x),
 
-    #[precedence(level="2")] #[assoc(side="left")]
-    <start:@L> <a:Value> <op:MulOp> <b:Value> <end:@R> => Value::FuncCall(FunctionCall {
+    // Parentheses should have the highest precedence
+    #[precedence(level="1")] 
+    <a:OpenExpr> ")" => a,
+
+    // Exponentiation (Power) should have higher precedence than multiplication
+    #[precedence(level="2")] #[assoc(side="right")]
+    <start:@L> <a:Value> <op:PowerOp> <b:Value> <end:@R> => Value::FuncCall(FunctionCall {
         name: FValue::BuildIn(op),
         args: vec![a, b],
         debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
     }),
 
     #[precedence(level="3")] #[assoc(side="left")]
+    <start:@L> <a:Value> <op:MulOp> <b:Value> <end:@R> => Value::FuncCall(FunctionCall {
+        name: FValue::BuildIn(op),
+        args: vec![a, b],
+        debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
+    }),
+
+    #[precedence(level="4")] #[assoc(side="left")]
     <start:@L> <a:Value> <op:AddOp> <b:Value> <end:@R> => Value::FuncCall(FunctionCall {
         name: FValue::BuildIn(op),
         args: vec![a, b],
         debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
     }),
 
+    // Bitwise XOR and OR should be higher precedence than comparison but lower than arithmetic
+    #[precedence(level="5")] #[assoc(side="left")]
+    <start:@L> <a:Value> <op:BitwiseOp> <b:Value> <end:@R> => Value::FuncCall(FunctionCall {
+        name: FValue::BuildIn(op),
+        args: vec![a, b],
+        debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
+    }),
+
     // Comparison operators should have higher precedence than logical operators
-    #[precedence(level="4")] #[assoc(side="left")]
+    #[precedence(level="6")] #[assoc(side="left")]
     <start:@L> <a:Value> <op:ComparisonOp> <b:Value> <end:@R> => Value::FuncCall(FunctionCall {
         name: FValue::BuildIn(op),
         args: vec![a, b],
         debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
     }),
 
-    #[precedence(level="5")] #[assoc(side="left")]
+    #[precedence(level="7")] #[assoc(side="left")]
     <start:@L> <a:Value> <op:LogicalOp> <b:Value> <end:@R> => Value::FuncCall(FunctionCall {
         name: FValue::BuildIn(op),
         args: vec![a, b],
@@ -308,13 +329,20 @@ pub Value: Value = {
     }),
 };
 
+OpenExpr : Value = {
+    "(" <v:Value> => v
+};
+
 // Define operator groups for each precedence level
+PowerOp: BuildIn = {
+    "**" => BuildIn::Pow, // Exponentiation
+};
+
 MulOp: BuildIn = {
     "*" => BuildIn::Mul,
     "/" => BuildIn::Div,
     "//" => BuildIn::IntDiv,
     "%" => BuildIn::Modulo,
-    "**" => BuildIn::Pow, // Exponentiation
 };
 
 AddOp: BuildIn = {
@@ -322,7 +350,13 @@ AddOp: BuildIn = {
     "-" => BuildIn::Sub,
 };
 
-// Comparison operators (level 4)
+// Bitwise XOR and OR (level 5)
+BitwiseOp: BuildIn = {
+    "^" => BuildIn::Xor,
+    "|" => BuildIn::Or,
+};
+
+// Comparison operators (level 6)
 ComparisonOp: BuildIn = {
     "==" => BuildIn::Equal,
     "!=" => BuildIn::NotEqual,
@@ -332,14 +366,13 @@ ComparisonOp: BuildIn = {
     ">=" => BuildIn::BiggerEq,
 };
 
-// Logical operators (level 5)
+// Logical operators (level 7)
 LogicalOp: BuildIn = {
     "&&" => BuildIn::DoubleAnd,
     "||" => BuildIn::DoubleOr,
     "^^" => BuildIn::DoubleXor,
-    "|" => BuildIn::Or,
-    "^" => BuildIn::Xor,
 };
+
 
 
 Statment : Statment = {
