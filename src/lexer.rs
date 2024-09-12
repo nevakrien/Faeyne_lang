@@ -15,6 +15,7 @@ pub enum LexTag {
     String,
     PoisonString,
     Unknowen,
+    Nil,
 
     //keywords
     Import,
@@ -221,6 +222,7 @@ fn lex_word<'a>(input: &'a str) -> LexResult<'a> {
         "def" => LexTag::FuncDec,
         "fn" => LexTag::Lambda,
         "return" => LexTag::Return,
+        "nil" => LexTag::Nil,
         _ => LexTag::Name
     };
     Ok((input, tag)) 

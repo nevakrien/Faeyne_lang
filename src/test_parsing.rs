@@ -36,7 +36,7 @@ fn simple_parse_blocky_function() {
     
     let func_dec = result.unwrap();
     
-    assert!(func_dec.body.body.len() == 2, "Expected one statement in function body");
+    assert!(func_dec.body.body.len() == 2, "Expected two statement in function body");
     assert!(func_dec.body.ret.is_some(), "Expected return statment");
 }
 #[test]
@@ -670,5 +670,107 @@ fn test_complex_piping_with_double_function_call() {
         }
     } else {
         panic!("Expected outer function call to be `c(d(e()), f())(b(a(), x))`");
+    }
+}
+
+#[test]
+fn parse_pipe_hello_world_function() {
+    let input = "def main(system) { 'hello world'|> system(:println)(); }";
+    
+    let lexer = Lexer::new(input);
+    let mut table = StringTable::new();
+    
+    let parser = parser::FuncDecParser::new();  
+    let result = parser.parse(input, &mut table, lexer);
+    
+    assert!(result.is_ok(), "Failed to parse function declaration");
+    
+    let func_dec = result.unwrap();
+    
+    // Validate the function signature (name "main" and one argument "system")
+    assert_eq!(table.get_string(func_dec.sig.name), Some("main"));
+    assert_eq!(func_dec.sig.args.len(), 1, "Expected one argument in function signature");
+    assert_eq!(table.get_string(func_dec.sig.args[0]), Some("system"));
+
+    // Validate the function body has one statement (a function call)
+    assert_eq!(func_dec.body.body.len(), 1, "Expected one statement in function body");
+    
+    // Unwrap the single statement and ensure it's a function call
+    if let Statment::Call(func_call) = &func_dec.body.body[0] {
+        // Check the outer function call is `system(:println)`
+        if let FValue::FuncCall(outer_call) = &func_call.name {
+            // Ensure the outer function is `system`
+            if let FValue::Name(system_name) = outer_call.name {
+                assert_eq!(table.get_string(system_name), Some("system"));
+            } else {
+                panic!("Expected 'system' as the outer function name");
+            }
+
+            // The first argument of the outer call is `:println` (an atom)
+            if let Value::Atom(atom_id) = &outer_call.args[0] {
+                assert_eq!(table.get_string(*atom_id), Some(":println"));
+            } else {
+                panic!("Expected :println as the argument to system");
+            }
+        } else {
+            panic!("Expected system(:println) call as the outer function");
+        }
+
+        // Validate the argument to `system(:println)` is `"hello world"`
+        assert_eq!(func_call.args.len(), 1, "Expected one argument to system(:println)");
+        if let Value::String(str_id) = &func_call.args[0] {
+            assert_eq!(table.get_string(*str_id), Some("'hello world'"));
+        } else {
+            panic!("Expected 'hello world' as the argument to system(:println)");
+        }
+    } else {
+        panic!("Expected a function call in the body of main");
+    }
+}
+
+#[test]
+fn parse_pipe_nil() {
+    let input = "def main(system) { nil|> system(nil)(); }";
+    
+    let lexer = Lexer::new(input);
+    let mut table = StringTable::new();
+    
+    let parser = parser::FuncDecParser::new();  
+    let result = parser.parse(input, &mut table, lexer);
+    
+    assert!(result.is_ok(), "Failed to parse function declaration");
+    
+    let func_dec = result.unwrap();
+    
+    // Validate the function signature (name "main" and one argument "system")
+    assert_eq!(table.get_string(func_dec.sig.name), Some("main"));
+    assert_eq!(func_dec.sig.args.len(), 1, "Expected one argument in function signature");
+    assert_eq!(table.get_string(func_dec.sig.args[0]), Some("system"));
+
+    // Validate the function body has one statement (a function call)
+    assert_eq!(func_dec.body.body.len(), 1, "Expected one statement in function body");
+    
+    // Unwrap the single statement and ensure it's a function call
+    if let Statment::Call(func_call) = &func_dec.body.body[0] {
+        // Check the outer function call is `system(:println)`
+        if let FValue::FuncCall(outer_call) = &func_call.name {
+            // Ensure the outer function is `system`
+            if let FValue::Name(system_name) = outer_call.name {
+                assert_eq!(table.get_string(system_name), Some("system"));
+            } else {
+                panic!("Expected 'system' as the outer function name");
+            }
+
+            assert_eq!(outer_call.args[0],Value::Nil);
+        } else {
+            panic!("Expected system(:println) call as the outer function");
+        }
+
+        // Validate the argument to `system(:println)` is `"hello world"`
+        assert_eq!(func_call.args.len(), 1, "Expected one argument to system(:println)");
+        assert_eq!(func_call.args[0],Value::Nil);
+        
+    } else {
+        panic!("Expected a function call in the body of main");
     }
 }

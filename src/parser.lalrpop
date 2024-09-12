@@ -17,6 +17,7 @@ extern {
         "UK" => LexTag::Unknowen,
 
         // Keywords
+        "nil" => LexTag::Nil,
         "import" => LexTag::Import,
         "def" => LexTag::FuncDec,
         "fn" => LexTag::Lambda,
@@ -143,8 +144,8 @@ CommaSepValue: Vec<Value> = {
     <arg:Value> => vec![arg],
 };
 
-
-BasicFuncCall: FunctionCall = {
+//we need this to avoid ambiguty on things like a()|>c()() 
+NoPipeFuncCall: FunctionCall = {
     #[precedence(level="0")]
     <start:@L> <name:Name> "(" <args:CommaSepValue> ")" <end:@R> => FunctionCall {
         name: FValue::Name(name),
@@ -169,12 +170,12 @@ BasicFuncCall: FunctionCall = {
     },
 
     #[precedence(level="1")] 
-    <start:@L> <func:BasicFuncCall> "(" <args:CommaSepValue> ")" <end:@R> => FunctionCall {
+    <start:@L> <func:NoPipeFuncCall> "(" <args:CommaSepValue> ")" <end:@R> => FunctionCall {
         name:  FValue::FuncCall(Box::new(func)),
         args: args,
         debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
     },
-    <start:@L> <func:BasicFuncCall> "(" ")" <end:@R> => FunctionCall {
+    <start:@L> <func:NoPipeFuncCall> "(" ")" <end:@R> => FunctionCall {
         name: FValue::FuncCall(Box::new(func)),
         args: vec![],
         debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
@@ -184,7 +185,7 @@ BasicFuncCall: FunctionCall = {
 
 Pipe: FunctionCall = {
     #[precedence(level="0")]
-    <start:@L> <a:PipableValue> "|>" <b:BasicFuncCall> <end:@R> => {
+    <start:@L> <a:PipableValue> "|>" <b:NoPipeFuncCall> <end:@R> => {
         let mut new_args = vec![a];
         new_args.extend(b.args);
         FunctionCall {
@@ -195,7 +196,7 @@ Pipe: FunctionCall = {
     },
 
     #[precedence(level="1")] //#[assoc(side="left")]
-    <start:@L> <a:Pipe> "|>" <b:BasicFuncCall> <end:@R> => {
+    <start:@L> <a:Pipe> "|>" <b:NoPipeFuncCall> <end:@R> => {
         let mut new_args = vec![Value::FuncCall(a)];
         new_args.extend(b.args);
         FunctionCall {
@@ -220,7 +221,7 @@ pub FuncCall: FunctionCall = {
     },
 
     #[precedence(level="1")]
-    <b:BasicFuncCall> => b, // Span already included in BasicFuncCall
+    <b:NoPipeFuncCall> => b, // Span already included in NoPipeFuncCall
 
     #[precedence(level="2")]
     <p:Pipe> => p, // Pipe will also be updated for span
@@ -231,13 +232,15 @@ pub FuncCall: FunctionCall = {
 PipableValue: Value = {
     #[precedence(level="0")] 
     // Basic function calls can be piped
-    <b:BasicFuncCall> => Value::FuncCall(b),
+    <b:NoPipeFuncCall> => Value::FuncCall(b),
+    "nil" => Value::Nil,
 
     #[precedence(level="1")] 
     // Simple names can be piped
     <a:Name> => Value::Variable(a),
     <x:Atom> => Value::Atom(x),
     <x:String> => Value::String(x),
+
 
     // numbers can be piped
 
@@ -260,6 +263,7 @@ pub Value: Value = {
     <x:Lammda> => Value::Lammda(Box::new(x)),
 
     #[precedence(level="0")]
+    "nil" => Value::Nil,
     <x:Name> => Value::Variable(x),
     <x:Atom> => Value::Atom(x),
     <x:String> => Value::String(x),
@@ -367,3 +371,9 @@ Return: Value = {
     "return" <val:Value> ";" => val,
     <val:Value> => val,
 };
+
+// match statments
+//just sketching
+ValueMatchArm : (Value,Value) = {
+    <a:Value> "=>" <b:Value> => (a,b),
+}

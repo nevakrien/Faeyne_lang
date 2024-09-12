@@ -58,6 +58,7 @@ pub enum Value {
     FuncCall(FunctionCall),
     Lammda(Box<Lammda>),
     BuildIn(BuildIn),
+    Nil,
 }
 
 impl From<FValue> for Value {
