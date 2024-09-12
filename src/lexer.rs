@@ -24,7 +24,7 @@ pub enum LexTag {
 
     Return,
 
-    // Match, //for now not implemented
+    Match, 
 
     Float(f64), // We can parse in a way that never overflows
     Int(Result<i64, f64>), // If we get a float here, we know it overflowed
@@ -224,6 +224,7 @@ fn lex_word<'a>(input: &'a str) -> LexResult<'a> {
         "fn" => LexTag::Lambda,
         "return" => LexTag::Return,
         "nil" => LexTag::Nil,
+        "match" => LexTag::Match,
         _ => LexTag::Name
     };
     Ok((input, tag)) 

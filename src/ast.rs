@@ -4,9 +4,11 @@ use codespan::Span;
 
 #[derive(Debug,PartialEq)]
 pub enum Statment {
-    Assign(usize,Value),
+    Assign(usize, Value),
     Call(FunctionCall),
+    Match(MatchStatment), // New case for match statements
 }
+
 
 
 #[derive(Debug,PartialEq)]
@@ -24,7 +26,22 @@ pub struct FuncSig {
 #[derive(Debug,PartialEq)]
 pub struct FuncBlock{
     pub body: Vec<Statment>, 
-    pub ret: Option<Value>,
+    pub ret: Option<Ret>,
+}
+
+#[derive(Debug,PartialEq)]
+pub enum Ret{
+    Imp(Value),
+    Exp(Value),
+}
+
+impl Ret {
+    pub fn get(&self) -> &Value {
+        match self {
+            Ret::Imp(v) => v,
+            Ret::Exp(v) => v,
+        }
+    }
 }
 
 #[derive(Debug,PartialEq)]
@@ -59,6 +76,7 @@ pub enum Value {
     Lammda(Box<Lammda>),
     BuildIn(BuildIn),
     Nil,
+    Match(MatchStatment),
 }
 
 impl From<FValue> for Value {
@@ -71,6 +89,59 @@ impl From<FValue> for Value {
         }
     }
 }
+
+#[derive(Debug,PartialEq)]
+pub enum Literal {
+    Int(Result<i64,f64>),
+    Float(f64),
+    Atom(usize),
+    String(usize),
+    Nil,
+}
+impl From<Literal> for Value {
+    fn from(literal: Literal) -> Self {
+        match literal {
+            Literal::Int(i) => Value::Int(i),
+            Literal::Float(f) => Value::Float(f),
+            Literal::Atom(a) => Value::Atom(a),
+            Literal::String(s) => Value::String(s),
+            Literal::Nil => Value::Nil,
+        }
+    }
+}
+
+
+
+#[derive(Debug,PartialEq)]
+pub enum MatchPattern {
+    Literal(Literal),  // Restricted to basic literals
+    Variable(usize),   // Binding a variable
+    Wildcard,          // The `_` pattern
+    //Tuple(Vec<MatchPattern>), // Matching a tuple
+}
+
+
+#[derive(Debug,PartialEq)]
+pub struct MatchArm {
+    pub pattern: MatchPattern, // The pattern to match
+    pub result: MatchOut, // Result of the match arm (a Value or a block)
+}
+
+
+// Result type for match arm
+#[derive(Debug,PartialEq)]
+pub enum MatchOut {
+    Value(Value),
+    Block(FuncBlock),
+}
+
+#[derive(Debug,PartialEq)]
+pub struct MatchStatment {
+    pub val: Box<Value>,          // The expression being matched
+    pub arms: Vec<MatchArm>,  // The match arms
+    pub debug_span: Span,
+}
+
 
 
 #[derive(Debug,PartialEq)]
@@ -129,6 +200,13 @@ impl<'input> StringTable<'input> {
     // Returns the string corresponding to an ID, or an error if the ID is out of bounds.
     pub fn get_string(&self, id: usize) -> Option<&'input str> {
         self.vec.get(id).copied()
+    }
+
+    pub fn compare_to(&self, id: usize,s: &str) -> bool {
+        match self.get_string(id) {
+            None => false,
+            Some(x) => x==s,
+        }
     }
 }
 

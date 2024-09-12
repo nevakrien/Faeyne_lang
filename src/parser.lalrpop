@@ -22,6 +22,7 @@ extern {
         "def" => LexTag::FuncDec,
         "fn" => LexTag::Lambda,
         "return" => LexTag::Return,
+        "match" => LexTag::Match,
 
         // Numbers
         "float" => LexTag::Float(<f64>),
@@ -70,7 +71,7 @@ extern {
     }
 }
 
-//basic types:
+//### basic types:
 
 Atom: usize = {
     <start: @L> "atom" <end: @R> => {
@@ -96,45 +97,9 @@ Name: usize = {
     }
 };
 
-//functions
-Lammda: Lammda = {
-    "fn" <sig:ArgList> <body:FuncBlock> => Lammda {
-        sig,
-        body,
-    },
-    "fn" <sig:ArgList> "->" <body:FuncBlock> => Lammda {
-        sig,
-        body,
-    }
-};
 
-pub FuncDec: FuncDec = {
-    "def" <sig:FuncSig> <body:FuncBlock> => FuncDec {
-        sig,
-        body,
-    }
-};
 
-pub FuncSig: FuncSig = {
-    <name:Name> <args:ArgList> => FuncSig{name, args},
-};
-
-ArgList: Vec<usize> = {
-    "(" <args:CommaSepArgs> ")" => args,
-
-    "(" ")" => vec![],
-};
-
-CommaSepArgs: Vec<usize> = {
-    <args:CommaSepArgs> "," <arg:Name> => {
-        let mut arguments = args;
-        arguments.push(arg);
-        arguments
-    },
-    
-    <arg:Name> => vec![arg]
-};
-
+//### function calls:
 CommaSepValue: Vec<Value> = {
     <args:CommaSepValue> "," <arg:Value> => {
         let mut arguments = args;
@@ -228,56 +193,46 @@ pub FuncCall: FunctionCall = {
     <p:Pipe> => p, // Pipe will also be updated for span
 };
 
+Literal : Literal = {
+    "nil" => Literal::Nil,
 
+    <x:Atom> => Literal::Atom(x),
+    <x:String> => Literal::String(x),
+
+    <x:"int"> => Literal::Int(x),
+    <x:"float"> => Literal::Float(x),
+
+    "-" <x:"int"> => Literal::Int(match x {
+        Ok(i) => Ok(-i),
+        Err(f) => Err(-f),
+    }),
+
+    "-" <x:"float"> => Literal::Float(-x),
+}
 
 PipableValue: Value = {
     #[precedence(level="0")] 
     // Basic function calls can be piped
     <b:NoPipeFuncCall> => Value::FuncCall(b),
-    "nil" => Value::Nil,
 
     #[precedence(level="1")] 
     // Simple names can be piped
     <a:Name> => Value::Variable(a),
-    <x:Atom> => Value::Atom(x),
-    <x:String> => Value::String(x),
-
-
-    // numbers can be piped
-
-    <x:"int"> => Value::Int(x),
-    <x:"float"> => Value::Float(x),
-
-    "-" <x:"int"> => Value::Int(match x {
-        Ok(i) => Ok(-i),
-        Err(f) => Err(-f),
-    }),
-
-    "-" <x:"float"> => Value::Float(-x),
+    <l:Literal> => l.into(),
+    <m:MatchStatment>  => Value::Match(m),
 };
 
 
-// expressions
+//### expressions
 pub Value: Value = {
     #[precedence(level="10")] #[assoc(side="left")]
     <x:FuncCall> => Value::FuncCall(x),
     <x:Lammda> => Value::Lammda(Box::new(x)),
 
     #[precedence(level="0")]
-    "nil" => Value::Nil,
     <x:Name> => Value::Variable(x),
-    <x:Atom> => Value::Atom(x),
-    <x:String> => Value::String(x),
-
-    <x:"int"> => Value::Int(x),
-    <x:"float"> => Value::Float(x),
-
-    "-" <x:"int"> => Value::Int(match x {
-        Ok(i) => Ok(-i),
-        Err(f) => Err(-f),
-    }),
-
-    "-" <x:"float"> => Value::Float(-x),
+    <l:Literal> => l.into(),
+    <m:MatchStatment>  => Value::Match(m),
 
     // Parentheses should have the highest precedence
     #[precedence(level="1")] 
@@ -375,12 +330,48 @@ LogicalOp: BuildIn = {
 
 
 
-Statment : Statment = {
-    <func:FuncCall> ";" => Statment::Call(func),
-    <n:Name> "=" <x:Value> ";" => Statment::Assign(n,x),
-}
 
-// Function block, with optional return statement
+//### function defs
+pub FuncDec: FuncDec = {
+    "def" <sig:FuncSig> <body:FuncBlock> => FuncDec {
+        sig,
+        body,
+    }
+};
+
+Lammda: Lammda = {
+    "fn" <sig:ArgList> <body:FuncBlock> => Lammda {
+        sig,
+        body,
+    },
+    "fn" <sig:ArgList> "->" <body:FuncBlock> => Lammda {
+        sig,
+        body,
+    }
+};
+
+
+
+pub FuncSig: FuncSig = {
+    <name:Name> <args:ArgList> => FuncSig{name, args},
+};
+
+ArgList: Vec<usize> = {
+    "(" <args:CommaSepArgs> ")" => args,
+
+    "(" ")" => vec![],
+};
+
+CommaSepArgs: Vec<usize> = {
+    <args:CommaSepArgs> "," <arg:Name> => {
+        let mut arguments = args;
+        arguments.push(arg);
+        arguments
+    },
+    
+    <arg:Name> => vec![arg]
+};
+
 pub FuncBlock: FuncBlock = {
     "{" <body:Statements> <ret:Return> "}" => FuncBlock {
         body: body,
@@ -404,6 +395,12 @@ pub FuncBlock: FuncBlock = {
 };
 
 
+Statment : Statment = {
+    <func:FuncCall> ";" => Statment::Call(func),
+    <m:MatchStatment> ";" => Statment::Match(m),
+    <n:Name> "=" <x:Value> ";" => Statment::Assign(n,x),
+}
+
 Statements: Vec<Statment> = {
     <stmts:Statements> <stmt:Statment> => {
         let mut statements = stmts;
@@ -414,13 +411,50 @@ Statements: Vec<Statment> = {
     <stmt:Statment> => vec![stmt],
 };
 
-Return: Value = {
-    "return" <val:Value> ";" => val,
-    <val:Value> => val,
+Return: Ret = {
+    "return" <val:Value> ";" => Ret::Exp(val),
+    <val:Value> => Ret::Imp(val),
 };
 
-// match statments
-//just sketching
-ValueMatchArm : (Value,Value) = {
-    <a:Value> "=>" <b:Value> => (a,b),
-}
+//### match statments
+MatchOut : MatchOut = {
+    <v:Value> => MatchOut::Value(v),
+    <b:FuncBlock> => MatchOut::Block(b),
+};
+
+MatchPattern : MatchPattern = {
+    <l:Literal> => MatchPattern::Literal(l), 
+    <n:Name> => match table.compare_to(n,"_") {
+            true => MatchPattern::Wildcard,
+            false => MatchPattern::Variable(n),
+    },
+    
+};
+
+
+MatchArm : MatchArm = {
+    <pattern:MatchPattern> "=>" <result:MatchOut> => MatchArm{pattern,result}
+};
+
+OpenMatchArms: Vec<MatchArm> = {
+    <v:OpenMatchArms> "," <arm:MatchArm> => {
+        let mut v = v;
+        v.push(arm);
+        v
+    },
+    
+    "{" <arm:MatchArm> => vec![arm],
+};
+
+MatchArms : Vec<MatchArm> = {
+    <arms:OpenMatchArms> "," "}"=> arms,
+    <arms:OpenMatchArms> "}"=> arms,
+};
+
+pub MatchStatment:MatchStatment = {
+  <start:@L> "match" <val:Value> <arms:MatchArms> <end:@R> => MatchStatment {
+        val: Box::new(val),
+        arms,
+        debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
+    }, 
+};
