@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-
+use codespan::Span;
 //names are represented as a usize which is a key into our table names
 
 #[derive(Debug,PartialEq)]
@@ -36,7 +36,8 @@ pub struct Lammda {
 #[derive(Debug,PartialEq)]
 pub struct FunctionCall {
     pub name: FValue,     //
-    pub args: Vec<Value> // Arguments to the function call
+    pub args: Vec<Value>, // Arguments to the function call
+    pub debug_span: Span,
 }
 
 #[derive(Debug,PartialEq)]

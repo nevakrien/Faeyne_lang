@@ -191,7 +191,7 @@ fn function_calls_and_expressions() {
     assert!(result.is_ok(), "Failed to parse function call with mixed expressions");
     
     let value = result.unwrap();
-    if let Value::FuncCall (FunctionCall {name, args }) = value {
+    if let Value::FuncCall (FunctionCall {name, args,.. }) = value {
         let name = match name {
             FValue::Name(n) => n,
             _ => unreachable!()
@@ -242,7 +242,7 @@ fn function_call_no_args() {
     assert!(result.is_ok(), "Failed to parse function call with no arguments");
     
     let value = result.unwrap();
-    if let Value::FuncCall(FunctionCall { name, args }) = value {
+    if let Value::FuncCall(FunctionCall { name, args,.. }) = value {
         let name = match name {
             FValue::Name(n) => n,
             _ => unreachable!()

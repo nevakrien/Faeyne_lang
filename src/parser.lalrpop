@@ -1,4 +1,5 @@
 use crate::lexer::LexTag;
+use codespan::Span;
 use crate::ast::*;//{StringTable,Value,FunctionCall,FuncSig,FuncBlock,Statment};
 
 grammar<'input>(input: &'input str, table: &mut StringTable<'input>);
@@ -156,34 +157,6 @@ ComplexFValue : FValue = {
     <x:Lammda> => FValue::Lammda(Box::new(x)),
 }
 
-BasicFuncCall: FunctionCall = {
-    <name:Name> "(" <args:CommaSepValue> ")" => FunctionCall {
-        name: FValue::Name(name),
-        args: args
-    },
-    <name:Name> "(" ")" => FunctionCall {
-        name: FValue::Name(name),
-        args: vec![]
-    },
-};
-
-pub FuncCall: FunctionCall = {
-    #[precedence(level="0")]
-    <name:ComplexFValue> "(" <args:CommaSepValue> ")" => FunctionCall {
-        name: name,
-        args: args
-    },
-    <name:ComplexFValue> "(" ")" => FunctionCall {
-        name: name,
-        args: vec![]
-    },
-
-    <b:BasicFuncCall> => b,
-
-    #[precedence(level="1")]
-    <p:Pipe> => p,
-};
-
 PipableValue: Value = {
     // Simple integers can be piped
     <a:"int"> => Value::Int(a),
@@ -196,27 +169,60 @@ PipableValue: Value = {
     <a:BasicFuncCall> => Value::FuncCall(a),
 };
 
+// Add spans to function call rules
+
+BasicFuncCall: FunctionCall = {
+    <start:@L> <name:Name> "(" <args:CommaSepValue> ")" <end:@R> => FunctionCall {
+        name: FValue::Name(name),
+        args: args,
+        debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
+    },
+    <start:@L> <name:Name> "(" ")" <end:@R> => FunctionCall {
+        name: FValue::Name(name),
+        args: vec![],
+        debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
+    },
+};
+
+pub FuncCall: FunctionCall = {
+    #[precedence(level="0")]
+    <start:@L> <name:ComplexFValue> "(" <args:CommaSepValue> ")" <end:@R> => FunctionCall {
+        name: name,
+        args: args,
+        debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
+    },
+    <start:@L> <name:ComplexFValue> "(" ")" <end:@R> => FunctionCall {
+        name: name,
+        args: vec![],
+        debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
+    },
+
+    <b:BasicFuncCall> => b, // Span already included in BasicFuncCall
+
+    #[precedence(level="1")]
+    <p:Pipe> => p, // Pipe will also be updated for span
+};
 
 Pipe: FunctionCall = {
-    // Base case: piping between two pipable values
     #[precedence(level="0")]
-    <a:PipableValue> "|>" <b:BasicFuncCall> => {
+    <start:@L> <a:PipableValue> "|>" <b:BasicFuncCall> <end:@R> => {
         let mut new_args = vec![a];
         new_args.extend(b.args);
         FunctionCall {
             name: b.name,
-            args: new_args
+            args: new_args,
+            debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
         }
     },
 
-    // Recursive case: piping multiple values
     #[precedence(level="1")] #[assoc(side="left")]
-    <a:Pipe> "|>" <b:BasicFuncCall> => {
+    <start:@L> <a:Pipe> "|>" <b:BasicFuncCall> <end:@R> => {
         let mut new_args = vec![Value::FuncCall(a)];
         new_args.extend(b.args);
         FunctionCall {
             name: b.name,
-            args: new_args
+            args: new_args,
+            debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
         }
     },
 };
@@ -224,10 +230,9 @@ Pipe: FunctionCall = {
 
 
 
+
 //expressions
-// Expressions with different precedence levels
 pub Value: Value = {
-    
     #[precedence(level="0")]  // No operators at this level, only simple values
     <x:FValue> => x.into(),
 
@@ -246,23 +251,27 @@ pub Value: Value = {
     "-" <x:"float"> => Value::Float(-x),
 
     #[precedence(level="2")] #[assoc(side="left")]
-    <a:Value> <op:MulOp> <b:Value> => Value::FuncCall(FunctionCall {
+    <start:@L> <a:Value> <op:MulOp> <b:Value> <end:@R> => Value::FuncCall(FunctionCall {
         name: FValue::BuildIn(op),
-        args: vec![a, b]
+        args: vec![a, b],
+        debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
     }),
 
     #[precedence(level="3")] #[assoc(side="left")]
-    <a:Value> <op:AddOp> <b:Value> => Value::FuncCall(FunctionCall {
+    <start:@L> <a:Value> <op:AddOp> <b:Value> <end:@R> => Value::FuncCall(FunctionCall {
         name: FValue::BuildIn(op),
-        args: vec![a, b]
+        args: vec![a, b],
+        debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
     }),
 
     #[precedence(level="4")] #[assoc(side="left")]
-    <a:Value> <op:LogicalOp> <b:Value> => Value::FuncCall(FunctionCall {
+    <start:@L> <a:Value> <op:LogicalOp> <b:Value> <end:@R> => Value::FuncCall(FunctionCall {
         name: FValue::BuildIn(op),
-        args: vec![a, b]
+        args: vec![a, b],
+        debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
     }),
 };
+
 
 // Define operator groups for each precedence level
 MulOp: BuildIn = {
