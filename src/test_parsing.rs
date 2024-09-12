@@ -582,3 +582,93 @@ fn test_piping_with_function_call_as_function() {
         panic!("Expected outer function call to be a result of `c()()`");
     }
 }
+
+#[test]
+fn test_complex_piping_with_double_function_call() {
+    let input = "a() |> b(x) |> c(d(e()), f())()";
+    let lexer = Lexer::new(input);
+    let mut table = StringTable::new();
+
+    let parser = parser::FuncCallParser::new();
+    let result = parser.parse(input, &mut table, lexer);
+    let pipe_call = result.unwrap();
+
+    // Check that the outermost call is to `c(d(e()), f())(...)`
+    if let FValue::FuncCall(c_call) = pipe_call.name {
+        // Verify the name of the function is `c`
+        if let FValue::Name(c_name) = c_call.name {
+            assert_eq!(table.get_string(c_name).unwrap(), "c");
+
+            // Check that `c()` has two arguments: `d(e())` and `f()`
+            assert_eq!(c_call.args.len(), 2);
+
+            // First argument is `d(e())`
+            if let Value::FuncCall(d_call) = &c_call.args[0] {
+                if let FValue::Name(d_name) = d_call.name {
+                    assert_eq!(table.get_string(d_name).unwrap(), "d");
+
+                    // Check `d()` has one argument: `e()`
+                    if let Value::FuncCall(e_call) = &d_call.args[0] {
+                        if let FValue::Name(e_name) = e_call.name {
+                            assert_eq!(table.get_string(e_name).unwrap(), "e");
+                        } else {
+                            panic!("Expected function name 'e'");
+                        }
+                    } else {
+                        panic!("Expected `e()` as the argument to `d()`");
+                    }
+                } else {
+                    panic!("Expected function name 'd'");
+                }
+            } else {
+                panic!("Expected `d(e())` as the first argument of `c()`");
+            }
+
+            // Second argument is `f()`
+            if let Value::FuncCall(f_call) = &c_call.args[1] {
+                if let FValue::Name(f_name) = f_call.name {
+                    assert_eq!(table.get_string(f_name).unwrap(), "f");
+
+                    // Verify `f()` has no arguments
+                    assert_eq!(f_call.args.len(), 0);
+                } else {
+                    panic!("Expected function name 'f'");
+                }
+            } else {
+                panic!("Expected `f()` as the second argument of `c()`");
+            }
+        } else {
+            panic!("Expected function name 'c'");
+        }
+
+        // Check the argument passed to `c()` is `b(a(), x)`
+        if let Value::FuncCall(b_call) = &pipe_call.args[0] {
+            if let FValue::Name(b_name) = b_call.name {
+                assert_eq!(table.get_string(b_name).unwrap(), "b");
+
+                // First argument to `b()` is `a()`
+                if let Value::FuncCall(a_call) = &b_call.args[0] {
+                    if let FValue::Name(a_name) = a_call.name {
+                        assert_eq!(table.get_string(a_name).unwrap(), "a");
+
+                        // Verify `a()` has no arguments
+                        assert_eq!(a_call.args.len(), 0);
+                    } else {
+                        panic!("Expected function name 'a'");
+                    }
+                } else {
+                    panic!("Expected `a()` as the first argument to `b()`");
+                }
+
+                // Second argument to `b()` is `x`
+                assert_eq!(b_call.args[1], Value::Variable(table.get_id("x")));
+            } else {
+                panic!("Expected function name 'b'");
+            }
+        } else {
+            panic!("Expected `b(a(), x)` as the argument to `c()`");
+        }
+    } else {
+        panic!("Expected outer function call to be `c(d(e()), f())(b(a(), x))`");
+    }
+}
