@@ -982,7 +982,7 @@ fn parse_pipe_nil_bool() {
 
 #[test]
 fn parse_program() {
-    let input = "from path import func; def main(system) { true|> system(nil)(); } def helper() { x=nil; true } ";    
+    let input = "from path import func; def main(system) { true|> system(nil)(); } def helper(x) { match x {true => false, _ => {f(x)}} } ";    
     let lexer = Lexer::new(input);
     let mut table = StringTable::new();
     

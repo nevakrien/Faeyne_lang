@@ -215,7 +215,7 @@ impl<'input> StringTable<'input> {
 
     pub fn compare_to(&self, id: usize,s: &str) -> bool {
         match self.get_string(id) {
-            None => false,
+            None => unreachable!("attempting to compare to a non existing entry"),
             Some(x) => x==s,
         }
     }
