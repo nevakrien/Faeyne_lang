@@ -13,6 +13,8 @@ extern {
         "name" => LexTag::Name,
         "atom" => LexTag::Atom,
         "string" => LexTag::String,
+        "true" => LexTag::True,
+        "false" => LexTag::False,
         "poison_str" => LexTag::PoisonString,
         "UK" => LexTag::Unknowen,
 
@@ -195,6 +197,9 @@ pub FuncCall: FunctionCall = {
 
 Literal : Literal = {
     "nil" => Literal::Nil,
+    "true" => Literal::Bool(true),
+    "false" => Literal::Bool(false),
+
 
     <x:Atom> => Literal::Atom(x),
     <x:String> => Literal::String(x),

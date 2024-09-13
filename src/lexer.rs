@@ -16,6 +16,9 @@ pub enum LexTag {
     PoisonString,
     Unknowen,
     Nil,
+    
+    True,
+    False,
 
     //keywords
     Import,
@@ -225,6 +228,8 @@ fn lex_word<'a>(input: &'a str) -> LexResult<'a> {
         "return" => LexTag::Return,
         "nil" => LexTag::Nil,
         "match" => LexTag::Match,
+        "true" => LexTag::True,
+        "false" => LexTag::False,
         _ => LexTag::Name
     };
     Ok((input, tag)) 

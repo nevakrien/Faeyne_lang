@@ -69,6 +69,7 @@ pub enum FValue {
 pub enum Value {
     Int(Result<i64, f64>),
     Float(f64),
+    Bool(bool),
     Atom(usize),
     String(usize),
     Variable(usize),
@@ -96,6 +97,7 @@ pub enum Literal {
     Float(f64),
     Atom(usize),
     String(usize),
+    Bool(bool),
     Nil,
 }
 impl From<Literal> for Value {
@@ -105,6 +107,7 @@ impl From<Literal> for Value {
             Literal::Float(f) => Value::Float(f),
             Literal::Atom(a) => Value::Atom(a),
             Literal::String(s) => Value::String(s),
+            Literal::Bool(b) => Value::Bool(b),
             Literal::Nil => Value::Nil,
         }
     }

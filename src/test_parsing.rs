@@ -342,6 +342,7 @@ fn func_block_empty() {
     assert!(func_block.ret.is_none());
 }
 
+
 #[test]
 fn test_arithmetic_as_func_call() {
     let input = "1 + 2 * 3 - 4 / 2";
@@ -935,8 +936,8 @@ fn parse_pipe_hello_world_function() {
 }
 
 #[test]
-fn parse_pipe_nil() {
-    let input = "def main(system) { nil|> system(nil)(); }";
+fn parse_pipe_nil_bool() {
+    let input = "def main(system) { true|> system(nil)(); }";
     
     let lexer = Lexer::new(input);
     let mut table = StringTable::new();
@@ -969,14 +970,15 @@ fn parse_pipe_nil() {
 
             assert_eq!(outer_call.args[0],Value::Nil);
         } else {
-            panic!("Expected system(:println) call as the outer function");
+            panic!("Expected system(nil) call as the outer function");
         }
 
         // Validate the argument to `system(:println)` is `"hello world"`
-        assert_eq!(func_call.args.len(), 1, "Expected one argument to system(:println)");
-        assert_eq!(func_call.args[0],Value::Nil);
+        assert_eq!(func_call.args.len(), 1);
+        assert_eq!(func_call.args[0],Value::Bool(true));
         
     } else {
         panic!("Expected a function call in the body of main");
     }
 }
+
