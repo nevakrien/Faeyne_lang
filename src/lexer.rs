@@ -22,6 +22,7 @@ pub enum LexTag {
 
     //keywords
     Import,
+    From,
     FuncDec,
     Lambda,
 
@@ -223,6 +224,7 @@ fn lex_word<'a>(input: &'a str) -> LexResult<'a> {
 
     let tag = match word {
         "import" => LexTag::Import,
+        "from" => LexTag::From,
         "def" => LexTag::FuncDec,
         "fn" => LexTag::Lambda,
         "return" => LexTag::Return,

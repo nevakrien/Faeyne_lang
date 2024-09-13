@@ -173,7 +173,15 @@ pub enum BuildIn {
     DoubleXor,
 }
 
+pub struct ImportFunc{
+    pub path: usize,
+    pub name: usize,
+}
 
+pub enum OuterExp {
+    ImportFunc(ImportFunc),
+    FuncDec(FuncDec),
+}
 
 pub struct StringTable<'input> {
     map: HashMap<&'input str, usize>,

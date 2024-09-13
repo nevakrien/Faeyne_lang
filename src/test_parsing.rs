@@ -937,15 +937,13 @@ fn parse_pipe_hello_world_function() {
 
 #[test]
 fn parse_pipe_nil_bool() {
-    let input = "def main(system) { true|> system(nil)(); }";
-    
+    let input = "def main(system) { true|> system(nil)(); }";    
     let lexer = Lexer::new(input);
     let mut table = StringTable::new();
     
     let parser = parser::FuncDecParser::new();  
     let result = parser.parse(input, &mut table, lexer);
     
-    assert!(result.is_ok(), "Failed to parse function declaration");
     
     let func_dec = result.unwrap();
     
@@ -982,3 +980,16 @@ fn parse_pipe_nil_bool() {
     }
 }
 
+#[test]
+fn parse_program() {
+    let input = "from path import func; def main(system) { true|> system(nil)(); } def helper() { x=nil; true } ";    
+    let lexer = Lexer::new(input);
+    let mut table = StringTable::new();
+    
+    let parser = parser::ProgramParser::new();  
+    let result = parser.parse(input, &mut table, lexer);
+    
+    
+    let program = result.unwrap();
+    assert!(program.len()==3);
+}

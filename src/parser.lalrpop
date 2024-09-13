@@ -21,6 +21,7 @@ extern {
         // Keywords
         "nil" => LexTag::Nil,
         "import" => LexTag::Import,
+        "from" => LexTag::From,
         "def" => LexTag::FuncDec,
         "fn" => LexTag::Lambda,
         "return" => LexTag::Return,
@@ -463,3 +464,26 @@ pub MatchStatment:MatchStatment = {
         debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
     }, 
 };
+
+//modules
+ImportFunc : ImportFunc = {
+    "from" <path:Name> "import" <name:Name> => ImportFunc{path,name},
+    "from" <path:Name> "import" <name:Name> ";"=> ImportFunc{path,name},
+}
+
+pub Program : Vec<OuterExp> = {
+    <p:Program>  <f:ImportFunc> => {
+        let mut program = p;
+        program.push(OuterExp::ImportFunc(f));
+        program
+    },
+
+    <p:Program>  <f:FuncDec> => {
+        let mut program = p;
+        program.push(OuterExp::FuncDec(f));
+        program
+    },
+    
+    <f:ImportFunc> => vec![OuterExp::ImportFunc(f)],
+    <f:FuncDec> => vec![OuterExp::FuncDec(f)],
+}
