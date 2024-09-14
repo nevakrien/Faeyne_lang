@@ -14,8 +14,7 @@ fn simple_parse_hello_world_function() {
     let parser = parser::FuncDecParser::new();  // Assuming you create this parser
     let result = parser.parse(input, &mut table, lexer);
     
-    assert!(result.is_ok(), "Failed to parse function declaration");
-    
+
     let func_dec = result.unwrap();
     
     assert_eq!(table.get_string(func_dec.sig.name), Some("main"));
@@ -32,7 +31,7 @@ fn simple_parse_blocky_function() {
     let parser = parser::FuncDecParser::new();  // Assuming you create this parser
     let result = parser.parse(input, &mut table, lexer);
     
-    assert!(result.is_ok(), "Failed to parse function declaration");
+
     
     let func_dec = result.unwrap();
     
@@ -49,7 +48,7 @@ fn simple_parse_lammda_function() {
     let parser = parser::FuncDecParser::new();  // Assuming you create this parser
     let result = parser.parse(input, &mut table, lexer);
     
-    // assert!(result.is_ok(), "Failed to parse function declaration");
+   
     
     let func_dec = result.unwrap();
     
@@ -67,7 +66,7 @@ fn parse_hello_world_function() {
     let parser = parser::FuncDecParser::new();  
     let result = parser.parse(input, &mut table, lexer);
     
-    assert!(result.is_ok(), "Failed to parse function declaration");
+
     
     let func_dec = result.unwrap();
     
@@ -125,7 +124,7 @@ fn func_sig_single_arg() {
     let result = parser.parse(input, &mut table, lexer);
 
     // Assert that parsing was successful
-    assert!(result.is_ok(), "Failed to parse function with single argument");
+
 
     let func_dec = result.unwrap();
 
@@ -146,7 +145,7 @@ fn func_sig_multiple_args() {
     let result = parser.parse(input, &mut table, lexer);
 
     // Assert that parsing was successful
-    assert!(result.is_ok(), "Failed to parse function with multiple arguments");
+
 
     let func_dec = result.unwrap();
 
@@ -169,7 +168,7 @@ fn func_sig_no_args() {
     let result = parser.parse(input, &mut table, lexer);
 
     // Assert that parsing was successful
-    assert!(result.is_ok(), "Failed to parse function with no arguments");
+
 
     let func_dec = result.unwrap();
 
@@ -187,8 +186,6 @@ fn function_calls_and_expressions() {
     
     let parser = parser::ValueParser::new();
     let result = parser.parse(input, &mut table, lexer);
-    
-    assert!(result.is_ok(), "Failed to parse function call with mixed expressions");
     
     let value = result.unwrap();
     if let Value::FuncCall (FunctionCall {name, args,.. }) = value {
@@ -226,7 +223,7 @@ fn nested_calls() {
     let parser = parser::ValueParser::new();
     let result = parser.parse(input, &mut table, lexer);
     
-    assert!(result.is_ok(), "Failed to parse function call with mixed expressions");
+    result.unwrap();
 }
 
 #[test]
@@ -238,8 +235,6 @@ fn function_call_no_args() {
     
     let parser = parser::ValueParser::new();
     let result = parser.parse(input, &mut table, lexer);
-    
-    assert!(result.is_ok(), "Failed to parse function call with no arguments");
     
     let value = result.unwrap();
     if let Value::FuncCall(FunctionCall { name, args,.. }) = value {
@@ -265,8 +260,6 @@ fn func_block_with_statements_and_return() {
 
     let parser = parser::FuncBlockParser::new();
     let result = parser.parse(input, &mut table, lexer);
-
-    // assert!(result.is_ok(), "Failed to parse function block with statements and return");
 
     let func_block = result.unwrap();
 
@@ -295,8 +288,6 @@ fn func_block_with_statements_no_return() {
     let parser = parser::FuncBlockParser::new();
     let result = parser.parse(input, &mut table, lexer);
 
-    // assert!(result.is_ok(), "Failed to parse function block with statements and no return");
-
     let func_block = result.unwrap();
 
     // Check body length and ensure no return
@@ -313,8 +304,6 @@ fn func_block_only_return() {
 
     let parser = parser::FuncBlockParser::new();
     let result = parser.parse(input, &mut table, lexer);
-
-    assert!(result.is_ok(), "Failed to parse function block with only return");
 
     let func_block = result.unwrap();
 
@@ -333,8 +322,6 @@ fn func_block_empty() {
     let parser = parser::FuncBlockParser::new();
     let result = parser.parse(input, &mut table, lexer);
 
-    assert!(result.is_ok(), "Failed to parse empty function block");
-
     let func_block = result.unwrap();
 
     // Check empty body and no return
@@ -351,8 +338,6 @@ fn test_arithmetic_as_func_call() {
 
     let parser = parser::ValueParser::new();  // Assuming you have this parser set up
     let result = parser.parse(input, &mut table, lexer);
-
-    assert!(result.is_ok(), "Failed to parse arithmetic expression");
 
     let parsed_value = result.unwrap();
 
@@ -410,8 +395,6 @@ fn test_logical_as_func_call() {
 
     let parser = parser::ValueParser::new();  // Assuming you have this parser set up
     let result = parser.parse(input, &mut table, lexer);
-
-    //assert!(result.is_ok(), "Failed to parse logical expression");
 
     let parsed_value = result.unwrap();
     //println!("\n\nparsed:\n\n{:?}\n\n",parsed_value );
@@ -482,8 +465,6 @@ fn test_comparison_with_logical_in_parentheses() {
 
     // Uncomment when debugging to see the parsed result
     // println!("\n\nparsed:\n\n{:?}\n\n", parsed_value);
-
-    //assert!(result.is_ok(), "Failed to parse expression with comparison and logical operators in parentheses");
 
     let parsed_value = result.unwrap();
 
@@ -890,8 +871,6 @@ fn parse_pipe_hello_world_function() {
     let parser = parser::FuncDecParser::new();  
     let result = parser.parse(input, &mut table, lexer);
     
-    assert!(result.is_ok(), "Failed to parse function declaration");
-    
     let func_dec = result.unwrap();
     
     // Validate the function signature (name "main" and one argument "system")
@@ -992,4 +971,169 @@ fn parse_program() {
     
     let program = result.unwrap();
     assert!(program.len()==3);
+}
+
+#[test]
+fn test_simple_match_statement() {
+    let input = "def check_value(x) { match x { 1 => 'one', 2 => 'two', _ => 'other' }; }";
+    
+    let lexer = Lexer::new(input);
+    let mut table = StringTable::new();
+    
+    let parser = parser::FuncDecParser::new();
+    let result = parser.parse(input, &mut table, lexer);
+    
+    let func_dec = result.unwrap();
+    
+    // Validate function signature
+    assert_eq!(table.get_string(func_dec.sig.name).unwrap(), "check_value");
+    assert_eq!(func_dec.sig.args.len(), 1);
+    assert_eq!(table.get_string(func_dec.sig.args[0]).unwrap(), "x");
+    
+    // Validate function body has one statement (the match statement)
+    assert_eq!(func_dec.body.body.len(), 1, "Expected one statement in function body");
+    
+    // Unwrap the match statement
+    if let Statment::Match(match_stmt) = &func_dec.body.body[0] {
+        // Validate the expression being matched (should be variable 'x')
+        if let Value::Variable(var_id) = *match_stmt.val {
+            assert_eq!(table.get_string(var_id).unwrap(), "x");
+        } else {
+            panic!("Expected variable 'x' as the value being matched");
+        }
+        
+        // Validate the match arms
+        assert_eq!(match_stmt.arms.len(), 3, "Expected three match arms");
+        
+        // First arm: 1 => 'one'
+        let arm1 = &match_stmt.arms[0];
+        if let MatchPattern::Literal(Literal::Int(Ok(1))) = arm1.pattern {
+            // Pattern matches
+        } else {
+            panic!("Expected pattern 1 in first arm");
+        }
+        if let MatchOut::Value(Value::String(str_id)) = &arm1.result {
+            assert_eq!(table.get_string(*str_id).unwrap(), "'one'");
+        } else {
+            panic!("Expected value 'one' in first arm");
+        }
+        
+        // Second arm: 2 => 'two'
+        let arm2 = &match_stmt.arms[1];
+        if let MatchPattern::Literal(Literal::Int(Ok(2))) = arm2.pattern {
+            // Pattern matches
+        } else {
+            panic!("Expected pattern 2 in second arm");
+        }
+        if let MatchOut::Value(Value::String(str_id)) = &arm2.result {
+            assert_eq!(table.get_string(*str_id).unwrap(), "'two'");
+        } else {
+            panic!("Expected value 'two' in second arm");
+        }
+        
+        // Third arm: _ => 'other'
+        let arm3 = &match_stmt.arms[2];
+        if let MatchPattern::Wildcard = arm3.pattern {
+            // Pattern matches
+        } else {
+            panic!("Expected wildcard pattern in third arm");
+        }
+        if let MatchOut::Value(Value::String(str_id)) = &arm3.result {
+            assert_eq!(table.get_string(*str_id).unwrap(), "'other'");
+        } else {
+            panic!("Expected value 'other' in third arm");
+        }
+    } else {
+        panic!("Expected a match statement in function body");
+    }
+}
+
+#[test]
+fn test_match_with_blocks() {
+    let input = "
+    def handler(event) {
+        match event {
+            :click => {
+                process_click(event);
+                update_ui();
+            },
+            :hover => {
+                highlight_element();
+            },
+            _ => {}
+        };
+    }";
+    
+    let lexer = Lexer::new(input);
+    let mut table = StringTable::new();
+    
+    let parser = parser::FuncDecParser::new();
+    let result = parser.parse(input, &mut table, lexer);
+    
+
+    let func_dec = result.unwrap();
+    
+    // Validate function signature
+    assert_eq!(table.get_string(func_dec.sig.name).unwrap(), "handler");
+    assert_eq!(func_dec.sig.args.len(), 1);
+    assert_eq!(table.get_string(func_dec.sig.args[0]).unwrap(), "event");
+    
+    // Validate function body has one statement (the match statement)
+    assert_eq!(func_dec.body.body.len(), 1, "Expected one statement in function body");
+    
+    // Unwrap the match statement
+    if let Statment::Match(match_stmt) = &func_dec.body.body[0] {
+        // Validate the expression being matched (should be variable 'event')
+        if let Value::Variable(var_id) = *match_stmt.val {
+            assert_eq!(table.get_string(var_id).unwrap(), "event");
+        } else {
+            panic!("Expected variable 'event' as the value being matched");
+        }
+        
+        // Validate the match arms
+        assert_eq!(match_stmt.arms.len(), 3, "Expected three match arms");
+        
+        // First arm: :click => { process_click(event); update_ui(); }
+        let arm1 = &match_stmt.arms[0];
+        if let MatchPattern::Literal(Literal::Atom(atom_id)) = arm1.pattern {
+            assert_eq!(table.get_string(atom_id).unwrap(), ":click");
+        } else {
+            panic!("Expected atom ':click' in first arm");
+        }
+        if let MatchOut::Block(block) = &arm1.result {
+            assert_eq!(block.body.len(), 2, "Expected two statements in first arm block");
+            // Further validation of block statements can be added here
+        } else {
+            panic!("Expected a block in first arm result");
+        }
+        
+        // Second arm: :hover => { highlight_element(); }
+        let arm2 = &match_stmt.arms[1];
+        if let MatchPattern::Literal(Literal::Atom(atom_id)) = arm2.pattern {
+            assert_eq!(table.get_string(atom_id).unwrap(), ":hover");
+        } else {
+            panic!("Expected atom ':hover' in second arm");
+        }
+        if let MatchOut::Block(block) = &arm2.result {
+            assert_eq!(block.body.len(), 1, "Expected one statement in second arm block");
+            // Further validation of block statements can be added here
+        } else {
+            panic!("Expected a block in second arm result");
+        }
+        
+        // Third arm: _ => {}
+        let arm3 = &match_stmt.arms[2];
+        if let MatchPattern::Wildcard = arm3.pattern {
+            // Pattern matches
+        } else {
+            panic!("Expected wildcard pattern in third arm");
+        }
+        if let MatchOut::Block(block) = &arm3.result {
+            assert_eq!(block.body.len(), 0, "Expected empty block in third arm");
+        } else {
+            panic!("Expected a block in third arm result");
+        }
+    } else {
+        panic!("Expected a match statement in function body");
+    }
 }

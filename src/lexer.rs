@@ -142,10 +142,7 @@ fn lex_string<'a>(input: &'a str) -> LexResult<'a> {
 fn lex_atom<'a>(input: &'a str) -> LexResult<'a> {
     let (input, _ans) = recognize(preceded(
         tag(":"),
-        pair(
-            take_while1(|c: char| c.is_alphabetic() || c == '_'),
-            take_while(|c: char| c.is_alphanumeric() || c == '_'),
-        ),
+        take_while1(|c: char| c.is_alphanumeric() || c == '_'),
     ))(input)?;
     Ok((input, LexTag::Atom))
 }

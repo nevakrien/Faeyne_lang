@@ -52,13 +52,15 @@ extern {
         "**" => LexTag::Pow,
 
         "%" => LexTag::Modolo,
+
         "&&" => LexTag::DoubleAnd,
-        "&" => LexTag::And,
         "||" => LexTag::DoubleOr,
         "^^" => LexTag::DoubleXor,
 
+        "&" => LexTag::And,
         "|" => LexTag::Or,
         "^" => LexTag::Xor,
+        
 
         "=" => LexTag::Eq,
         "==" => LexTag::DoubleEq,
