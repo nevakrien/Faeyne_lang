@@ -45,7 +45,7 @@ impl Ret {
 }
 
 #[derive(Debug,PartialEq)]
-pub struct Lammda {
+pub struct Lambda {
     pub sig: Vec<usize>,
     pub body: FuncBlock,
 }
@@ -61,7 +61,8 @@ pub struct FunctionCall {
 pub enum FValue {
     Name(usize),
     FuncCall(Box<FunctionCall>),
-    Lammda(Box<Lammda>),
+    Lambda(Box<Lambda>),
+    MatchLambda(Box<MatchLambda>),
     BuildIn(BuildIn),
 }
 
@@ -74,7 +75,8 @@ pub enum Value {
     String(usize),
     Variable(usize),
     FuncCall(FunctionCall),
-    Lammda(Box<Lammda>),
+    Lambda(Box<Lambda>),
+    MatchLambda(Box<MatchLambda>),
     BuildIn(BuildIn),
     Nil,
     Match(MatchStatment),
@@ -85,7 +87,8 @@ impl From<FValue> for Value {
         match fval {
             FValue::Name(name) => Value::Variable(name),
             FValue::FuncCall(func_call) => Value::FuncCall(*func_call),
-            FValue::Lammda(lam) => Value::Lammda(lam),
+            FValue::Lambda(lam) => Value::Lambda(lam),
+            FValue::MatchLambda(m) => Value::MatchLambda(m),
             FValue::BuildIn(build_in) => Value::BuildIn(build_in)
         }
     }
@@ -117,8 +120,8 @@ impl From<Literal> for Value {
 
 #[derive(Debug,PartialEq)]
 pub enum MatchPattern {
-    Literal(Literal),  // Restricted to basic literals
-    Variable(usize),   // Binding a variable
+    Literal(Literal), 
+    Variable(usize),   
     Wildcard,          // The `_` pattern
     //Tuple(Vec<MatchPattern>), // Matching a tuple
 }
@@ -143,11 +146,19 @@ pub enum MatchOut {
 
 #[derive(Debug,PartialEq)]
 pub struct MatchStatment {
-    pub val: Box<Value>,          // The expression being matched
+    pub val: Box<Value>,      // The expression being matched
     pub arms: Vec<MatchArm>,  // The match arms
     pub debug_span: Span,
 }
 
+//these are expressions that look like match fn {...} 
+//and they make a lamda function that pattrn matches arguments like a regular funtion
+//the intended use is for things like arrays with  arr = match fn {0 => a, 1 => y}; arr(0)==a; 
+#[derive(Debug,PartialEq)]
+pub struct MatchLambda {
+    pub arms: Vec<MatchArm>,  
+    pub debug_span: Span,
+}
 
 
 #[derive(Debug,PartialEq)]
@@ -176,16 +187,19 @@ pub enum BuildIn {
     DoubleXor,
 }
 
+#[derive(Debug,PartialEq)]
 pub struct ImportFunc{
     pub path: usize,
     pub name: usize,
 }
 
+#[derive(Debug,PartialEq)]
 pub enum OuterExp {
     ImportFunc(ImportFunc),
     FuncDec(FuncDec),
 }
 
+#[derive(Debug,PartialEq)]
 pub struct StringTable<'input> {
     map: HashMap<&'input str, usize>,
     vec: Vec<&'input str>,
@@ -193,10 +207,26 @@ pub struct StringTable<'input> {
 
 impl<'input> StringTable<'input> {
     pub fn new() -> Self {
-        Self {
+        let mut table = Self {
             map: HashMap::new(),
             vec: Vec::new(),
-        }
+        };
+
+        // Preload the basic atoms
+        table.get_id("main");
+        table.get_id("system");
+
+        table.get_id("_");       
+        
+        table.get_id(":nil");
+        table.get_id(":bool");
+        table.get_id(":string");
+        table.get_id(":int");
+        table.get_id(":float");
+        table.get_id(":atom");
+        table.get_id(":func");
+        
+        table
     }
 
     // Returns the ID of the string, inserting it if it doesn't exist.
@@ -209,6 +239,9 @@ impl<'input> StringTable<'input> {
             self.map.insert(s, id);
             id
         }
+    }
+    pub fn get_existing_id(&self, s: &'input str) -> usize {
+        self.map[s]
     }
 
     // Returns the string corresponding to an ID, or an error if the ID is out of bounds.
@@ -229,13 +262,9 @@ fn test_string_table() {
     let input = "hello world";
     let mut table = StringTable::new();
 
-    // Insert "hello" into the table and get its ID
     let id_hello = table.get_id(&input[0..5]);
-    assert_eq!(id_hello, 0); // First insertion, ID should be 0
-
-    // Insert "world" into the table and get its ID
     let id_world = table.get_id(&input[6..11]);
-    assert_eq!(id_world, 1); // Second insertion, ID should be 1
+
 
     // Check that we can retrieve "hello" by its ID
     let retrieved_hello = table.get_string(id_hello).unwrap();

@@ -1,0 +1,24 @@
+from path import func;
+
+def handler(event) {
+    match event {
+        :click => {
+            process_click(event);
+            update_ui();
+        },
+        :hover => {
+            highlight_element();
+        },
+        _ => {}
+    };
+}
+
+def main(system){
+    system(:println)("hello world");
+
+    x = match fn {
+        0 => 2,
+        1 => 3,
+        2 => 2,
+    };
+}

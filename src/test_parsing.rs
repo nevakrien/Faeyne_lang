@@ -39,7 +39,7 @@ fn simple_parse_blocky_function() {
     assert!(func_dec.body.ret.is_some(), "Expected return statment");
 }
 #[test]
-fn simple_parse_lammda_function() {
+fn simple_parse_lambda_function() {
     let input = "def main(system) { f = fn (x,y) -> {x}; fn (x) {} }";
     
     let lexer = Lexer::new(input);
@@ -961,7 +961,7 @@ fn parse_pipe_nil_bool() {
 
 #[test]
 fn parse_program() {
-    let input = "from path import func; def main(system) { true|> system(nil)(); } def helper(x) { match x {true => false, _ => {f(x)}} } ";    
+    let input = "from path import func; def main(system) { true|> system(nil)(); } def helper(x) { match fn {true => false, _ => {f(x)}} } ";    
     let lexer = Lexer::new(input);
     let mut table = StringTable::new();
     

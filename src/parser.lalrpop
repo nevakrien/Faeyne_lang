@@ -129,13 +129,13 @@ NoPipeFuncCall: FunctionCall = {
         debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
     },
 
-    <start:@L> <x:Lammda> "(" <args:CommaSepValue> ")" <end:@R> => FunctionCall {
-        name: FValue::Lammda(Box::new(x)),
+    <start:@L> <x:Lambda> "(" <args:CommaSepValue> ")" <end:@R> => FunctionCall {
+        name: FValue::Lambda(Box::new(x)),
         args: args,
         debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
     },
-    <start:@L> <x:Lammda> "(" ")" <end:@R> => FunctionCall {
-        name: FValue::Lammda(Box::new(x)),
+    <start:@L> <x:Lambda> "(" ")" <end:@R> => FunctionCall {
+        name: FValue::Lambda(Box::new(x)),
         args: vec![],
         debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
     },
@@ -235,12 +235,14 @@ PipableValue: Value = {
 pub Value: Value = {
     #[precedence(level="10")] #[assoc(side="left")]
     <x:FuncCall> => Value::FuncCall(x),
-    <x:Lammda> => Value::Lammda(Box::new(x)),
-
+    <x:Lambda> => Value::Lambda(Box::new(x)),
+    <m:MatchLambda>  => Value::MatchLambda(Box::new(m)),
+    
     #[precedence(level="0")]
     <x:Name> => Value::Variable(x),
     <l:Literal> => l.into(),
     <m:MatchStatment>  => Value::Match(m),
+
 
     // Parentheses should have the highest precedence
     #[precedence(level="1")] 
@@ -347,12 +349,12 @@ pub FuncDec: FuncDec = {
     }
 };
 
-Lammda: Lammda = {
-    "fn" <sig:ArgList> <body:FuncBlock> => Lammda {
+Lambda: Lambda = {
+    "fn" <sig:ArgList> <body:FuncBlock> => Lambda {
         sig,
         body,
     },
-    "fn" <sig:ArgList> "->" <body:FuncBlock> => Lammda {
+    "fn" <sig:ArgList> "->" <body:FuncBlock> => Lambda {
         sig,
         body,
     }
@@ -462,6 +464,13 @@ MatchArms : Vec<MatchArm> = {
 pub MatchStatment:MatchStatment = {
   <start:@L> "match" <val:Value> <arms:MatchArms> <end:@R> => MatchStatment {
         val: Box::new(val),
+        arms,
+        debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
+    }, 
+};
+
+pub MatchLambda:MatchLambda = {
+  <start:@L> "match" "fn" <arms:MatchArms> <end:@R> => MatchLambda {
         arms,
         debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
     }, 
