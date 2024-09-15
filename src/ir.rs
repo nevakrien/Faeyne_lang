@@ -81,11 +81,11 @@ pub struct SigError {
 	//placeholder
 }
 
-pub fn GetType(v : Value, table:&mut StringTable) -> Value {
-	Value::Atom(GetTypeID(v,table))
+pub fn get_type(v : Value, table:&mut StringTable) -> Value {
+	Value::Atom(get_type_id(v,table))
 }
 
-pub fn GetTypeID(v : Value, table:&mut StringTable) -> usize{
+pub fn get_type_id(v : Value, table:&mut StringTable) -> usize{
 	match v {
 		Value::Nil => table.get_existing_id(":nil"),
 		Value::Bool(_) => table.get_existing_id(":bool"),
@@ -98,13 +98,13 @@ pub fn GetTypeID(v : Value, table:&mut StringTable) -> usize{
 	}
 }
 
-pub fn ToBool(v: &Value) -> bool {
+pub fn to_bool(v: &Value) -> bool {
     match v {
         Value::Bool(b) => *b,
         Value::Int(i) => *i != 0,
         Value::Float(f) => *f != 0.0,
         Value::Nil => false,
-        Value::String(p) => p.len()>2,
+        Value::String(p) => p.len()>0,
         _ => true, // default to truthy for other types
     }
 }
@@ -140,7 +140,7 @@ macro_rules! perform_comparison {
 }
 
 
-pub fn Handle_Buildin(args: Vec<Value>, op: BuildIn) -> Result<Value, SigError> {
+pub fn handle_buildin(args: Vec<Value>, op: BuildIn) -> Result<Value, SigError> {
     if args.len()!=2 {
     	return Err(SigError {
                     // Handle type mismatch error here
@@ -265,8 +265,8 @@ fn perform_bitwise_op(v1: &Value, v2: &Value, op: BuildIn) -> Result<Value, SigE
 }
 
 fn perform_logical_op(v1: &Value, v2: &Value, op: BuildIn) -> Result<Value, SigError> {
-    let lhs_bool = ToBool(v1);
-    let rhs_bool = ToBool(v2);
+    let lhs_bool = to_bool(v1);
+    let rhs_bool = to_bool(v2);
 
     let result = match op {
         BuildIn::DoubleAnd => lhs_bool && rhs_bool,

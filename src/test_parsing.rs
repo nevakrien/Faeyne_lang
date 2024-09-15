@@ -197,7 +197,7 @@ fn function_calls_and_expressions() {
         assert_eq!(args.len(), 3);
         
         match args[0] {
-            Value::Int(Ok(1)) => (),
+            Value::Int(1) => (),
             _ => panic!("Expected first argument to be Int(1)"),
         }
         match args[1] {
@@ -348,13 +348,13 @@ fn test_arithmetic_as_func_call() {
             // Check the left operand is an addition `FuncCall`
             if let Value::FuncCall(add_call) = &subtract_call.args[0] {
                 if let FValue::BuildIn(BuildIn::Add) = add_call.name {
-                    assert_eq!(add_call.args[0], Value::Int(Ok(1))); // Check the first argument of addition is 1
+                    assert_eq!(add_call.args[0], Value::Int(1)); // Check the first argument of addition is 1
 
                     // Check the right operand of addition is multiplication `FuncCall`
                     if let Value::FuncCall(mul_call) = &add_call.args[1] {
                         if let FValue::BuildIn(BuildIn::Mul) = mul_call.name {
-                            assert_eq!(mul_call.args[0], Value::Int(Ok(2))); // Multiplication left operand is 2
-                            assert_eq!(mul_call.args[1], Value::Int(Ok(3))); // Multiplication right operand is 3
+                            assert_eq!(mul_call.args[0], Value::Int(2)); // Multiplication left operand is 2
+                            assert_eq!(mul_call.args[1], Value::Int(3)); // Multiplication right operand is 3
                         } else {
                             panic!("Expected multiplication function");
                         }
@@ -371,8 +371,8 @@ fn test_arithmetic_as_func_call() {
             // Check the right operand of subtraction is division `FuncCall`
             if let Value::FuncCall(div_call) = &subtract_call.args[1] {
                 if let FValue::BuildIn(BuildIn::Div) = div_call.name {
-                    assert_eq!(div_call.args[0], Value::Int(Ok(4))); // Division left operand is 4
-                    assert_eq!(div_call.args[1], Value::Int(Ok(2))); // Division right operand is 2
+                    assert_eq!(div_call.args[0], Value::Int(4)); // Division left operand is 4
+                    assert_eq!(div_call.args[1], Value::Int(2)); // Division right operand is 2
                 } else {
                     panic!("Expected division function");
                 }
@@ -408,8 +408,8 @@ fn test_logical_as_func_call() {
                     // Check the left operand of AND is an equality `FuncCall`
                     if let Value::FuncCall(eq_call) = &and_call.args[0] {
                         if let FValue::BuildIn(BuildIn::Equal) = eq_call.name {
-                            assert_eq!(eq_call.args[0], Value::Int(Ok(1))); // Equality left operand is 1
-                            assert_eq!(eq_call.args[1], Value::Int(Ok(1))); // Equality right operand is 1
+                            assert_eq!(eq_call.args[0], Value::Int(1)); // Equality left operand is 1
+                            assert_eq!(eq_call.args[1], Value::Int(1)); // Equality right operand is 1
                         } else {
                             panic!("Expected equality function");
                         }
@@ -420,8 +420,8 @@ fn test_logical_as_func_call() {
                     // Check the right operand of AND is a not-equal `FuncCall`
                     if let Value::FuncCall(neq_call) = &and_call.args[1] {
                         if let FValue::BuildIn(BuildIn::NotEqual) = neq_call.name {
-                            assert_eq!(neq_call.args[0], Value::Int(Ok(2))); // NotEqual left operand is 2
-                            assert_eq!(neq_call.args[1], Value::Int(Ok(3))); // NotEqual right operand is 3
+                            assert_eq!(neq_call.args[0], Value::Int(2)); // NotEqual left operand is 2
+                            assert_eq!(neq_call.args[1], Value::Int(3)); // NotEqual right operand is 3
                         } else {
                             panic!("Expected not-equal function");
                         }
@@ -438,8 +438,8 @@ fn test_logical_as_func_call() {
             // Check the right operand of OR is a smaller-than `FuncCall`
             if let Value::FuncCall(smaller_call) = &or_call.args[1] {
                 if let FValue::BuildIn(BuildIn::Smaller) = smaller_call.name {
-                    assert_eq!(smaller_call.args[0], Value::Int(Ok(4))); // Smaller left operand is 4
-                    assert_eq!(smaller_call.args[1], Value::Int(Ok(5))); // Smaller right operand is 5
+                    assert_eq!(smaller_call.args[0], Value::Int(4)); // Smaller left operand is 4
+                    assert_eq!(smaller_call.args[1], Value::Int(5)); // Smaller right operand is 5
                 } else {
                     panic!("Expected smaller-than function");
                 }
@@ -652,8 +652,8 @@ fn test_piping_with_third_order_nesting() {
         // Second argument is `3 * 4`
         if let Value::FuncCall(mul_call) = &pipe_call.args[1] {
             if let FValue::BuildIn(BuildIn::Mul) = mul_call.name {
-                assert_eq!(mul_call.args[0], Value::Int(Ok(3)));
-                assert_eq!(mul_call.args[1], Value::Int(Ok(4)));
+                assert_eq!(mul_call.args[0], Value::Int(3));
+                assert_eq!(mul_call.args[1], Value::Int(4));
             } else {
                 panic!("Expected multiplication function");
             }
@@ -683,8 +683,8 @@ fn test_piping_with_third_order_nesting() {
                 // Check `a()` has one argument: `1 + 2`
                 if let Value::FuncCall(add_call) = &a_call.args[0] {
                     if let FValue::BuildIn(BuildIn::Add) = add_call.name {
-                        assert_eq!(add_call.args[0], Value::Int(Ok(1)));
-                        assert_eq!(add_call.args[1], Value::Int(Ok(2)));
+                        assert_eq!(add_call.args[0], Value::Int(1));
+                        assert_eq!(add_call.args[1], Value::Int(2));
                     } else {
                         panic!("Expected addition function");
                     }
@@ -1007,7 +1007,7 @@ fn test_simple_match_statement() {
         
         // First arm: 1 => 'one'
         let arm1 = &match_stmt.arms[0];
-        if let MatchPattern::Literal(Literal::Int(Ok(1))) = arm1.pattern {
+        if let MatchPattern::Literal(Literal::Int(1)) = arm1.pattern {
             // Pattern matches
         } else {
             panic!("Expected pattern 1 in first arm");
@@ -1020,7 +1020,7 @@ fn test_simple_match_statement() {
         
         // Second arm: 2 => 'two'
         let arm2 = &match_stmt.arms[1];
-        if let MatchPattern::Literal(Literal::Int(Ok(2))) = arm2.pattern {
+        if let MatchPattern::Literal(Literal::Int(2)) = arm2.pattern {
             // Pattern matches
         } else {
             panic!("Expected pattern 2 in second arm");

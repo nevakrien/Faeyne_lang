@@ -31,7 +31,9 @@ pub enum LexTag {
     Match, 
 
     Float(f64), // We can parse in a way that never overflows
-    Int(Result<i64, f64>), // If we get a float here, we know it overflowed
+    Int(i64), // If we get a float here, we know it overflowed
+
+    OverflowedInt(f64),
 
     Dot,
     Ender,
@@ -286,7 +288,14 @@ fn lex_number<'a>(input: &'a str) -> LexResult<'a> {
     let (input, n) = lex_digits(input)?;
 
     let input = match dot(input) {
-        Err(_) => return Ok((input, LexTag::Int(n))),
+        Err(_) => {
+            let tag =  match n {
+                Ok(i) => LexTag::Int(i),
+                Err(f) => LexTag::OverflowedInt(f),
+            };
+
+            return Ok((input, tag));  
+        },
         Ok((input, _)) => input,
     };
 
@@ -413,7 +422,7 @@ fn test_lexer_end_to_end() {
     // Expected tokens
     let expected_tags = vec![
         LexTag::FuncDec, LexTag::Name, LexTag::OpenParen, LexTag::CloseParen, LexTag::OpenCurly,
-        LexTag::Name, LexTag::Name, LexTag::Eq, LexTag::Int(Ok(123456)), LexTag::Ender,
+        LexTag::Name, LexTag::Name, LexTag::Eq, LexTag::Int(123456), LexTag::Ender,
         LexTag::Name, LexTag::Name, LexTag::Eq, LexTag::Float(1e20), LexTag::Ender,  // Large int overflow to float
         LexTag::Name, LexTag::Name, LexTag::Eq, LexTag::Float(3.14159), LexTag::Ender,
         LexTag::Name, LexTag::Name, LexTag::Eq, LexTag::Lambda, LexTag::Name, LexTag::Arrow, 
@@ -751,7 +760,7 @@ fn test_lex_number_overflow() {
     let input = "9223372036854775808";
     let (remaining, tag) = lex_number(input).unwrap();
     assert_eq!(remaining, "");
-    assert!(matches!(tag, LexTag::Int(Err(_)))); // Should be parsed as f64 due to overflow
+    assert!(matches!(tag, LexTag::OverflowedInt(_))); // Should be parsed as f64 due to overflow
 
     // Floating-point number that overflows
     let input = "999999999999999999999.999999999999999999999";

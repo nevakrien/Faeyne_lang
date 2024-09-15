@@ -29,7 +29,10 @@ extern {
 
         // Numbers
         "float" => LexTag::Float(<f64>),
-        "int" => LexTag::Int(<Result<i64,f64>>),
+        "int" => LexTag::Int(<i64>),
+        "overvlow_int" => LexTag::OverflowedInt(<f64>),
+
+
 
         // Operators and others
         "." => LexTag::Dot,
@@ -210,11 +213,7 @@ Literal : Literal = {
     <x:"int"> => Literal::Int(x),
     <x:"float"> => Literal::Float(x),
 
-    "-" <x:"int"> => Literal::Int(match x {
-        Ok(i) => Ok(-i),
-        Err(f) => Err(-f),
-    }),
-
+    "-" <x:"int"> => Literal::Int(-x),
     "-" <x:"float"> => Literal::Float(-x),
 }
 
@@ -237,7 +236,7 @@ pub Value: Value = {
     <x:FuncCall> => Value::FuncCall(x),
     <x:Lambda> => Value::Lambda(Box::new(x)),
     <m:MatchLambda>  => Value::MatchLambda(Box::new(m)),
-    
+
     #[precedence(level="0")]
     <x:Name> => Value::Variable(x),
     <l:Literal> => l.into(),

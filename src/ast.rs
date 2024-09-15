@@ -68,7 +68,7 @@ pub enum FValue {
 
 #[derive(Debug,PartialEq)]
 pub enum Value {
-    Int(Result<i64, f64>),
+    Int(i64),
     Float(f64),
     Bool(bool),
     Atom(usize),
@@ -96,7 +96,7 @@ impl From<FValue> for Value {
 
 #[derive(Debug,PartialEq)]
 pub enum Literal {
-    Int(Result<i64,f64>),
+    Int(i64),
     Float(f64),
     Atom(usize),
     String(usize),
@@ -212,11 +212,8 @@ impl<'input> StringTable<'input> {
             vec: Vec::new(),
         };
 
-        // Preload the basic atoms
-        table.get_id("main");
-        table.get_id("system");
-
-        table.get_id("_");       
+        // Preload core literals
+        table.get_id("_");    
         
         table.get_id(":nil");
         table.get_id(":bool");
