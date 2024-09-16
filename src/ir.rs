@@ -73,18 +73,38 @@ impl<T> GenericRet<T> {
             GenericRet::Local(v) | GenericRet::Unwind(v) => v,
         }
     }
-}
 
-// Define the types for ScopeRet and BlockReturn using the generic enum
-
-pub type ScopeRet = GenericRet<LazyVal>;
-pub type BlockReturn = GenericRet<Value>;
-
-impl From<Value> for BlockReturn {
-    fn from(value: Value) -> Self {
-        BlockReturn::Local(value)
+    pub fn map<U, F>(self, f: F) -> GenericRet<U>
+    where
+        F: FnOnce(T) -> U,
+    {
+        match self {
+            GenericRet::Local(v) => GenericRet::Local(f(v)),
+            GenericRet::Unwind(v) => GenericRet::Unwind(f(v)),
+        }
     }
 }
+
+// Define the types for ScopeRet and ValueRet using the generic enum
+
+pub type ScopeRet = GenericRet<LazyVal>;
+pub type ValueRet = GenericRet<Value>;
+
+impl From<Value> for ValueRet {
+    fn from(value: Value) -> Self {
+        ValueRet::Local(value)
+    }
+}
+
+impl From<ValueRet> for Value {
+    fn from(ret: ValueRet) -> Self {
+        match ret {
+            ValueRet::Local(v) => v,
+            ValueRet::Unwind(v) => v,
+        }
+    }
+}
+
 
 pub type GcPointer<T> = Rc<T>;
 
@@ -96,7 +116,7 @@ pub enum LazyVal{
     //so we can actually return from the parent scope
     //sometimes evaluating a var causes an excepsion
 
-
+    MakeFunc(/* placeholder */),
     Terminal(Value),
     Ref(usize),
     FuncCall(Call),
@@ -105,7 +125,7 @@ pub enum LazyVal{
 }
 
 impl LazyVal {
-    pub fn eval(&self,scope: &VarScope) -> Result<BlockReturn,Error> {
+    pub fn eval(&self,scope: &VarScope) -> Result<ValueRet,Error> {
         match self {
             LazyVal::Terminal(v) => Ok(v.clone().into()),
             LazyVal::Ref(id) => match scope.get(*id) {
@@ -113,13 +133,14 @@ impl LazyVal {
                 Some(v) => Ok(v.clone().into()),
             },
             LazyVal::FuncCall(call) => call.eval(scope),
-            LazyVal::Match { var, statment } => 
+            LazyVal::Match { var, statment } => {
 
                 match var.eval(scope)? {    
-                    BlockReturn::Unwind(v) => Ok(BlockReturn::Unwind(v)),
-                    BlockReturn::Local(v) => statment.eval(v, scope),
+                    ValueRet::Unwind(v) => Ok(ValueRet::Unwind(v)),
+                    ValueRet::Local(v) => statment.eval(v, scope),
                 }
-
+            },
+            LazyVal::MakeFunc() => todo!(),
         }
     }
 }
@@ -128,7 +149,8 @@ impl LazyVal {
 pub enum Statment {
     Assign(usize, LazyVal),
     Call(Call),
-    Match(MatchStatment),
+    Match((LazyVal,MatchStatment)),
+    Return(ScopeRet),
 }
 
 
@@ -138,24 +160,82 @@ pub struct Func {
     inner:Block,
 }
 
-#[derive(Debug,PartialEq,Clone)]
-pub struct FuncSig{
-    num_args: usize, //for now its all simple
+impl Func {
+    pub fn eval(&self,args: Vec<Value>) -> Result<Value,Error> {
+        _ = self.sig.matches(&args)?;
+
+        let mut scope = VarScope::new();
+        for (i,a) in self.sig.arg_ids.iter().enumerate(){
+            scope.add(*a,args[i].clone());
+        }
+        
+        self.inner.eval(&scope).map(|x| x.into())
+    }
 }
 
+#[derive(Debug,PartialEq,Clone)]
+pub struct FuncSig{
+    arg_ids: Vec<usize>, //for now its all simple
+}
+
+impl FuncSig {
+   pub fn matches(&self,args: &[Value]) -> Result<(),Error> {
+        if args.len() == self.arg_ids.len() {
+            Ok(())
+        } else {
+            Err(Error::Sig(SigError{}))
+        }
+   } 
+}
 
 #[derive(Debug,PartialEq,Clone)]
 pub enum Block{
     Simple(LazyVal),
-    Code{inner:Vec<Statment>,ret:ScopeRet},
+    Code(Vec<Statment>),
 }
 
+
 impl Block {
-    pub fn eval(&self,scope: &VarScope) -> Result<BlockReturn,Error>{
+    pub fn eval(&self,scope: &VarScope) -> Result<ValueRet,Error>{
         match self {
             Block::Simple(v) => v.eval(scope),
-            _=>todo!(),
+            Block::Code(c)=>Self::evaluate_code(c,scope),
         }
+    }
+
+    #[inline]
+    fn evaluate_code(code:&[Statment],parent_scope: &VarScope)-> Result<ValueRet,Error>{
+        let mut scope = parent_scope.make_subscope();
+
+        for s in code.iter() {
+            match s {
+                Statment::Return(a) => match a{
+                    GenericRet::Local(x) => {return x.eval(&scope);},
+                    GenericRet::Unwind(x)=> {return x.eval(&scope);},
+                },
+                Statment::Assign(id,a) =>{
+                    let ret = a.eval(&scope)?;
+                    match ret{
+                        ValueRet::Local(x) => {scope.add(*id,x);},
+                        ValueRet::Unwind(_) => {return Ok(ret);}
+                    }
+                    
+                },
+                Statment::Call(v) => {
+                    _ = v.eval(&scope)?;
+                },
+                Statment::Match((val,statment)) => {
+                    let  r = val.eval(&scope)?;
+                    let x = match r {
+                        ValueRet::Local(x) => x,
+                        ValueRet::Unwind(_) =>{return Ok(r);},
+                    };
+                    _ = statment.eval(x,&scope)?;
+                },
+            }
+        }
+
+        Ok(ValueRet::Local(Value::Nil))
     }
 }
 
@@ -184,7 +264,7 @@ pub struct MatchStatment {
 }
 
 impl MatchStatment {
-    pub fn eval(&self, x:Value ,scope: &VarScope) -> Result<BlockReturn,Error> {
+    pub fn eval(&self, x:Value ,scope: &VarScope) -> Result<ValueRet,Error> {
         for (i,a) in self.arms.iter().enumerate() {
             if a.matches(&x) {
                 return self.vals[i].eval(scope);
@@ -203,10 +283,19 @@ pub enum FunctionHandle{
 }
 
 impl FunctionHandle{
-    pub fn eval(&self,args: Vec<Value>) -> Result<Value,Error> {
-        match *self {
+    pub fn eval(self,args: Vec<Value>) -> Result<Value,Error> {
+        match self {
             FunctionHandle::FFI(f) => f(args),
-            _=>todo!()
+            FunctionHandle::StaticDef(f) => f.eval(args),
+            FunctionHandle::Lambda(f) => f.eval(args),
+
+            FunctionHandle::MatchLambda(l) => {
+                if args.len()!=1 {
+                    return Err(Error::Sig(SigError{}));
+                }
+                let ret = l.eval(args[0].clone(),&VarScope::new())?;
+                Ok(ret.into())
+            },
         }
         
     }
@@ -220,22 +309,22 @@ pub struct Call{
 }
 
 impl Call {
-    pub fn eval(&self,scope: &VarScope) -> Result<BlockReturn,Error> {
-        let mut arg_values = Vec::with_capacity(self.args.len());
+    pub fn eval(&self,scope: &VarScope) -> Result<ValueRet,Error> {
         let handle = match self.called.eval(scope)? {
-            BlockReturn::Unwind(v) => {return Ok(BlockReturn::Unwind(v));}
-            BlockReturn::Local(v) => match v {
+            ValueRet::Unwind(v) => {return Ok(ValueRet::Unwind(v));}
+            ValueRet::Local(v) => match v {
                 Value::Func(f) => f,
                 _ => {return Err(Error::NoneCallble(NoneCallble{}));}
             }
         };
 
+        let mut arg_values = Vec::with_capacity(self.args.len());
         for a in self.args.iter() {
             match a.eval(scope) {
                 Err(e) => {return Err(e);},
                 Ok(x) => {match x {
-                    BlockReturn::Local(v) => {arg_values.push(v);},
-                    BlockReturn::Unwind(_) => {return Ok(x);},
+                    ValueRet::Local(v) => {arg_values.push(v);},
+                    ValueRet::Unwind(_) => {return Ok(x);},
                 }}
             };
         }
@@ -286,65 +375,70 @@ pub struct UndefinedName {
     //placeholder
 }
 
+#[cfg(test)]
 use std::cell::RefCell;
 
+#[cfg(test)]
+use crate::ast::StringTable;
+
 #[test]
-fn test_system_println() {
-    // Define a static mutable log buffer, scoped within this module for the test
+fn test_system_ffi_mock() {
+    //define FFI functions for this test with loging
+    //with this testing buffer 
     thread_local! {
         static LOG_PRINT: RefCell<Vec<Vec<Value>>> = RefCell::new(Vec::new());
         static LOG_SYSTEM: RefCell<Vec<Vec<Value>>> = RefCell::new(Vec::new());
     }
 
-    // Inlined private function for `println`
+
     fn ffi_println(args: Vec<Value>) -> Result<Value, Error> {
-        // Log the arguments into the static log buffer for println
         LOG_PRINT.with(|log| {
             log.borrow_mut().push(args.clone());
         });
         Ok(Value::Nil)
     }
 
-    // Inlined private function for `system`
     fn ffi_system(args: Vec<Value>) -> Result<Value, Error> {
-        // Log the arguments into the static log buffer for system
         LOG_SYSTEM.with(|log| {
             log.borrow_mut().push(args.clone());
         });
 
-        // Return a function pointer to `ffi_println`
         Ok(Value::Func(FunctionHandle::FFI(ffi_println)))
     }
 
-    // Create a scope and add the system function as a variable
+    //initilize scope
+
+    let mut string_table = StringTable::new();
+    let system_name = string_table.get_id("system");
+    let println_name = string_table.get_id(":println");
+
     let mut scope = VarScope::new();
-    let system_var = 1; // Mock ID for system variable
-    scope.add(system_var, Value::Func(FunctionHandle::FFI(ffi_system)));
+    scope.add(system_name, Value::Func(FunctionHandle::FFI(ffi_system)));
 
     // Inner call for accessing the `system` variable from the scope
     let system_call = Call {
-        called: Box::new(LazyVal::Ref(system_var)), // Accessing system from the scope
-        args: vec![LazyVal::Terminal(Value::Atom(2))], // Argument is :println (Atom with ID 2)
+        called: Box::new(LazyVal::Ref(system_name)),
+        args: vec![LazyVal::Terminal(Value::Atom(println_name))],
     };
 
     // Outer call for `system(:println)("hello world")`
     let outer_call = Call {
-        called: Box::new(LazyVal::FuncCall(system_call)), // The function returned by system_call (println)
-        args: vec![LazyVal::Terminal(Value::String(Rc::new("hello world".to_string())))], // Argument to println
+        called: Box::new(LazyVal::FuncCall(system_call)),
+        args: vec![LazyVal::Terminal(Value::String(GcPointer::new("hello world".to_string())))],
     };
 
-    // Evaluate the outer call (first system, then println)
-    let ans = outer_call.eval(&scope).unwrap();
+    //asserts
 
-    // Check that system was called once with the correct argument (Atom 2 for :println)
+    let ans = outer_call.eval(&scope).unwrap();
+    assert_eq!(ans, ValueRet::Local(Value::Nil));
+
     LOG_SYSTEM.with(|log| {
         assert_eq!(log.borrow().len(), 1);
-        assert_eq!(log.borrow()[0], vec![Value::Atom(2)]); // :println is Atom(2)
+        assert_eq!(log.borrow()[0], vec![Value::Atom(println_name)]);
     });
 
-    // Check that println was called once with the correct argument (GcPointer<String> with "hello world")
     LOG_PRINT.with(|log| {
         assert_eq!(log.borrow().len(), 1);
-        assert_eq!(log.borrow()[0], vec![Value::String(Rc::new("hello world".to_string()))]);
+        assert_eq!(log.borrow()[0], vec![Value::String(GcPointer::new("hello world".to_string()))]);
     });
 }
