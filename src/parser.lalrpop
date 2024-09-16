@@ -99,6 +99,14 @@ PoisonString: usize = {
     }
 };
 
+OverflowedInt: (usize,f64) = {
+    <start: @L> <f:"overvlow_int"> <end: @R> => {
+        let id = table.get_id(&input[start..end]);
+        (id,f)
+    }
+};
+
+
 Name: usize = {
     <start: @L> "name" <end: @R> => {
         table.get_id(&input[start..end])

@@ -1,24 +1,25 @@
 #![allow(dead_code)]
-
-use crate::ast::StringTable;
-use crate::ast::BuildIn;
 use std::collections::HashMap;
 use std::rc::Rc;
+use codespan::Span;
 
-pub struct ScopeVar<'parent> {
-	parent : Option<&'parent ScopeVar<'parent>>,
+pub use crate::basic_ops::{is_equal};
+
+//this is used within functions. 
+pub struct VarScope<'parent> {
+	parent : Option<&'parent VarScope<'parent>>,
 	vars : HashMap<usize,Value>
 }
 
-impl<'parent> ScopeVar<'parent>  {
+impl<'parent> VarScope<'parent>  {
 	pub fn new() -> Self {
-		ScopeVar{
+		VarScope{
 			parent:None,
 			vars:HashMap::new()
 		}
 	}
-	pub fn make_subscope<'a>(&'a self) -> ScopeVar<'a> {
-		ScopeVar{
+	pub fn make_subscope<'a>(&'a self) -> VarScope<'a> {
+		VarScope{
 			parent:Some(self),
 			vars:HashMap::new()
 		}
@@ -41,7 +42,7 @@ impl<'parent> ScopeVar<'parent>  {
 
 #[test]
 fn test_scope_lifetimes(){
-	let g = ScopeVar::new();
+	let g = VarScope::new();
 	let mut a = g.make_subscope();
 	let _b = g.make_subscope();
 	{
@@ -50,17 +51,191 @@ fn test_scope_lifetimes(){
 	let _d = &mut a;
 }
 
-pub type GcPointer<T> = Rc<T>;
+#[derive(Debug, PartialEq, Clone)]
+pub enum GenericRet<T> {
+    //holds the return value marks what to do with the call stack
+    //this is shared between match statments and functions
+    //HOWEVER only matchstatments may return the Unwind varient
 
-#[derive(Debug,Clone)]
-pub enum FunctionHandle{
-    //place holder
-	StaticDef(),
-    MatchLambda(GcPointer<()>),
-    Lambda(GcPointer<()>),
+    Local(T),
+    Unwind(T),
 }
 
-#[derive(Debug,Clone)]
+impl<T> GenericRet<T> {
+    pub fn as_local(self) -> Self {
+        match self {
+            GenericRet::Local(v) => GenericRet::Local(v),
+            GenericRet::Unwind(v) => GenericRet::Local(v),
+        }
+    }
+    pub fn into(self) -> T {
+        match self {
+            GenericRet::Local(v) | GenericRet::Unwind(v) => v,
+        }
+    }
+}
+
+// Define the types for ScopeRet and BlockReturn using the generic enum
+
+pub type ScopeRet = GenericRet<MVar>;
+pub type BlockReturn = GenericRet<Value>;
+
+impl From<Value> for BlockReturn {
+    fn from(value: Value) -> Self {
+        BlockReturn::Local(value)
+    }
+}
+
+pub type GcPointer<T> = Rc<T>;
+
+
+#[derive(Debug,PartialEq,Clone)]
+pub enum MVar{
+    //this represents a value before computation
+    //however early return complicate things 
+    //so we can actually return from the parent scope
+    //sometimes evaluating a var causes an excepsion
+
+
+    Terminal(Value),
+    Ref(usize),
+    FuncCall(Call),
+    //this is scoped for now but in some cases that makes no sense
+    Match{var: Box<MVar>,statment: MatchStatment}
+}
+
+impl MVar {
+    pub fn eval(&self,scope: &VarScope) -> Result<BlockReturn,Error> {
+        match self {
+            MVar::Terminal(v) => Ok(v.clone().into()),
+            MVar::Ref(id) => match scope.get(*id) {
+                None => Err(Error::Missing(UndefinedName{})),
+                Some(v) => Ok(v.clone().into()),
+            },
+            MVar::FuncCall(call) => call.eval(scope),
+            MVar::Match { var, statment } => 
+
+                match var.eval(scope)? {    
+                    BlockReturn::Unwind(v) => Ok(BlockReturn::Unwind(v)),
+                    BlockReturn::Local(v) => statment.eval(v, scope),
+                }
+
+        }
+    }
+}
+
+#[derive(Debug,PartialEq,Clone)]
+pub enum Statment {
+    Assign(usize, MVar),
+    Call(Call),
+    Match(MatchStatment),
+}
+
+
+#[derive(Debug,PartialEq,Clone)]
+pub struct Func {
+    sig:FuncSig,
+    inner:Block,
+}
+
+#[derive(Debug,PartialEq,Clone)]
+pub struct FuncSig{
+    num_args: usize, //for now its all simple
+}
+
+
+#[derive(Debug,PartialEq,Clone)]
+pub enum Block{
+    Simple(MVar),
+    Code{inner:Vec<Statment>,ret:ScopeRet},
+}
+
+impl Block {
+    pub fn eval(&self,scope: &VarScope) -> Result<BlockReturn,Error>{
+        match self {
+            Block::Simple(v) => v.eval(scope),
+            _=>todo!(),
+        }
+    }
+}
+
+
+
+#[derive(Debug,PartialEq,Clone)]
+pub enum MatchCond {
+    Literal(Value),
+    Any
+}
+
+impl MatchCond {
+    pub fn matches(&self,v: &Value) -> bool{
+        match self {
+            MatchCond::Any => true,
+            MatchCond::Literal(x) => is_equal(v,x),
+        }
+    }
+}
+
+#[derive(Debug,PartialEq,Clone)]
+pub struct MatchStatment {
+    arms: Vec<MatchCond>,
+    vals: Vec<Block>,
+    debug_span: Span,
+}
+
+impl MatchStatment {
+    pub fn eval(&self, x:Value ,scope: &VarScope) -> Result<BlockReturn,Error> {
+        for (i,a) in self.arms.iter().enumerate() {
+            if a.matches(&x) {
+                return self.vals[i].eval(scope);
+            }
+        }
+        return Err(Error::Match(MatchError{span:self.debug_span}));
+    }
+}
+
+#[derive(Debug,PartialEq,Clone)]
+pub enum FunctionHandle{
+    FFI(fn(Vec<Value>)->Result<Value,Error>),
+	StaticDef(&'static Func),
+    MatchLambda(GcPointer<MatchStatment>),
+    Lambda(GcPointer<Func>),
+}
+
+impl FunctionHandle{
+    pub fn eval(&self,args: Vec<Value>) -> Result<Value,Error> {
+        match *self {
+            FunctionHandle::FFI(f) => f(args),
+            _=>todo!()
+        }
+        
+    }
+}
+
+#[derive(Debug,PartialEq,Clone)]
+pub struct Call{
+    handle:Box<FunctionHandle>,
+    args: Vec<MVar>
+}
+
+impl Call {
+    pub fn eval(&self,scope: &VarScope) -> Result<BlockReturn,Error> {
+        let mut arg_values = Vec::with_capacity(self.args.len());
+        for a in self.args.iter() {
+            match a.eval(scope) {
+                Err(e) => {return Err(e);},
+                Ok(x) => {match x {
+                    BlockReturn::Local(v) => {arg_values.push(v);},
+                    BlockReturn::Unwind(_) => {return Ok(x);},
+                }}
+            };
+        }
+        self.handle.eval(arg_values).map(|v| v.into())
+    }
+}
+
+
+#[derive(Debug,PartialEq,Clone)]
 pub enum Value {
 	Nil,
 	Bool(bool),
@@ -71,209 +246,27 @@ pub enum Value {
 	Func(FunctionHandle),
 }
 
-pub struct Call {
-    func : FunctionHandle,
-    args : Vec<Value>
+#[derive(Debug,PartialEq)]
+pub enum Error {
+    Match(MatchError),
+    Sig(SigError),
+    Missing(UndefinedName),
+    //UndocumentedError,
 }
 
-#[derive(Debug)]
+#[derive(Debug,PartialEq)]
+pub struct MatchError {
+    span: Span
+}
+
+
+#[derive(Debug,PartialEq)]
 pub struct SigError {
 	//placeholder
 }
 
-pub fn get_type(v : Value, table:&mut StringTable) -> Value {
-	Value::Atom(get_type_id(v,table))
+#[derive(Debug,PartialEq)]
+pub struct UndefinedName {
+    //placeholder
 }
 
-pub fn get_type_id(v : Value, table:&mut StringTable) -> usize{
-	match v {
-		Value::Nil => table.get_existing_id(":nil"),
-		Value::Bool(_) => table.get_existing_id(":bool"),
-		Value::String(_) => table.get_existing_id(":string"),
-		Value::Int(_) => table.get_existing_id(":int"),
-		Value::Float(_) => table.get_existing_id(":float"),
-		Value::Atom(_) => table.get_existing_id(":atom"),
-		Value::Func(_) => table.get_existing_id(":func"),
-
-	}
-}
-
-pub fn to_bool(v: &Value) -> bool {
-    match v {
-        Value::Bool(b) => *b,
-        Value::Int(i) => *i != 0,
-        Value::Float(f) => *f != 0.0,
-        Value::Nil => false,
-        Value::String(p) => p.len()>0,
-        _ => true, // default to truthy for other types
-    }
-}
-
-
-macro_rules! perform_arithmetic {
-    ($v1:expr, $v2:expr, $op:expr) => {
-        match ($v1, $v2) {
-            (Value::Int(i1), Value::Int(i2)) => Ok(Value::Int($op(*i1, *i2))),
-            (Value::Float(f1), Value::Float(f2)) => Ok(Value::Float($op(*f1, *f2))),
-            (Value::Int(i), Value::Float(f)) => Ok(Value::Float($op(*i as f64, *f))),
-            (Value::Float(f), Value::Int(i)) => Ok(Value::Float($op(*f, *i as f64))),
-            _ => Err(SigError {
-                // Handle type mismatch error here
-            }),
-        }
-    };
-}
-
-macro_rules! perform_comparison {
-    ($v1:expr, $v2:expr, $op:expr) => {
-        match ($v1, $v2) {
-            (Value::Int(i1), Value::Int(i2)) => Ok(Value::Bool($op(*i1 , *i2 ))),
-            (Value::Float(f1), Value::Float(f2)) => Ok(Value::Bool($op(*f1, *f2))),
-            (Value::Int(i), Value::Float(f)) | (Value::Float(f), Value::Int(i)) => {
-                Ok(Value::Bool($op(*i as f64, *f)))
-            }
-            _ => Err(SigError {
-                // handle type mismatch error here
-            }),
-        }
-    };
-}
-
-
-pub fn handle_buildin(args: Vec<Value>, op: BuildIn) -> Result<Value, SigError> {
-    if args.len()!=2 {
-    	return Err(SigError {
-                    // Handle type mismatch error here
-                });
-    }
-
-    match op {
-         // Bitwise Operations
-        BuildIn::And | BuildIn::Or | BuildIn::Xor => perform_bitwise_op(&args[0], &args[1], op),
-        BuildIn::DoubleAnd | BuildIn::DoubleOr | BuildIn::DoubleXor => perform_logical_op(&args[0], &args[1], op),
-
-        //special cases for int int
-        BuildIn::Div => perform_division(&args[0], &args[1]), // Special case for division
-        BuildIn::Pow => perform_power(&args[0], &args[1]),    // Special case for power
-        BuildIn::IntDiv => perform_int_div(&args[0], &args[1]),
-        BuildIn::Modulo => perform_modulo(&args[0], &args[1]),
-
-        // standard arithmetic
-        BuildIn::Add => perform_arithmetic!(&args[0], &args[1], |a, b| a + b),
-        BuildIn::Sub => perform_arithmetic!(&args[0], &args[1], |a, b| a - b),
-        BuildIn::Mul => perform_arithmetic!(&args[0], &args[1], |a, b| a * b),
-
-        //Standard numeric comperisons
-        BuildIn::Equal => perform_comparison!(&args[0], &args[1], |a, b| a == b),
-        BuildIn::NotEqual => perform_comparison!(&args[0], &args[1], |a, b| a != b),
-        BuildIn::Smaller => perform_comparison!(&args[0], &args[1], |a, b| a < b),
-        BuildIn::Bigger => perform_comparison!(&args[0], &args[1], |a, b| a > b),
-        BuildIn::SmallerEq => perform_comparison!(&args[0], &args[1], |a, b| a <= b),
-        BuildIn::BiggerEq => perform_comparison!(&args[0], &args[1], |a, b| a >= b),
-    }
-}
-
-
-
-
-fn perform_division(v1: &Value, v2: &Value) -> Result<Value, SigError> {
-    match (v1, v2) {
-        (Value::Int(i), Value::Int(j)) => {
-            if i % j == 0 {
-                Ok(Value::Int(i / j))
-            } else {
-                Ok(Value::Float(*i as f64 / *j as f64))
-            }
-        }
-        (Value::Float(f1), Value::Float(f2)) => Ok(Value::Float(f1 / f2)),
-        (Value::Int(i), Value::Float(f)) | (Value::Float(f), Value::Int(i)) => {
-            Ok(Value::Float(*i as f64 / *f))
-        }
-        _ => Err(SigError {
-            // handle type mismatch error here
-        }),
-    }
-}
-
-fn perform_power(v1: &Value, v2: &Value) -> Result<Value, SigError> {
-    match (v1, v2) {
-        (Value::Int(i), Value::Int(j)) => {
-            if *j >= 0 {
-                Ok(Value::Int(i.pow(*j as u32)))
-            } else {
-                Ok(Value::Float((*i as f64).powf(*j as f64)))
-            }
-        }
-        (Value::Float(f1), Value::Float(f2)) => Ok(Value::Float(f1.powf(*f2))),
-        (Value::Int(i), Value::Float(f)) | (Value::Float(f), Value::Int(i)) => {
-            Ok(Value::Float((*i as f64).powf(*f)))
-        }
-        _ => Err(SigError {
-            // handle type mismatch error here
-        }),
-    }
-}
-
-
-fn perform_int_div(v1: &Value, v2: &Value) -> Result<Value, SigError> {
-    if let (Value::Int(i), Value::Int(j)) = (v1, v2) {
-        if *j == 0 {
-            Err(SigError {
-                // Handle division by zero error here
-            })
-        } else {
-            Ok(Value::Int(i / j))
-        }
-    } else {
-        Err(SigError {
-            // Handle type mismatch error here
-        })
-    }
-}
-
-fn perform_modulo(v1: &Value, v2: &Value) -> Result<Value, SigError> {
-    if let (Value::Int(i), Value::Int(j)) = (v1, v2) {
-        if *j == 0 {
-            Err(SigError {
-                // Handle division by zero error here
-            })
-        } else {
-            Ok(Value::Int(i % j))
-        }
-    } else {
-        Err(SigError {
-            // Handle type mismatch error here
-        })
-    }
-}
-
-fn perform_bitwise_op(v1: &Value, v2: &Value, op: BuildIn) -> Result<Value, SigError> {
-    match (v1, v2) {
-        (Value::Int(i), Value::Int(j)) => {
-            let result = match op {
-                BuildIn::And => i & j,
-                BuildIn::Or => i | j,
-                BuildIn::Xor => i ^ j,
-                _ => unreachable!(),
-            };
-            Ok(Value::Int(result))
-        }
-        _ => Err(SigError {
-            // handle type mismatch error here
-        }),
-    }
-}
-
-fn perform_logical_op(v1: &Value, v2: &Value, op: BuildIn) -> Result<Value, SigError> {
-    let lhs_bool = to_bool(v1);
-    let rhs_bool = to_bool(v2);
-
-    let result = match op {
-        BuildIn::DoubleAnd => lhs_bool && rhs_bool,
-        BuildIn::DoubleOr => lhs_bool || rhs_bool,
-        BuildIn::DoubleXor => lhs_bool ^ rhs_bool,
-        _ => unreachable!(),
-    };
-
-    Ok(Value::Bool(result))
-}

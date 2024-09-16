@@ -1,6 +1,7 @@
 pub mod lexer;
 pub mod ast;
 pub mod ir;
+pub mod basic_ops;
 pub mod reporting;
 mod test_parsing;
 
