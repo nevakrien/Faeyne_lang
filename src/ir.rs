@@ -5,23 +5,29 @@ use codespan::Span;
 
 pub use crate::basic_ops::{is_equal};
 
-//this is used within functions. 
+#[derive(Debug,PartialEq,Clone,Copy)]
+pub enum Scopble<'parent>{
+    None,
+    Dyn(&'parent VarScope<'parent>),
+    Static(&'parent HashMap<usize,Value>),
+}
+
 #[derive(Debug,PartialEq,Clone)]
 pub struct VarScope<'parent> {
-	parent : Option<&'parent VarScope<'parent>>,
+	parent : Scopble<'parent>,//Option<&'parent VarScope<'parent>>,
 	vars : HashMap<usize,Value>
 }
 
 impl<'parent> VarScope<'parent>  {
 	pub fn new() -> Self {
 		VarScope{
-			parent:None,
+			parent:Scopble::None,
 			vars:HashMap::new()
 		}
 	}
 	pub fn make_subscope<'a>(&'a self) -> VarScope<'a> {
 		VarScope{
-			parent:Some(self),
+			parent:Scopble::Dyn(self),
 			vars:HashMap::new()
 		}
 	}
@@ -34,24 +40,31 @@ impl<'parent> VarScope<'parent>  {
 		match self.vars.get(&id) {
 			Some(v) => Some(v),
 			None => match self.parent {
-				None => None,
-				Some(p) => p.get(id),
+				Scopble::None => None,
+				Scopble::Dyn(p) => p.get(id),
+                Scopble::Static(p) => p.get(&id),
 			}
 		}
 	}
 
     pub fn capture_entire_scope(self) -> StaticVarScope {
         let mut all_vars = HashMap::new();
-        let mut current_scope: Option<&VarScope> = Some(&self);
+        let mut current_scope = Scopble::Dyn(&self);
 
 
-        while let Some(scope) = current_scope {
+        while let Scopble::Dyn(scope) = current_scope {
             //respect existing values
             for (id, value) in &scope.vars {
                 all_vars.entry(*id).or_insert_with(|| value.clone());
             }
 
             current_scope = scope.parent;
+        }
+
+        if let Scopble::Static(table) = current_scope {
+            for (id, value) in table {
+                all_vars.entry(*id).or_insert_with(|| value.clone());
+            }
         }
 
         StaticVarScope { vars: all_vars }
@@ -71,19 +84,22 @@ fn test_scope_lifetimes(){
 
 
 #[derive(Debug,PartialEq,Clone)]
-struct StaticVarScope {
+pub struct StaticVarScope {
     vars : HashMap<usize,Value>,
 }
 
-impl<'a> From<StaticVarScope> for VarScope<'a> {
-    fn from(s: StaticVarScope) -> Self {
-        // Create a VarScope using the variables from StaticVarScope
-        VarScope {
-            parent: None,   // StaticVarScope has no parent, so parent is None
-            vars: s.vars,   // Move the vars from StaticVarScope
+impl StaticVarScope {
+    pub fn new() -> Self {
+        StaticVarScope{vars: HashMap::new()}
+    }
+    pub fn make_subscope<'parent>(&'parent self) -> VarScope<'parent> {
+        VarScope{
+            parent:Scopble::Static(&self.vars),
+            vars:HashMap::new(),
         }
     }
 }
+
 
 
 #[derive(Debug, PartialEq, Clone)]
@@ -203,10 +219,6 @@ pub struct Func {
 impl Func {
     pub fn eval(&self,args: Vec<Value>) -> Result<Value,Error> {
         _ = self.sig.matches(&args)?;
-
-        //THIS IS BAD we are cloning the entire thing every time...
-        //there is a solution with either dyn or better 
-        //we pass in the static statment as a non static one
         let mut scope = self.closure.make_subscope();
         for (i,a) in self.sig.arg_ids.iter().enumerate(){
             scope.add(*a,args[i].clone());
@@ -530,7 +542,7 @@ fn test_function_handle_eval() {
     let func = Func {
         sig: FuncSig { arg_ids: vec![1, 2] },
         inner: Block::Simple(LazyVal::Terminal(Value::Int(42))),
-        closure: VarScope::new()
+        closure: StaticVarScope::new()
     };
 
     let handle = FunctionHandle::Lambda(Rc::new(func));
@@ -579,7 +591,7 @@ fn test_lazyval_func_call() {
     let func = Func {
         sig: FuncSig { arg_ids: vec![1] },
         inner: Block::Simple(LazyVal::Terminal(Value::Int(42))),
-        closure: VarScope::new()
+        closure: StaticVarScope::new()
     };
     let handle = Value::Func(FunctionHandle::Lambda(Rc::new(func)));
     let scope = VarScope::new();
@@ -606,7 +618,7 @@ fn test_match_statement_with_ref_and_func_call() {
     let func = Func {
         sig: FuncSig { arg_ids: vec![23] },
         inner: Block::Simple(LazyVal::Terminal(Value::String(Rc::new("FunctionCall".to_string())))),
-        closure: VarScope::new()
+        closure: StaticVarScope::new()
     };
     let handle = Value::Func(FunctionHandle::Lambda(Rc::new(func)));
 
@@ -656,7 +668,7 @@ fn test_closure_variable_isolation() {
             // Inside the function, we assign a new value to the same variable ID (1)
             Statment::Assign(global_var_id, LazyVal::Terminal(Value::Int(200))),
         ]),
-        closure: global_scope.make_subscope(), // Function has its own isolated closure
+        closure: global_scope.clone().capture_entire_scope(), // Function has its own isolated closure
     };
 
 
@@ -695,7 +707,7 @@ fn test_closure_does_not_leak_into_global_scope() {
             // Assign a value to a new variable ID (2) that should exist only within the function
             Statment::Assign(2, LazyVal::Terminal(Value::Int(500))),
         ]),
-        closure: global_scope.make_subscope(), // Function has its own closure
+        closure: global_scope.clone().capture_entire_scope(), // Function has its own closure
     };
 
     // Create a handle for the function
