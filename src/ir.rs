@@ -6,6 +6,7 @@ use codespan::Span;
 pub use crate::basic_ops::{is_equal};
 
 //this is used within functions. 
+#[derive(Debug,PartialEq,Clone)]
 pub struct VarScope<'parent> {
 	parent : Option<&'parent VarScope<'parent>>,
 	vars : HashMap<usize,Value>
@@ -38,6 +39,23 @@ impl<'parent> VarScope<'parent>  {
 			}
 		}
 	}
+
+    pub fn capture_entire_scope(self) -> StaticVarScope {
+        let mut all_vars = HashMap::new();
+        let mut current_scope: Option<&VarScope> = Some(&self);
+
+
+        while let Some(scope) = current_scope {
+            //respect existing values
+            for (id, value) in &scope.vars {
+                all_vars.entry(*id).or_insert_with(|| value.clone());
+            }
+
+            current_scope = scope.parent;
+        }
+
+        StaticVarScope { vars: all_vars }
+    }
 }
 
 #[test]
@@ -50,6 +68,23 @@ fn test_scope_lifetimes(){
 	}
 	let _d = &mut a;
 }
+
+
+#[derive(Debug,PartialEq,Clone)]
+struct StaticVarScope {
+    vars : HashMap<usize,Value>,
+}
+
+impl<'a> From<StaticVarScope> for VarScope<'a> {
+    fn from(s: StaticVarScope) -> Self {
+        // Create a VarScope using the variables from StaticVarScope
+        VarScope {
+            parent: None,   // StaticVarScope has no parent, so parent is None
+            vars: s.vars,   // Move the vars from StaticVarScope
+        }
+    }
+}
+
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum GenericRet<T> {
@@ -115,8 +150,10 @@ pub enum LazyVal{
     //however early return complicate things 
     //so we can actually return from the parent scope
     //sometimes evaluating a var causes an excepsion
-
+    
+    MakeMatchFunc(/* placeholder */),
     MakeFunc(/* placeholder */),
+
     Terminal(Value),
     Ref(usize),
     FuncCall(Call),
@@ -141,6 +178,8 @@ impl LazyVal {
                 }
             },
             LazyVal::MakeFunc() => todo!(),
+            LazyVal::MakeMatchFunc() => todo!(),
+
         }
     }
 }
@@ -157,6 +196,7 @@ pub enum Statment {
 #[derive(Debug,PartialEq,Clone)]
 pub struct Func {
     sig:FuncSig,
+    closure:StaticVarScope,
     inner:Block,
 }
 
@@ -164,7 +204,10 @@ impl Func {
     pub fn eval(&self,args: Vec<Value>) -> Result<Value,Error> {
         _ = self.sig.matches(&args)?;
 
-        let mut scope = VarScope::new();
+        //THIS IS BAD we are cloning the entire thing every time...
+        //there is a solution with either dyn or better 
+        //we pass in the static statment as a non static one
+        let mut scope = self.closure.make_subscope();
         for (i,a) in self.sig.arg_ids.iter().enumerate(){
             scope.add(*a,args[i].clone());
         }
@@ -278,8 +321,10 @@ impl MatchStatment {
 pub enum FunctionHandle{
     FFI(fn(Vec<Value>)->Result<Value,Error>),
 	StaticDef(&'static Func),
-    MatchLambda(GcPointer<MatchStatment>),
     Lambda(GcPointer<Func>),
+    //we need a better premise for matchlamdas or just make them Funcs
+    // MatchLambda(GcPointer<MatchStatment>),
+    
 }
 
 impl FunctionHandle{
@@ -289,13 +334,13 @@ impl FunctionHandle{
             FunctionHandle::StaticDef(f) => f.eval(args),
             FunctionHandle::Lambda(f) => f.eval(args),
 
-            FunctionHandle::MatchLambda(l) => {
-                if args.len()!=1 {
-                    return Err(Error::Sig(SigError{}));
-                }
-                let ret = l.eval(args[0].clone(),&VarScope::new())?;
-                Ok(ret.into())
-            },
+            // FunctionHandle::MatchLambda(l) => {
+            //     if args.len()!=1 {
+            //         return Err(Error::Sig(SigError{}));
+            //     }
+            //     let ret = l.eval(args[0].clone(),&VarScope::new())?;
+            //     Ok(ret.into())
+            // },
         }
         
     }
@@ -485,6 +530,7 @@ fn test_function_handle_eval() {
     let func = Func {
         sig: FuncSig { arg_ids: vec![1, 2] },
         inner: Block::Simple(LazyVal::Terminal(Value::Int(42))),
+        closure: VarScope::new()
     };
 
     let handle = FunctionHandle::Lambda(Rc::new(func));
@@ -533,6 +579,7 @@ fn test_lazyval_func_call() {
     let func = Func {
         sig: FuncSig { arg_ids: vec![1] },
         inner: Block::Simple(LazyVal::Terminal(Value::Int(42))),
+        closure: VarScope::new()
     };
     let handle = Value::Func(FunctionHandle::Lambda(Rc::new(func)));
     let scope = VarScope::new();
@@ -545,4 +592,121 @@ fn test_lazyval_func_call() {
 
     let result = LazyVal::FuncCall(call).eval(&scope).unwrap();
     assert_eq!(result, ValueRet::Local(Value::Int(42)));
+}
+
+#[test]
+fn test_match_statement_with_ref_and_func_call() {
+    // Create a VarScope and add a referenced value
+    let mut scope = VarScope::new();
+    let ref_id = 10;
+    let ref_value = Value::String(Rc::new("Referenced".to_string()));
+    scope.add(ref_id, ref_value.clone());
+
+    // Define a simple function that returns a specific value
+    let func = Func {
+        sig: FuncSig { arg_ids: vec![23] },
+        inner: Block::Simple(LazyVal::Terminal(Value::String(Rc::new("FunctionCall".to_string())))),
+        closure: VarScope::new()
+    };
+    let handle = Value::Func(FunctionHandle::Lambda(Rc::new(func)));
+
+    // Create the match statement
+    let match_stmt = MatchStatment {
+        arms: vec![
+            MatchCond::Literal(Value::Int(1)),
+            MatchCond::Literal(Value::Int(2)),
+            MatchCond::Any
+        ],
+        vals: vec![
+            Block::Simple(LazyVal::Terminal(Value::String(Rc::new("One".to_string())))),    // Terminal value
+            Block::Simple(LazyVal::Ref(ref_id)),                                             // Reference to a value in scope
+            Block::Simple(LazyVal::FuncCall(Call {                                          // Function call returning "FunctionCall"
+                called: Box::new(LazyVal::Terminal(handle.clone())),                        // Call the function
+                args: vec![LazyVal::Terminal(Value::Float(6.9))],                               // Pass an argument (though it's unused in this example)
+            }))
+        ],
+        debug_span: Span::new(0, 0),
+    };
+
+    // Test matching on a specific value (1)
+    let result_one = match_stmt.eval(Value::Int(1), &scope).unwrap();
+    assert_eq!(result_one, ValueRet::Local(Value::String(Rc::new("One".to_string()))));
+
+    // Test matching on a specific value (2) which is a Ref
+    let result_two = match_stmt.eval(Value::Int(2), &scope).unwrap();
+    assert_eq!(result_two, ValueRet::Local(ref_value));  // Should match the referenced value
+
+    // Test matching on a default case, which is a function call
+    let result_default = match_stmt.eval(Value::Int(3), &scope).unwrap();
+    assert_eq!(result_default, ValueRet::Local(Value::String(Rc::new("FunctionCall".to_string()))));
+}
+
+#[test]
+fn test_closure_variable_isolation() {
+    // Create a global scope and add a variable
+    let mut global_scope = VarScope::new();
+    let global_var_id = 1;
+    let global_value = Value::Int(100);
+    global_scope.add(global_var_id, global_value.clone());
+
+    // Create a function that will modify its own scope but should not modify the outer/global scope
+    let func = Func {
+        sig: FuncSig { arg_ids: vec![2] },
+        inner: Block::Code(vec![
+            // Inside the function, we assign a new value to the same variable ID (1)
+            Statment::Assign(global_var_id, LazyVal::Terminal(Value::Int(200))),
+        ]),
+        closure: global_scope.make_subscope(), // Function has its own isolated closure
+    };
+
+
+    // Function handle to represent our closure
+    let handle = FunctionHandle::Lambda(Rc::new(func));
+
+    // Call the function, passing an argument (though it's not used)
+    handle.clone().eval(vec![Value::Int(5)]).unwrap();
+
+    // The global scope should still have the original value, as the closure should not modify it
+    assert_eq!(global_scope.get(global_var_id), Some(&global_value));
+
+    // Modify the global scope directly to verify that inner scopes aren't affecting the global scope
+    let modified_global_value = Value::Int(300);
+    global_scope.add(global_var_id, modified_global_value.clone());
+
+    // Now call the function again
+    handle.eval(vec![Value::Int(5)]).unwrap();
+
+    // Verify the function's internal scope is isolated and does not affect the outer scope
+    assert_eq!(global_scope.get(global_var_id), Some(&modified_global_value));
+}
+
+#[test]
+fn test_closure_does_not_leak_into_global_scope() {
+    // Create the global scope
+    let mut global_scope = VarScope::new();
+    let global_var_id = 1;
+    let global_value = Value::Int(100);
+    global_scope.add(global_var_id, global_value.clone());
+
+    // Create a function that modifies its own local scope and does not leak variables
+    let func = Func {
+        sig: FuncSig { arg_ids: vec![2] },
+        inner: Block::Code(vec![
+            // Assign a value to a new variable ID (2) that should exist only within the function
+            Statment::Assign(2, LazyVal::Terminal(Value::Int(500))),
+        ]),
+        closure: global_scope.make_subscope(), // Function has its own closure
+    };
+
+    // Create a handle for the function
+    let handle = FunctionHandle::Lambda(Rc::new(func));
+
+    // Call the function, passing an argument (though it's not used)
+    handle.eval(vec![Value::Int(5)]).unwrap();
+
+    // Verify that the new variable (ID 2) does not exist in the global scope
+    assert_eq!(global_scope.get(2), None);
+
+    // Ensure that the global variable (ID 1) has not been modified by the closure
+    assert_eq!(global_scope.get(global_var_id), Some(&global_value));
 }
