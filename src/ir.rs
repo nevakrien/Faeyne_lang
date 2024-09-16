@@ -442,3 +442,107 @@ fn test_system_ffi_mock() {
         assert_eq!(log.borrow()[0], vec![Value::String(GcPointer::new("hello world".to_string()))]);
     });
 }
+
+#[test]
+fn test_varscope_add_and_get() {
+    let mut scope = VarScope::new();
+    let id = 1;
+    let val = Value::Int(42);
+    
+    scope.add(id, val.clone());
+    
+    // Check if the value can be retrieved
+    assert_eq!(scope.get(id), Some(&val));
+    
+    // Check a non-existent value
+    assert_eq!(scope.get(2), None);
+}
+
+#[test]
+fn test_varscope_nested_scopes() {
+    let mut global_scope = VarScope::new();
+    let id = 1;
+    let val = Value::Int(42);
+    
+    global_scope.add(id, val.clone());
+    
+    // Create a subscope and check if it can access the parent value
+    let subscope = global_scope.make_subscope();
+    assert_eq!(subscope.get(id), Some(&val));
+    
+    // Add a new value in the subscope and check it
+    let sub_id = 2;
+    let sub_val = Value::Bool(true);
+    let mut mutable_subscope = subscope.make_subscope();
+    mutable_subscope.add(sub_id, sub_val.clone());
+    
+    assert_eq!(mutable_subscope.get(sub_id), Some(&sub_val));
+    assert_eq!(mutable_subscope.get(id), Some(&val)); // Should still be able to access parent's value
+}
+
+#[test]
+fn test_function_handle_eval() {
+    let func = Func {
+        sig: FuncSig { arg_ids: vec![1, 2] },
+        inner: Block::Simple(LazyVal::Terminal(Value::Int(42))),
+    };
+
+    let handle = FunctionHandle::Lambda(Rc::new(func));
+    
+    // Test valid evaluation with matching arguments
+    let result = handle.clone().eval(vec![Value::Int(1), Value::Int(2)]).unwrap();
+    assert_eq!(result, Value::Int(42));
+
+    // Test invalid evaluation with incorrect number of arguments
+    let err = handle.eval(vec![Value::Int(1)]).unwrap_err();
+    assert_eq!(err, Error::Sig(SigError {}));
+}
+
+#[test]
+fn test_match_statement() {
+    let match_stmt = MatchStatment {
+        arms: vec![
+            MatchCond::Literal(Value::Int(1)),
+            MatchCond::Literal(Value::Int(2)),
+            MatchCond::Any
+        ],
+        vals: vec![
+            Block::Simple(LazyVal::Terminal(Value::String(Rc::new("One".to_string())))),
+            Block::Simple(LazyVal::Terminal(Value::String(Rc::new("Two".to_string())))),
+            Block::Simple(LazyVal::Terminal(Value::String(Rc::new("Default".to_string()))))
+        ],
+        debug_span: Span::new(0, 0),
+    };
+    
+    let scope = VarScope::new();
+    
+    // Test matching on a specific value
+    let result_one = match_stmt.eval(Value::Int(1), &scope).unwrap();
+    assert_eq!(result_one, ValueRet::Local(Value::String(Rc::new("One".to_string()))));
+
+    let result_two = match_stmt.eval(Value::Int(2), &scope).unwrap();
+    assert_eq!(result_two, ValueRet::Local(Value::String(Rc::new("Two".to_string()))));
+
+    // Test matching on a default case
+    let result_default = match_stmt.eval(Value::Int(3), &scope).unwrap();
+    assert_eq!(result_default, ValueRet::Local(Value::String(Rc::new("Default".to_string()))));
+}
+
+#[test]
+fn test_lazyval_func_call() {
+    let func = Func {
+        sig: FuncSig { arg_ids: vec![1] },
+        inner: Block::Simple(LazyVal::Terminal(Value::Int(42))),
+    };
+    let handle = Value::Func(FunctionHandle::Lambda(Rc::new(func)));
+    let scope = VarScope::new();
+
+    // Create a function call LazyVal
+    let call = Call {
+        called: Box::new(LazyVal::Terminal(handle.clone())),
+        args: vec![LazyVal::Terminal(Value::Int(5))],
+    };
+
+    let result = LazyVal::FuncCall(call).eval(&scope).unwrap();
+    assert_eq!(result, ValueRet::Local(Value::Int(42)));
+}
