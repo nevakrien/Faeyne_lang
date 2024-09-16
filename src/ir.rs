@@ -77,7 +77,7 @@ impl<T> GenericRet<T> {
 
 // Define the types for ScopeRet and BlockReturn using the generic enum
 
-pub type ScopeRet = GenericRet<MVar>;
+pub type ScopeRet = GenericRet<LazyVal>;
 pub type BlockReturn = GenericRet<Value>;
 
 impl From<Value> for BlockReturn {
@@ -90,7 +90,7 @@ pub type GcPointer<T> = Rc<T>;
 
 
 #[derive(Debug,PartialEq,Clone)]
-pub enum MVar{
+pub enum LazyVal{
     //this represents a value before computation
     //however early return complicate things 
     //so we can actually return from the parent scope
@@ -101,19 +101,19 @@ pub enum MVar{
     Ref(usize),
     FuncCall(Call),
     //this is scoped for now but in some cases that makes no sense
-    Match{var: Box<MVar>,statment: MatchStatment}
+    Match{var: Box<LazyVal>,statment: MatchStatment}
 }
 
-impl MVar {
+impl LazyVal {
     pub fn eval(&self,scope: &VarScope) -> Result<BlockReturn,Error> {
         match self {
-            MVar::Terminal(v) => Ok(v.clone().into()),
-            MVar::Ref(id) => match scope.get(*id) {
+            LazyVal::Terminal(v) => Ok(v.clone().into()),
+            LazyVal::Ref(id) => match scope.get(*id) {
                 None => Err(Error::Missing(UndefinedName{})),
                 Some(v) => Ok(v.clone().into()),
             },
-            MVar::FuncCall(call) => call.eval(scope),
-            MVar::Match { var, statment } => 
+            LazyVal::FuncCall(call) => call.eval(scope),
+            LazyVal::Match { var, statment } => 
 
                 match var.eval(scope)? {    
                     BlockReturn::Unwind(v) => Ok(BlockReturn::Unwind(v)),
@@ -126,7 +126,7 @@ impl MVar {
 
 #[derive(Debug,PartialEq,Clone)]
 pub enum Statment {
-    Assign(usize, MVar),
+    Assign(usize, LazyVal),
     Call(Call),
     Match(MatchStatment),
 }
@@ -146,7 +146,7 @@ pub struct FuncSig{
 
 #[derive(Debug,PartialEq,Clone)]
 pub enum Block{
-    Simple(MVar),
+    Simple(LazyVal),
     Code{inner:Vec<Statment>,ret:ScopeRet},
 }
 
@@ -214,13 +214,22 @@ impl FunctionHandle{
 
 #[derive(Debug,PartialEq,Clone)]
 pub struct Call{
-    handle:Box<FunctionHandle>,
-    args: Vec<MVar>
+    //handle:Box<FunctionHandle>,
+    called: Box<LazyVal>,
+    args: Vec<LazyVal>
 }
 
 impl Call {
     pub fn eval(&self,scope: &VarScope) -> Result<BlockReturn,Error> {
         let mut arg_values = Vec::with_capacity(self.args.len());
+        let handle = match self.called.eval(scope)? {
+            BlockReturn::Unwind(v) => {return Ok(BlockReturn::Unwind(v));}
+            BlockReturn::Local(v) => match v {
+                Value::Func(f) => f,
+                _ => {return Err(Error::NoneCallble(NoneCallble{}));}
+            }
+        };
+
         for a in self.args.iter() {
             match a.eval(scope) {
                 Err(e) => {return Err(e);},
@@ -230,7 +239,7 @@ impl Call {
                 }}
             };
         }
-        self.handle.eval(arg_values).map(|v| v.into())
+        handle.eval(arg_values).map(|v| v.into())
     }
 }
 
@@ -251,6 +260,7 @@ pub enum Error {
     Match(MatchError),
     Sig(SigError),
     Missing(UndefinedName),
+    NoneCallble(NoneCallble)
     //UndocumentedError,
 }
 
@@ -266,7 +276,75 @@ pub struct SigError {
 }
 
 #[derive(Debug,PartialEq)]
+pub struct NoneCallble {
+    //placeholder
+}
+
+
+#[derive(Debug,PartialEq)]
 pub struct UndefinedName {
     //placeholder
 }
 
+use std::cell::RefCell;
+
+#[test]
+fn test_system_println() {
+    // Define a static mutable log buffer, scoped within this module for the test
+    thread_local! {
+        static LOG_PRINT: RefCell<Vec<Vec<Value>>> = RefCell::new(Vec::new());
+        static LOG_SYSTEM: RefCell<Vec<Vec<Value>>> = RefCell::new(Vec::new());
+    }
+
+    // Inlined private function for `println`
+    fn ffi_println(args: Vec<Value>) -> Result<Value, Error> {
+        // Log the arguments into the static log buffer for println
+        LOG_PRINT.with(|log| {
+            log.borrow_mut().push(args.clone());
+        });
+        Ok(Value::Nil)
+    }
+
+    // Inlined private function for `system`
+    fn ffi_system(args: Vec<Value>) -> Result<Value, Error> {
+        // Log the arguments into the static log buffer for system
+        LOG_SYSTEM.with(|log| {
+            log.borrow_mut().push(args.clone());
+        });
+
+        // Return a function pointer to `ffi_println`
+        Ok(Value::Func(FunctionHandle::FFI(ffi_println)))
+    }
+
+    // Create a scope and add the system function as a variable
+    let mut scope = VarScope::new();
+    let system_var = 1; // Mock ID for system variable
+    scope.add(system_var, Value::Func(FunctionHandle::FFI(ffi_system)));
+
+    // Inner call for accessing the `system` variable from the scope
+    let system_call = Call {
+        called: Box::new(LazyVal::Ref(system_var)), // Accessing system from the scope
+        args: vec![LazyVal::Terminal(Value::Atom(2))], // Argument is :println (Atom with ID 2)
+    };
+
+    // Outer call for `system(:println)("hello world")`
+    let outer_call = Call {
+        called: Box::new(LazyVal::FuncCall(system_call)), // The function returned by system_call (println)
+        args: vec![LazyVal::Terminal(Value::String(Rc::new("hello world".to_string())))], // Argument to println
+    };
+
+    // Evaluate the outer call (first system, then println)
+    let ans = outer_call.eval(&scope).unwrap();
+
+    // Check that system was called once with the correct argument (Atom 2 for :println)
+    LOG_SYSTEM.with(|log| {
+        assert_eq!(log.borrow().len(), 1);
+        assert_eq!(log.borrow()[0], vec![Value::Atom(2)]); // :println is Atom(2)
+    });
+
+    // Check that println was called once with the correct argument (GcPointer<String> with "hello world")
+    LOG_PRINT.with(|log| {
+        assert_eq!(log.borrow().len(), 1);
+        assert_eq!(log.borrow()[0], vec![Value::String(Rc::new("hello world".to_string()))]);
+    });
+}

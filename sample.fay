@@ -13,12 +13,15 @@ def handler(event) {
     };
 }
 
-def main(system){
-    system(:println)("hello world");
-
+def dumby() {
     x = match fn {
         0 => 2,
         1 => 3,
         2 => 2,
     };
+}
+
+def main(system){
+    system(:println)("hello world");
+
 }
