@@ -131,7 +131,7 @@ NoPipeFuncCall: FunctionCall = {
     #[precedence(level="0")]
     <start:@L> <name:Name> "(" <args:CommaSepValue> ")" <end:@R> => FunctionCall {
         name: FValue::Name(name),
-        args: args,
+        args,
         debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
     },
     <start:@L> <name:Name> "(" ")" <end:@R> => FunctionCall {
@@ -142,7 +142,7 @@ NoPipeFuncCall: FunctionCall = {
 
     <start:@L> <x:Lambda> "(" <args:CommaSepValue> ")" <end:@R> => FunctionCall {
         name: FValue::Lambda(Box::new(x)),
-        args: args,
+        args,
         debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
     },
     <start:@L> <x:Lambda> "(" ")" <end:@R> => FunctionCall {
@@ -154,7 +154,7 @@ NoPipeFuncCall: FunctionCall = {
     #[precedence(level="1")] 
     <start:@L> <func:NoPipeFuncCall> "(" <args:CommaSepValue> ")" <end:@R> => FunctionCall {
         name:  FValue::FuncCall(Box::new(func)),
-        args: args,
+        args,
         debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
     },
     <start:@L> <func:NoPipeFuncCall> "(" ")" <end:@R> => FunctionCall {
@@ -193,7 +193,7 @@ pub FuncCall: FunctionCall = {
     #[precedence(level="0")]
     <start:@L> <func:FuncCall> "(" <args:CommaSepValue> ")" <end:@R> => FunctionCall {
         name:  FValue::FuncCall(Box::new(func)),
-        args: args,
+        args,
         debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
     },
     <start:@L> <func:FuncCall> "(" ")" <end:@R> => FunctionCall {
@@ -391,12 +391,12 @@ CommaSepArgs: Vec<usize> = {
 
 pub FuncBlock: FuncBlock = {
     "{" <body:Statements> <ret:Return> "}" => FuncBlock {
-        body: body,
+        body,
         ret: Some(ret),
     },
 
     "{" <body:Statements> "}" => FuncBlock {
-        body: body,
+        body,
         ret: None,
     },
 

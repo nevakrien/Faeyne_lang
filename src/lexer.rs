@@ -1,3 +1,4 @@
+#![allow(clippy::needless_lifetimes)]
 use crate::reporting::get_subslice_span;
 use nom::bytes::complete::{tag,is_not,take_till,take_while,take_while1};
 use nom::combinator::{opt, recognize};
@@ -109,9 +110,7 @@ fn get_line<'a>(input: &'a str) -> (&'a str, &'a str) {
         take_till(|c| c == '\n')(input)
     }
     let (input, _dump) = skip(input);
-    let result = recognize(opt(lex_line))(input).unwrap();
-    //println!("After skipping \"{}\" remaining in line: \"{}\" remaining: \"{}\"\n", _dump,result.1,result.0); // Debug output
-    result
+    recognize(opt(lex_line))(input).unwrap()
 }
 
 
@@ -344,7 +343,7 @@ impl<'input> Lexer<'input> {
         Lexer {
             original_input: input,
             index: span.end().to_usize(),
-            line: line,
+            line,
             next_input: next,
         }
     }
@@ -358,7 +357,7 @@ impl<'input> Lexer<'input> {
             }
         }
 
-        if self.line.len() == 0  {
+        if self.line.is_empty()  {
             let (next_input, line) = get_line(self.next_input);
             self.next_input = next_input;
             self.line = line;

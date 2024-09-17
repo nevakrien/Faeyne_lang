@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
+
 use std::rc::Rc;
 use codespan::Span;
 
@@ -92,6 +94,27 @@ impl StaticVarScope {
     pub fn new() -> Self {
         StaticVarScope{vars: HashMap::new()}
     }
+
+    // pub fn from_ids(ids:&[usize],scope: &VarScope<'a>) -> Result<Self,Error> {
+    //     let map = HashMap::new();
+    //     for i in ids {
+
+    //     }
+    // }
+
+    pub fn maybe_add<'a>(&mut self,id : usize ,outer_scope: &VarScope<'a>) -> Result<(),Error> {
+        match self.vars.entry(id){
+            Entry::Occupied(_) => Ok(()), 
+            Entry::Vacant(spot) => {
+                match outer_scope.get(id) {
+                    None => Err(Error::Missing(UndefinedName{})),
+                    Some(v) => {spot.insert(v.clone()); Ok(())}
+                }
+            }
+        }
+    }
+
+
     pub fn make_subscope<'parent>(&'parent self) -> VarScope<'parent> {
         VarScope{
             parent:Scopble::Static(&self.vars),
@@ -168,7 +191,7 @@ pub enum LazyVal{
     //sometimes evaluating a var causes an excepsion
     
     MakeMatchFunc(/* placeholder */),
-    MakeFunc(/* placeholder */),
+    MakeFunc(LazyFunc),
 
     Terminal(Value),
     Ref(usize),
@@ -193,10 +216,23 @@ impl LazyVal {
                     ValueRet::Local(v) => statment.eval(v, scope),
                 }
             },
-            LazyVal::MakeFunc() => todo!(),
+            LazyVal::MakeFunc(_) => todo!(),
             LazyVal::MakeMatchFunc() => todo!(),
 
         }
+    }
+
+    pub fn run_on_refs<F : FnMut(usize)-> Result<(),Error> >(&self,mut update : F) -> Result<(),Error> {
+        match self {
+            LazyVal::Terminal(_) => Ok(()),
+            LazyVal::Ref(id) => update(*id),
+            _ => todo!(),
+        }
+    }
+
+
+    pub fn add_to_closure<'a>(&self,scope: &VarScope<'a>,closure : &mut StaticVarScope) -> Result<(),Error> {
+        self.run_on_refs(|id| closure.maybe_add(id,scope))
     }
 }
 
@@ -208,6 +244,29 @@ pub enum Statment {
     Return(ScopeRet),
 }
 
+#[derive(Debug,PartialEq,Clone)]
+pub struct LazyFunc{
+    sig:FuncSig,
+    needed_ids:Option<Vec<usize>>,
+    inner:Block,
+}
+
+impl LazyFunc {
+    pub fn eval(&mut self,scope: &VarScope) -> Func {
+        let ids : &[usize] = match &self.needed_ids {
+            None => self.calculate_needed_ids(),
+            Some(v) => v
+        };
+
+
+
+        todo!()
+    }
+
+    pub fn calculate_needed_ids(&mut self) -> &[usize] {
+        todo!()
+    }
+}
 
 #[derive(Debug,PartialEq,Clone)]
 pub struct Func {
@@ -244,25 +303,26 @@ impl FuncSig {
 }
 
 #[derive(Debug,PartialEq,Clone)]
-pub enum Block{
-    Simple(LazyVal),
-    Code(Vec<Statment>),
+pub struct Block{
+    code: Vec<Statment>,
 }
 
 
 impl Block {
-    pub fn eval(&self,scope: &VarScope) -> Result<ValueRet,Error>{
-        match self {
-            Block::Simple(v) => v.eval(scope),
-            Block::Code(c)=>Self::evaluate_code(c,scope),
+    pub fn new(code : Vec<Statment>) -> Self {
+        Block{code}
+    }
+
+    pub fn new_simple(val :LazyVal) -> Self {
+        Block {
+            code: vec![Statment::Return(GenericRet::Local(val))]
         }
     }
 
-    #[inline]
-    fn evaluate_code(code:&[Statment],parent_scope: &VarScope)-> Result<ValueRet,Error>{
+    pub fn eval(&self,parent_scope: &VarScope)-> Result<ValueRet,Error>{
         let mut scope = parent_scope.make_subscope();
 
-        for s in code.iter() {
+        for s in self.code.iter() {
             match s {
                 Statment::Return(a) => match a{
                     GenericRet::Local(x) => {return x.eval(&scope);},
@@ -541,7 +601,7 @@ fn test_varscope_nested_scopes() {
 fn test_function_handle_eval() {
     let func = Func {
         sig: FuncSig { arg_ids: vec![1, 2] },
-        inner: Block::Simple(LazyVal::Terminal(Value::Int(42))),
+        inner: Block::new_simple(LazyVal::Terminal(Value::Int(42))),
         closure: StaticVarScope::new()
     };
 
@@ -565,9 +625,9 @@ fn test_match_statement() {
             MatchCond::Any
         ],
         vals: vec![
-            Block::Simple(LazyVal::Terminal(Value::String(Rc::new("One".to_string())))),
-            Block::Simple(LazyVal::Terminal(Value::String(Rc::new("Two".to_string())))),
-            Block::Simple(LazyVal::Terminal(Value::String(Rc::new("Default".to_string()))))
+            Block::new_simple(LazyVal::Terminal(Value::String(Rc::new("One".to_string())))),
+            Block::new_simple(LazyVal::Terminal(Value::String(Rc::new("Two".to_string())))),
+            Block::new_simple(LazyVal::Terminal(Value::String(Rc::new("Default".to_string()))))
         ],
         debug_span: Span::new(0, 0),
     };
@@ -590,7 +650,7 @@ fn test_match_statement() {
 fn test_lazyval_func_call() {
     let func = Func {
         sig: FuncSig { arg_ids: vec![1] },
-        inner: Block::Simple(LazyVal::Terminal(Value::Int(42))),
+        inner: Block::new_simple(LazyVal::Terminal(Value::Int(42))),
         closure: StaticVarScope::new()
     };
     let handle = Value::Func(FunctionHandle::Lambda(Rc::new(func)));
@@ -617,7 +677,7 @@ fn test_match_statement_with_ref_and_func_call() {
     // Define a simple function that returns a specific value
     let func = Func {
         sig: FuncSig { arg_ids: vec![23] },
-        inner: Block::Simple(LazyVal::Terminal(Value::String(Rc::new("FunctionCall".to_string())))),
+        inner: Block::new_simple(LazyVal::Terminal(Value::String(Rc::new("FunctionCall".to_string())))),
         closure: StaticVarScope::new()
     };
     let handle = Value::Func(FunctionHandle::Lambda(Rc::new(func)));
@@ -630,9 +690,9 @@ fn test_match_statement_with_ref_and_func_call() {
             MatchCond::Any
         ],
         vals: vec![
-            Block::Simple(LazyVal::Terminal(Value::String(Rc::new("One".to_string())))),    // Terminal value
-            Block::Simple(LazyVal::Ref(ref_id)),                                             // Reference to a value in scope
-            Block::Simple(LazyVal::FuncCall(Call {                                          // Function call returning "FunctionCall"
+            Block::new_simple(LazyVal::Terminal(Value::String(Rc::new("One".to_string())))),    // Terminal value
+            Block::new_simple(LazyVal::Ref(ref_id)),                                             // Reference to a value in scope
+            Block::new_simple(LazyVal::FuncCall(Call {                                          // Function call returning "FunctionCall"
                 called: Box::new(LazyVal::Terminal(handle.clone())),                        // Call the function
                 args: vec![LazyVal::Terminal(Value::Float(6.9))],                               // Pass an argument (though it's unused in this example)
             }))
@@ -664,7 +724,7 @@ fn test_closure_variable_isolation() {
     // Create a function that will modify its own scope but should not modify the outer/global scope
     let func = Func {
         sig: FuncSig { arg_ids: vec![2] },
-        inner: Block::Code(vec![
+        inner: Block::new(vec![
             // Inside the function, we assign a new value to the same variable ID (1)
             Statment::Assign(global_var_id, LazyVal::Terminal(Value::Int(200))),
         ]),
@@ -703,7 +763,7 @@ fn test_closure_does_not_leak_into_global_scope() {
     // Create a function that modifies its own local scope and does not leak variables
     let func = Func {
         sig: FuncSig { arg_ids: vec![2] },
-        inner: Block::Code(vec![
+        inner: Block::new(vec![
             // Assign a value to a new variable ID (2) that should exist only within the function
             Statment::Assign(2, LazyVal::Terminal(Value::Int(500))),
         ]),
