@@ -213,8 +213,8 @@ impl<'input> StringTable<'input> {
             vec: Vec::new(),
         };
 
-        // Preload core literals
-        table.get_id("_");    
+        //IMPORTANT first value is assumed to not be a var
+        //if this is broken then Lamda match statments will break
         
         table.get_id(":nil");
         table.get_id(":bool");
@@ -223,6 +223,9 @@ impl<'input> StringTable<'input> {
         table.get_id(":float");
         table.get_id(":atom");
         table.get_id(":func");
+
+        // Preload core literals
+        table.get_id("_");
         
         table
     }

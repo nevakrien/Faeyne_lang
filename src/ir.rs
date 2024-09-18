@@ -199,7 +199,7 @@ pub enum LazyVal{
     //so we can actually return from the parent scope
     //sometimes evaluating a var causes an excepsion
     
-    MakeMatchFunc(/* placeholder */),
+    MakeMatchFunc(LazyMatch),
     MakeFunc(LazyFunc),
 
     Terminal(Value),
@@ -234,7 +234,15 @@ impl LazyVal {
                     )
                 )
             ),
-            LazyVal::MakeMatchFunc() => todo!(),
+            LazyVal::MakeMatchFunc(x) => x.eval(scope).map(|f| 
+                ValueRet::Local(
+                    Value::Func(
+                        FunctionHandle::Lambda(
+                            GcPointer::new(f)
+                        ) 
+                    )
+                )
+            ),
 
         }
     }
@@ -253,7 +261,7 @@ impl LazyVal {
 
             LazyVal::FuncCall(call) => call.add_to_closure(scope,closure),
             LazyVal::MakeFunc(lf) => lf.add_to_closure(scope,closure),
-            LazyVal::MakeMatchFunc() => todo!(),
+            LazyVal::MakeMatchFunc(x) => x.add_to_closure(scope,closure),
         }
     }
 }
@@ -311,6 +319,48 @@ impl LazyFunc {
         self.inner.add_to_closure(scope,closure)
     }
 }
+
+#[derive(Debug,PartialEq,Clone)]
+pub struct LazyMatch{
+    inner:MatchStatment,
+}
+
+impl LazyMatch {
+    pub fn new(inner : MatchStatment) -> Self {
+       LazyMatch{
+            inner
+       }
+    }
+    pub fn eval(&self, scope: &VarScope) -> Result<Func, ErrList> {
+        let mut closure = StaticVarScope::new();
+
+        self.inner.add_to_closure(scope, &mut closure)?;
+
+        //we are using some cursed ideas basically the 0 id will never be a varible name
+        // thus using it as an argument is totally safe
+
+        let statment = Statment::Return(
+            ScopeRet::Local(
+                LazyVal::Match {
+                    var: Box::new(LazyVal::Ref(0)),
+                    statment: self.inner.clone()    
+                }
+            )
+        );
+
+        Ok(Func {
+            sig: FuncSig { arg_ids: vec![0] },
+            inner: Block { code: vec![statment] }, 
+            closure,
+        })
+    }
+
+
+    pub fn add_to_closure<'a>(&self,scope: &VarScope<'a>,closure : &mut StaticVarScope) -> Result<(),ErrList> {
+        self.inner.add_to_closure(scope,closure)
+    }
+}
+
 
 #[derive(Debug,PartialEq,Clone)]
 pub struct Func {
@@ -862,4 +912,55 @@ fn test_closure_captures_variable_correctly() {
 
     // Confirm that the global scope has the new value (100)
     assert_eq!(global_scope.get(var_id), Some(&new_value));
+}
+
+#[test]
+fn test_match_fn_captures() {
+    // Step 1: Create the global scope and add a variable to be captured
+    let mut global_scope = VarScope::new();
+    let capture_id = 5; // Using realistic return ID (5 or higher)
+    let initial_value = Value::Int(42);  // Initial value to be captured
+    global_scope.add(capture_id, initial_value.clone());
+
+    // Step 2: Add another variable that will be returned as a reference in the match statement
+    let return_id = 6; // Return ID >= 5 for realistic testing
+    let return_value = Value::String(GcPointer::new("Captured Reference".to_string()));  // Captured value
+    global_scope.add(return_id, return_value.clone());
+
+    // Step 3: Define a MatchStatment for `match fn` that captures the value at `capture_id`
+    let match_stmt = MatchStatment {
+        arms: vec![
+            MatchCond::Literal(Value::Int(1)),
+            MatchCond::Literal(Value::Int(2)),
+            MatchCond::Literal(Value::Int(42)),  // Match against the initial value at capture_id
+        ],
+        vals: vec![
+            Block::new_simple(LazyVal::Ref(return_id)),  // Return reference to the captured value
+            Block::new_simple(LazyVal::Terminal(Value::String(GcPointer::new("Two".to_string())))),
+            Block::new_simple(LazyVal::Ref(return_id)),  // Return reference to captured value again
+        ],
+        debug_span: Span::new(0, 0),
+    };
+
+    // Step 4: Create the `match fn` as a normal value, no wrapping
+    let lazy_match_fn = LazyVal::MakeMatchFunc(LazyMatch::new(match_stmt));
+
+    // Step 5: Evaluate the `match fn` (this implicitly captures the variables)
+    let handle = match lazy_match_fn.eval(&global_scope).unwrap() {
+        ValueRet::Local(Value::Func(f)) => f,  // Ensure we get the function handle
+        _ => panic!("Expected a function handle"),
+    };
+
+    // Step 6: Modify the variable in the global scope after the closure has been created
+    let new_value = Value::Int(100);  // New value after modification
+    global_scope.add(capture_id, new_value.clone());
+
+    // Step 7: Call the closure with the captured value (42), which should return the old captured value
+    let result = handle.eval(vec![initial_value]).unwrap();
+
+    // Step 8: Check that the result is still the old captured value and not the modified one
+    assert_eq!(result, return_value);
+
+    // Confirm that the global scope holds the modified value, not the old one
+    assert_eq!(global_scope.get(capture_id), Some(&new_value));
 }
