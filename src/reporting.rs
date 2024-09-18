@@ -19,7 +19,7 @@ impl Error {
     }
 }
 
-pub fn append_err_list(mut a: Result<(),ErrList>,mut b:Result<(),ErrList>) -> Result<(),ErrList>{
+pub fn append_err_list(mut a: Result<(),ErrList>, b:Result<(),ErrList>) -> Result<(),ErrList>{
     match &mut a {
         Ok(()) => b,
         Err(l1) => match b{

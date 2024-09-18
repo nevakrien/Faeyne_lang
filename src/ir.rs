@@ -102,13 +102,6 @@ impl StaticVarScope {
         StaticVarScope{vars: HashMap::new()}
     }
 
-    // pub fn from_ids(ids:&[usize],scope: &VarScope<'a>) -> Result<Self,Error> {
-    //     let map = HashMap::new();
-    //     for i in ids {
-
-    //     }
-    // }
-
     pub fn maybe_add<'a>(&mut self,id : usize ,outer_scope: &VarScope<'a>) -> Result<(),ErrList> {
         match self.vars.entry(id){
             Entry::Occupied(_) => Ok(()), 
@@ -259,7 +252,7 @@ impl LazyVal {
             },
 
             LazyVal::FuncCall(call) => call.add_to_closure(scope,closure),
-            LazyVal::MakeFunc(_) => todo!(),
+            LazyVal::MakeFunc(lf) => lf.add_to_closure(scope,closure),
             LazyVal::MakeMatchFunc() => todo!(),
         }
     }
@@ -299,7 +292,9 @@ pub struct LazyFunc{
 
 impl LazyFunc {
     pub fn new(sig : FuncSig,inner : Block) -> Self {
-        todo!()
+       LazyFunc{
+            sig,inner
+       }
     }
     pub fn eval(&self,scope: &VarScope) -> Result<Func,ErrList> {
         let mut closure = StaticVarScope::new();
@@ -310,7 +305,11 @@ impl LazyFunc {
             inner: self.inner.clone(),
             closure
         })
-    }   
+    }
+
+    pub fn add_to_closure<'a>(&self,scope: &VarScope<'a>,closure : &mut StaticVarScope) -> Result<(),ErrList> {
+        self.inner.add_to_closure(scope,closure)
+    }
 }
 
 #[derive(Debug,PartialEq,Clone)]
@@ -769,18 +768,17 @@ fn test_closure_variable_isolation() {
     let global_value = Value::Int(100);
     global_scope.add(global_var_id, global_value.clone());
 
-    // Create a function that will modify its own scope but should not modify the outer/global scope
-    let func = Func {
-        sig: FuncSig { arg_ids: vec![2] },
+    // Create a LazyFunc that modifies its own scope but should not modify the outer/global scope
+    let lazy_func = LazyFunc {
+        sig: FuncSig { arg_ids: vec![2] }, // Function signature with one argument
         inner: Block::new(vec![
             // Inside the function, we assign a new value to the same variable ID (1)
             Statment::Assign(global_var_id, LazyVal::Terminal(Value::Int(200))),
         ]),
-        closure: global_scope.clone().capture_entire_scope(), // Function has its own isolated closure
     };
 
-
-    // Function handle to represent our closure
+    // Evaluate the function and create a closure
+    let func = lazy_func.eval(&global_scope).unwrap();
     let handle = FunctionHandle::Lambda(Rc::new(func));
 
     // Call the function, passing an argument (though it's not used)
@@ -799,7 +797,6 @@ fn test_closure_variable_isolation() {
     // Verify the function's internal scope is isolated and does not affect the outer scope
     assert_eq!(global_scope.get(global_var_id), Some(&modified_global_value));
 }
-
 #[test]
 fn test_closure_does_not_leak_into_global_scope() {
     // Create the global scope
@@ -808,17 +805,17 @@ fn test_closure_does_not_leak_into_global_scope() {
     let global_value = Value::Int(100);
     global_scope.add(global_var_id, global_value.clone());
 
-    // Create a function that modifies its own local scope and does not leak variables
-    let func = Func {
-        sig: FuncSig { arg_ids: vec![2] },
+    // Create a LazyFunc that modifies its own local scope and does not leak variables
+    let lazy_func = LazyFunc {
+        sig: FuncSig { arg_ids: vec![2] }, // Function signature with one argument
         inner: Block::new(vec![
             // Assign a value to a new variable ID (2) that should exist only within the function
             Statment::Assign(2, LazyVal::Terminal(Value::Int(500))),
         ]),
-        closure: global_scope.clone().capture_entire_scope(), // Function has its own closure
     };
 
-    // Create a handle for the function
+    // Evaluate the function and create a closure
+    let func = lazy_func.eval(&global_scope).unwrap();
     let handle = FunctionHandle::Lambda(Rc::new(func));
 
     // Call the function, passing an argument (though it's not used)
@@ -829,4 +826,40 @@ fn test_closure_does_not_leak_into_global_scope() {
 
     // Ensure that the global variable (ID 1) has not been modified by the closure
     assert_eq!(global_scope.get(global_var_id), Some(&global_value));
+}
+
+
+
+#[test]
+fn test_closure_captures_variable_correctly() {
+    // Step 1: Create the global scope and add a variable
+    let mut global_scope = VarScope::new();
+    let var_id = 6;
+    let initial_value = Value::Int(42);  // Initial value for the variable at ID 6
+    global_scope.add(var_id, initial_value.clone());
+
+    // Step 2: Create a LazyFunc (closure) that captures the variable at ID 6 and returns its value
+    let lazy_func = LazyFunc {
+        sig: FuncSig { arg_ids: vec![] }, // No arguments needed
+        inner: Block::new(vec![
+            Statment::Return(ScopeRet::Local(LazyVal::Ref(var_id))), // Return the captured value
+        ]),
+    };
+
+    // Evaluate the function to create the closure
+    let func = lazy_func.eval(&global_scope).unwrap();
+    let handle = FunctionHandle::Lambda(Rc::new(func));
+
+    // Step 3: Change the value of the variable in the global scope
+    let new_value = Value::Int(100);  // New value for the variable at ID 6
+    global_scope.add(var_id, new_value.clone());
+
+    // Step 4: Call the closure and check that it returns the old (captured) value, not the new one
+    let result = handle.eval(vec![]).unwrap();
+    
+    // The closure should return the old value (42) as it captured the original value
+    assert_eq!(result, initial_value);
+
+    // Confirm that the global scope has the new value (100)
+    assert_eq!(global_scope.get(var_id), Some(&new_value));
 }
