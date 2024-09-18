@@ -718,7 +718,7 @@ fn test_underscored_valid_numbers() {
     let input = "123_6_22 as";
     let (remaining, result) = lex_digits(input).unwrap();
     assert_eq!(remaining, " as");
-    assert_eq!(result, Ok(123_6_22));
+    assert_eq!(result, Ok(123_622));
 
     let input = "987654";
     let (remaining, result) = lex_digits(input).unwrap();

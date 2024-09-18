@@ -205,6 +205,7 @@ pub struct StringTable<'input> {
     vec: Vec<&'input str>,
 }
 
+#[allow(clippy::new_without_default)]
 impl<'input> StringTable<'input> {
     pub fn new() -> Self {
         let mut table = Self {

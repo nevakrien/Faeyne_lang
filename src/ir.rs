@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::collections::LinkedList;
 
 use std::rc::Rc;
 use codespan::Span;
@@ -201,11 +202,11 @@ pub enum LazyVal{
 }
 
 impl LazyVal {
-    pub fn eval(&self,scope: &VarScope) -> Result<ValueRet,Error> {
+    pub fn eval(&self,scope: &VarScope) -> Result<ValueRet,ErrList> {
         match self {
             LazyVal::Terminal(v) => Ok(v.clone().into()),
             LazyVal::Ref(id) => match scope.get(*id) {
-                None => Err(Error::Missing(UndefinedName{})),
+                None => Err(Error::Missing(UndefinedName{}).to_list()),
                 Some(v) => Ok(v.clone().into()),
             },
             LazyVal::FuncCall(call) => call.eval(scope),
@@ -222,18 +223,18 @@ impl LazyVal {
         }
     }
 
-    pub fn run_on_refs<F : FnMut(usize)-> Result<(),Error> >(&self,mut update : F) -> Result<(),Error> {
-        match self {
-            LazyVal::Terminal(_) => Ok(()),
-            LazyVal::Ref(id) => update(*id),
-            _ => todo!(),
-        }
-    }
+    // pub fn run_on_refs<F : FnMut(usize)-> Result<(),Error> >(&self,mut update : F) -> Result<(),Error> {
+    //     match self {
+    //         LazyVal::Terminal(_) => Ok(()),
+    //         LazyVal::Ref(id) => update(*id),
+    //         _ => todo!(),
+    //     }
+    // }
 
 
-    pub fn add_to_closure<'a>(&self,scope: &VarScope<'a>,closure : &mut StaticVarScope) -> Result<(),Error> {
-        self.run_on_refs(|id| closure.maybe_add(id,scope))
-    }
+    // pub fn add_to_closure<'a>(&self,scope: &VarScope<'a>,closure : &mut StaticVarScope) -> Result<(),Error> {
+    //     self.run_on_refs(|id| closure.maybe_add(id,scope))
+    // }
 }
 
 #[derive(Debug,PartialEq,Clone)]
@@ -276,7 +277,7 @@ pub struct Func {
 }
 
 impl Func {
-    pub fn eval(&self,args: Vec<Value>) -> Result<Value,Error> {
+    pub fn eval(&self,args: Vec<Value>) -> Result<Value,ErrList> {
         _ = self.sig.matches(&args)?;
         let mut scope = self.closure.make_subscope();
         for (i,a) in self.sig.arg_ids.iter().enumerate(){
@@ -293,11 +294,11 @@ pub struct FuncSig{
 }
 
 impl FuncSig {
-   pub fn matches(&self,args: &[Value]) -> Result<(),Error> {
+   pub fn matches(&self,args: &[Value]) -> Result<(),ErrList> {
         if args.len() == self.arg_ids.len() {
             Ok(())
         } else {
-            Err(Error::Sig(SigError{}))
+            Err(Error::Sig(SigError{}).to_list())
         }
    } 
 }
@@ -319,7 +320,7 @@ impl Block {
         }
     }
 
-    pub fn eval(&self,parent_scope: &VarScope)-> Result<ValueRet,Error>{
+    pub fn eval(&self,parent_scope: &VarScope)-> Result<ValueRet,ErrList>{
         let mut scope = parent_scope.make_subscope();
 
         for s in self.code.iter() {
@@ -379,19 +380,19 @@ pub struct MatchStatment {
 }
 
 impl MatchStatment {
-    pub fn eval(&self, x:Value ,scope: &VarScope) -> Result<ValueRet,Error> {
+    pub fn eval(&self, x:Value ,scope: &VarScope) -> Result<ValueRet,ErrList> {
         for (i,a) in self.arms.iter().enumerate() {
             if a.matches(&x) {
                 return self.vals[i].eval(scope);
             }
         }
-        return Err(Error::Match(MatchError{span:self.debug_span}));
+        return Err(Error::Match(MatchError{span:self.debug_span}).to_list());
     }
 }
 
 #[derive(Debug,PartialEq,Clone)]
 pub enum FunctionHandle{
-    FFI(fn(Vec<Value>)->Result<Value,Error>),
+    FFI(fn(Vec<Value>)->Result<Value,ErrList>),
 	StaticDef(&'static Func),
     Lambda(GcPointer<Func>),
     //we need a better premise for matchlamdas or just make them Funcs
@@ -400,7 +401,7 @@ pub enum FunctionHandle{
 }
 
 impl FunctionHandle{
-    pub fn eval(self,args: Vec<Value>) -> Result<Value,Error> {
+    pub fn eval(self,args: Vec<Value>) -> Result<Value,ErrList> {
         match self {
             FunctionHandle::FFI(f) => f(args),
             FunctionHandle::StaticDef(f) => f.eval(args),
@@ -420,18 +421,17 @@ impl FunctionHandle{
 
 #[derive(Debug,PartialEq,Clone)]
 pub struct Call{
-    //handle:Box<FunctionHandle>,
     called: Box<LazyVal>,
     args: Vec<LazyVal>
 }
 
 impl Call {
-    pub fn eval(&self,scope: &VarScope) -> Result<ValueRet,Error> {
+    pub fn eval(&self,scope: &VarScope) -> Result<ValueRet,ErrList> {
         let handle = match self.called.eval(scope)? {
             ValueRet::Unwind(v) => {return Ok(ValueRet::Unwind(v));}
             ValueRet::Local(v) => match v {
                 Value::Func(f) => f,
-                _ => {return Err(Error::NoneCallble(NoneCallble{}));}
+                _ => {return Err(Error::NoneCallble(NoneCallble{}).to_list());}
             }
         };
 
@@ -468,6 +468,15 @@ pub enum Error {
     Missing(UndefinedName),
     NoneCallble(NoneCallble)
     //UndocumentedError,
+}
+
+pub type ErrList = LinkedList<Error>;
+impl Error {
+    pub fn to_list(self) -> LinkedList<Self> {
+        let mut l = LinkedList::new();
+        l.push_back(self);
+        l
+    }
 }
 
 #[derive(Debug,PartialEq)]
@@ -508,14 +517,14 @@ fn test_system_ffi_mock() {
     }
 
 
-    fn ffi_println(args: Vec<Value>) -> Result<Value, Error> {
+    fn ffi_println(args: Vec<Value>) -> Result<Value, ErrList> {
         LOG_PRINT.with(|log| {
             log.borrow_mut().push(args.clone());
         });
         Ok(Value::Nil)
     }
 
-    fn ffi_system(args: Vec<Value>) -> Result<Value, Error> {
+    fn ffi_system(args: Vec<Value>) -> Result<Value, ErrList    > {
         LOG_SYSTEM.with(|log| {
             log.borrow_mut().push(args.clone());
         });
@@ -613,7 +622,7 @@ fn test_function_handle_eval() {
 
     // Test invalid evaluation with incorrect number of arguments
     let err = handle.eval(vec![Value::Int(1)]).unwrap_err();
-    assert_eq!(err, Error::Sig(SigError {}));
+    assert_eq!(err, Error::Sig(SigError {}).to_list());
 }
 
 #[test]
