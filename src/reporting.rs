@@ -1,4 +1,58 @@
 use codespan::{ByteIndex, Span};
+use std::collections::LinkedList;
+
+#[derive(Debug,PartialEq)]
+pub enum Error {
+    Match(MatchError),
+    Sig(SigError),
+    Missing(UndefinedName),
+    NoneCallble(NoneCallble)
+    //UndocumentedError,
+}
+
+pub type ErrList = LinkedList<Error>;
+impl Error {
+    pub fn to_list(self) -> LinkedList<Self> {
+        let mut l = LinkedList::new();
+        l.push_back(self);
+        l
+    }
+}
+
+pub fn append_err_list(mut a: Result<(),ErrList>,mut b:Result<(),ErrList>) -> Result<(),ErrList>{
+    match &mut a {
+        Ok(()) => b,
+        Err(l1) => match b{
+            Ok(()) => a,
+            Err(mut l2) => {
+                l1.append(&mut l2);
+                a
+            }
+        }
+    }
+}
+
+#[derive(Debug,PartialEq)]
+pub struct MatchError {
+    pub span: Span
+}
+
+
+#[derive(Debug,PartialEq)]
+pub struct SigError {
+    //placeholder
+}
+
+#[derive(Debug,PartialEq)]
+pub struct NoneCallble {
+    //placeholder
+}
+
+
+#[derive(Debug,PartialEq)]
+pub struct UndefinedName {
+    //placeholder
+}
 
 //subslice has to be a oart of source
 pub fn get_subslice_span<'a>(source: &'a str, subslice: &'a str) -> Span {

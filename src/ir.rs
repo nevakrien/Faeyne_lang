@@ -1,18 +1,28 @@
 #![allow(dead_code)]
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
-use std::collections::LinkedList;
 
 use std::rc::Rc;
 use codespan::Span;
 
 pub use crate::basic_ops::{is_equal};
+use crate::reporting::*;
 
 #[derive(Debug,PartialEq,Clone,Copy)]
-pub enum Scopble<'parent>{
+pub enum Scopble<'a>{
     None,
-    Dyn(&'parent VarScope<'parent>),
-    Static(&'parent HashMap<usize,Value>),
+    SubScope(&'a VarScope<'a>),
+    Static(&'a HashMap<usize,Value>),
+}
+
+impl<'a> Scopble<'a>{
+    pub fn get(&self,id:usize) -> Option<&Value> {
+        match self{
+            Scopble::None => None,
+            Scopble::SubScope(s) => s.get(id),
+            Scopble::Static(s) => s.get(&id),
+        }
+    }
 }
 
 #[derive(Debug,PartialEq,Clone)]
@@ -30,7 +40,7 @@ impl<'parent> VarScope<'parent>  {
 	}
 	pub fn make_subscope<'a>(&'a self) -> VarScope<'a> {
 		VarScope{
-			parent:Scopble::Dyn(self),
+			parent:Scopble::SubScope(self),
 			vars:HashMap::new()
 		}
 	}
@@ -42,20 +52,16 @@ impl<'parent> VarScope<'parent>  {
 	pub fn get(&self,id:usize) -> Option<&Value> {
 		match self.vars.get(&id) {
 			Some(v) => Some(v),
-			None => match self.parent {
-				Scopble::None => None,
-				Scopble::Dyn(p) => p.get(id),
-                Scopble::Static(p) => p.get(&id),
-			}
+			None => self.parent.get(id),
 		}
 	}
 
     pub fn capture_entire_scope(self) -> StaticVarScope {
         let mut all_vars = HashMap::new();
-        let mut current_scope = Scopble::Dyn(&self);
+        let mut current_scope = Scopble::SubScope(&self);
 
 
-        while let Scopble::Dyn(scope) = current_scope {
+        while let Scopble::SubScope(scope) = current_scope {
             //respect existing values
             for (id, value) in &scope.vars {
                 all_vars.entry(*id).or_insert_with(|| value.clone());
@@ -103,12 +109,12 @@ impl StaticVarScope {
     //     }
     // }
 
-    pub fn maybe_add<'a>(&mut self,id : usize ,outer_scope: &VarScope<'a>) -> Result<(),Error> {
+    pub fn maybe_add<'a>(&mut self,id : usize ,outer_scope: &VarScope<'a>) -> Result<(),ErrList> {
         match self.vars.entry(id){
             Entry::Occupied(_) => Ok(()), 
             Entry::Vacant(spot) => {
                 match outer_scope.get(id) {
-                    None => Err(Error::Missing(UndefinedName{})),
+                    None => Err(Error::Missing(UndefinedName{}).to_list()),
                     Some(v) => {spot.insert(v.clone()); Ok(())}
                 }
             }
@@ -180,6 +186,15 @@ impl From<ValueRet> for Value {
     }
 }
 
+impl From<ScopeRet> for LazyVal {
+    fn from(ret: ScopeRet) -> Self {
+        match ret {
+            ScopeRet::Local(v) => v,
+            ScopeRet::Unwind(v) => v,
+        }
+    }
+}
+
 
 pub type GcPointer<T> = Rc<T>;
 
@@ -217,24 +232,37 @@ impl LazyVal {
                     ValueRet::Local(v) => statment.eval(v, scope),
                 }
             },
-            LazyVal::MakeFunc(_) => todo!(),
+            LazyVal::MakeFunc(lf) => lf.eval(scope).map(|f| 
+                ValueRet::Local(
+                    Value::Func(
+                        FunctionHandle::Lambda(
+                            GcPointer::new(f)
+                        ) 
+                    )
+                )
+            ),
             LazyVal::MakeMatchFunc() => todo!(),
 
         }
     }
 
-    // pub fn run_on_refs<F : FnMut(usize)-> Result<(),Error> >(&self,mut update : F) -> Result<(),Error> {
-    //     match self {
-    //         LazyVal::Terminal(_) => Ok(()),
-    //         LazyVal::Ref(id) => update(*id),
-    //         _ => todo!(),
-    //     }
-    // }
 
+    pub fn add_to_closure<'a>(&self,scope: &VarScope<'a>,closure : &mut StaticVarScope) -> Result<(),ErrList> {
+        match self {
+            LazyVal::Terminal(_) => Ok(()),
+            LazyVal::Ref(id) => closure.maybe_add(*id,scope),
+            LazyVal::Match{ var, statment }=> {
+                append_err_list(
+                    var.add_to_closure(scope,closure),
+                    statment.add_to_closure(scope,closure)
+                )
+            },
 
-    // pub fn add_to_closure<'a>(&self,scope: &VarScope<'a>,closure : &mut StaticVarScope) -> Result<(),Error> {
-    //     self.run_on_refs(|id| closure.maybe_add(id,scope))
-    // }
+            LazyVal::FuncCall(call) => call.add_to_closure(scope,closure),
+            LazyVal::MakeFunc(_) => todo!(),
+            LazyVal::MakeMatchFunc() => todo!(),
+        }
+    }
 }
 
 #[derive(Debug,PartialEq,Clone)]
@@ -245,28 +273,44 @@ pub enum Statment {
     Return(ScopeRet),
 }
 
+impl Statment{
+    pub fn add_to_closure<'a>(&self,scope: &VarScope<'a>,closure : &mut StaticVarScope) -> Result<(),ErrList>{
+        match self{
+            Statment::Assign(_,x) => x.add_to_closure(scope,closure),
+            Statment::Call(x) => x.add_to_closure(scope,closure),
+            Statment::Return(r) => {
+                let x : LazyVal = r.clone().into(); 
+                x.add_to_closure(scope,closure)
+            },
+            Statment::Match((val,s)) => append_err_list(
+                val.add_to_closure(scope,closure),
+                s.add_to_closure(scope,closure)
+            ),
+
+        }
+    }
+}
+
 #[derive(Debug,PartialEq,Clone)]
 pub struct LazyFunc{
     sig:FuncSig,
-    needed_ids:Option<Vec<usize>>,
     inner:Block,
 }
 
 impl LazyFunc {
-    pub fn eval(&mut self,scope: &VarScope) -> Func {
-        let ids : &[usize] = match &self.needed_ids {
-            None => self.calculate_needed_ids(),
-            Some(v) => v
-        };
-
-
-
+    pub fn new(sig : FuncSig,inner : Block) -> Self {
         todo!()
     }
-
-    pub fn calculate_needed_ids(&mut self) -> &[usize] {
-        todo!()
-    }
+    pub fn eval(&self,scope: &VarScope) -> Result<Func,ErrList> {
+        let mut closure = StaticVarScope::new();
+    
+        self.inner.add_to_closure(scope,&mut closure)?;        
+        Ok(Func {
+            sig:self.sig.clone(),
+            inner: self.inner.clone(),
+            closure
+        })
+    }   
 }
 
 #[derive(Debug,PartialEq,Clone)]
@@ -300,7 +344,7 @@ impl FuncSig {
         } else {
             Err(Error::Sig(SigError{}).to_list())
         }
-   } 
+   }
 }
 
 #[derive(Debug,PartialEq,Clone)]
@@ -353,6 +397,16 @@ impl Block {
 
         Ok(ValueRet::Local(Value::Nil))
     }
+
+    pub fn add_to_closure<'a>(&self,scope: &VarScope<'a>,closure : &mut StaticVarScope) -> Result<(),ErrList>{
+        let mut ans = Ok(());
+        for s in self.code.iter() {
+            ans = append_err_list(ans,
+                s.add_to_closure(scope,closure)
+            );
+        }
+        ans
+    }
 }
 
 
@@ -369,6 +423,9 @@ impl MatchCond {
             MatchCond::Any => true,
             MatchCond::Literal(x) => is_equal(v,x),
         }
+    }
+    pub fn add_to_closure<'a>(&self,_scope: &VarScope<'a>,_closure : &mut StaticVarScope) -> Result<(),ErrList>{
+        Ok(())
     }
 }
 
@@ -387,6 +444,17 @@ impl MatchStatment {
             }
         }
         return Err(Error::Match(MatchError{span:self.debug_span}).to_list());
+    }
+
+    pub fn add_to_closure<'a>(&self,scope: &VarScope<'a>,closure : &mut StaticVarScope) -> Result<(),ErrList> {
+        let mut ans = Ok(());
+        for a in self.arms.iter() {
+            ans=append_err_list(ans,a.add_to_closure(scope,closure));
+        }
+        for v in self.vals.iter() {
+            ans=append_err_list(ans,v.add_to_closure(scope,closure));
+        }
+        ans
     }
 }
 
@@ -447,6 +515,15 @@ impl Call {
         }
         handle.eval(arg_values).map(|v| v.into())
     }
+    pub fn add_to_closure<'a>(&self,scope: &VarScope<'a>,closure : &mut StaticVarScope) -> Result<(),ErrList> {
+        let mut ans = self.called.add_to_closure(scope,closure);
+        for a in self.args.iter() {
+            ans = append_err_list(ans,
+                a.add_to_closure(scope,closure)
+            );
+        }
+        ans
+    }
 }
 
 
@@ -461,45 +538,7 @@ pub enum Value {
 	Func(FunctionHandle),
 }
 
-#[derive(Debug,PartialEq)]
-pub enum Error {
-    Match(MatchError),
-    Sig(SigError),
-    Missing(UndefinedName),
-    NoneCallble(NoneCallble)
-    //UndocumentedError,
-}
 
-pub type ErrList = LinkedList<Error>;
-impl Error {
-    pub fn to_list(self) -> LinkedList<Self> {
-        let mut l = LinkedList::new();
-        l.push_back(self);
-        l
-    }
-}
-
-#[derive(Debug,PartialEq)]
-pub struct MatchError {
-    span: Span
-}
-
-
-#[derive(Debug,PartialEq)]
-pub struct SigError {
-	//placeholder
-}
-
-#[derive(Debug,PartialEq)]
-pub struct NoneCallble {
-    //placeholder
-}
-
-
-#[derive(Debug,PartialEq)]
-pub struct UndefinedName {
-    //placeholder
-}
 
 #[cfg(test)]
 use std::cell::RefCell;

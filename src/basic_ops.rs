@@ -1,6 +1,7 @@
 use crate::ast::StringTable;
 use crate::ast::BuildIn;
-use crate::ir::*;
+use crate::ir::Value;
+use crate::reporting::*;
 
 pub fn get_type(v : Value, table:&mut StringTable) -> Value {
 	Value::Atom(get_type_id(v,table))
