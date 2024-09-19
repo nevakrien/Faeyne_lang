@@ -212,3 +212,71 @@ fn perform_logical_op(v1: &Value, v2: &Value, op: BuildIn) -> Result<Value, SigE
 
     Ok(Value::Bool(result))
 }
+
+
+macro_rules! define_builtin_function {
+    ($($func_name:ident => $op:expr),* $(,)?) => {
+        $(
+            pub fn $func_name(args: Vec<Value>) -> Result<Value, ErrList> {
+                handle_buildin(args, $op)
+                    .map_err(|e| Error::Sig(e).to_list())
+            }
+        )*
+    };
+}
+
+// Use the macro to generate all the functions with full function names
+define_builtin_function!(
+    buildin_add => BuildIn::Add,
+    buildin_sub => BuildIn::Sub,
+    buildin_mul => BuildIn::Mul,
+    buildin_div => BuildIn::Div,
+    buildin_int_div => BuildIn::IntDiv,
+    buildin_modulo => BuildIn::Modulo,
+    buildin_pow => BuildIn::Pow,
+
+    buildin_equal => BuildIn::Equal,
+    buildin_not_equal => BuildIn::NotEqual,
+
+    buildin_smaller => BuildIn::Smaller,
+    buildin_bigger => BuildIn::Bigger,
+    buildin_smaller_eq => BuildIn::SmallerEq,
+    buildin_bigger_eq => BuildIn::BiggerEq,
+
+    buildin_and => BuildIn::And,
+    buildin_or => BuildIn::Or,
+    buildin_xor => BuildIn::Xor,
+
+    buildin_double_and => BuildIn::DoubleAnd,
+    buildin_double_or => BuildIn::DoubleOr,
+    buildin_double_xor => BuildIn::DoubleXor,
+);
+
+
+pub fn get_buildin_function(op: BuildIn) -> fn(Vec<Value>) -> Result<Value, ErrList> {
+    match op {
+        BuildIn::Add => buildin_add,
+        BuildIn::Sub => buildin_sub,
+        BuildIn::Mul => buildin_mul,
+        BuildIn::Div => buildin_div,
+        BuildIn::IntDiv => buildin_int_div,
+        BuildIn::Modulo => buildin_modulo,
+        BuildIn::Pow => buildin_pow,
+
+        BuildIn::Equal => buildin_equal,
+        BuildIn::NotEqual => buildin_not_equal,
+
+        BuildIn::Smaller => buildin_smaller,
+        BuildIn::Bigger => buildin_bigger,
+        BuildIn::SmallerEq => buildin_smaller_eq,
+        BuildIn::BiggerEq => buildin_bigger_eq,
+
+        BuildIn::And => buildin_and,
+        BuildIn::Or => buildin_or,
+        BuildIn::Xor => buildin_xor,
+
+        BuildIn::DoubleAnd => buildin_double_and,
+        BuildIn::DoubleOr => buildin_double_or,
+        BuildIn::DoubleXor => buildin_double_xor,
+    }
+}
