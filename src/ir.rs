@@ -538,8 +538,9 @@ impl FunctionHandle{
 
 #[derive(Debug,PartialEq,Clone)]
 pub struct Call{
-    called: Box<LazyVal>,
-    args: Vec<LazyVal>
+    pub called: Box<LazyVal>,
+    pub args: Vec<LazyVal>,
+    pub debug_span: Span
 }
 
 impl Call {
@@ -633,12 +634,14 @@ fn test_system_ffi_mock() {
     let system_call = Call {
         called: Box::new(LazyVal::Ref(system_name)),
         args: vec![LazyVal::Terminal(Value::Atom(println_name))],
+        debug_span : Span::new(0,1),
     };
 
     // Outer call for `system(:println)("hello world")`
     let outer_call = Call {
         called: Box::new(LazyVal::FuncCall(system_call)),
         args: vec![LazyVal::Terminal(Value::String(GcPointer::new("hello world".to_string())))],
+        debug_span : Span::new(0,1),
     };
 
     //asserts
@@ -757,6 +760,7 @@ fn test_lazyval_func_call() {
     let call = Call {
         called: Box::new(LazyVal::Terminal(handle.clone())),
         args: vec![LazyVal::Terminal(Value::Int(5))],
+        debug_span : Span::new(0,1),
     };
 
     let result = LazyVal::FuncCall(call).eval(&scope).unwrap();
@@ -791,7 +795,8 @@ fn test_match_statement_with_ref_and_func_call() {
             Block::new_simple(LazyVal::Ref(ref_id)),                                             // Reference to a value in scope
             Block::new_simple(LazyVal::FuncCall(Call {                                          // Function call returning "FunctionCall"
                 called: Box::new(LazyVal::Terminal(handle.clone())),                        // Call the function
-                args: vec![LazyVal::Terminal(Value::Float(6.9))],                               // Pass an argument (though it's unused in this example)
+                args: vec![LazyVal::Terminal(Value::Float(6.9))],
+                debug_span : Span::new(0,1),
             }))
         ],
         debug_span: Span::new(0, 0),
