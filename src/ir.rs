@@ -486,6 +486,9 @@ pub struct MatchStatment {
 }
 
 impl MatchStatment {
+    pub fn new (arms: Vec<MatchCond>,vals: Vec<Block>,debug_span: Span,) -> Self {
+        MatchStatment{arms,vals,debug_span}
+    }
     pub fn eval(&self, x:Value ,scope: &VarScope) -> Result<ValueRet,ErrList> {
         for (i,a) in self.arms.iter().enumerate() {
             if a.matches(&x) {
@@ -565,7 +568,7 @@ impl Call {
         }
         handle.eval(arg_values).map(|v| v.into())
     }
-    pub fn add_to_closure<'a>(&self,scope: &VarScope<'a>,closure : &mut StaticVarScope) -> Result<(),ErrList> {
+    pub fn add_to_closure(&self,scope: &VarScope<'_>,closure : &mut StaticVarScope) -> Result<(),ErrList> {
         let mut ans = self.called.add_to_closure(scope,closure);
         for a in self.args.iter() {
             ans = append_err_list(ans,
