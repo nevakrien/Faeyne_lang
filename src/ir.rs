@@ -31,6 +31,12 @@ pub struct VarScope<'parent> {
 	vars : HashMap<usize,Value>
 }
 
+impl<'parent> Default for VarScope<'parent> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'parent> VarScope<'parent>  {
 	pub fn new() -> Self {
 		VarScope{
@@ -38,7 +44,7 @@ impl<'parent> VarScope<'parent>  {
 			vars:HashMap::new()
 		}
 	}
-	pub fn make_subscope<'a>(&'a self) -> VarScope<'a> {
+	pub fn make_subscope(&self) -> VarScope<'_> {
 		VarScope{
 			parent:Scopble::SubScope(self),
 			vars:HashMap::new()
@@ -97,12 +103,18 @@ pub struct StaticVarScope {
     vars : HashMap<usize,Value>,
 }
 
+impl Default for StaticVarScope {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StaticVarScope {
     pub fn new() -> Self {
         StaticVarScope{vars: HashMap::new()}
     }
 
-    pub fn maybe_add<'a>(&mut self,id : usize ,outer_scope: &VarScope<'a>) -> Result<(),ErrList> {
+    pub fn maybe_add(&mut self,id : usize ,outer_scope: &VarScope<'_>) -> Result<(),ErrList> {
         match self.vars.entry(id){
             Entry::Occupied(_) => Ok(()), 
             Entry::Vacant(spot) => {
@@ -115,7 +127,7 @@ impl StaticVarScope {
     }
 
 
-    pub fn make_subscope<'parent>(&'parent self) -> VarScope<'parent> {
+    pub fn make_subscope(&self) -> VarScope<'_> {
         VarScope{
             parent:Scopble::Static(&self.vars),
             vars:HashMap::new(),
@@ -248,7 +260,7 @@ impl LazyVal {
     }
 
 
-    pub fn add_to_closure<'a>(&self,scope: &VarScope<'a>,closure : &mut StaticVarScope) -> Result<(),ErrList> {
+    pub fn add_to_closure(&self,scope: &VarScope<'_>,closure : &mut StaticVarScope) -> Result<(),ErrList> {
         match self {
             LazyVal::Terminal(_) => Ok(()),
             LazyVal::Ref(id) => closure.maybe_add(*id,scope),
@@ -275,7 +287,7 @@ pub enum Statment {
 }
 
 impl Statment{
-    pub fn add_to_closure<'a>(&self,scope: &VarScope<'a>,closure : &mut StaticVarScope) -> Result<(),ErrList>{
+    pub fn add_to_closure(&self,scope: &VarScope<'_>,closure : &mut StaticVarScope) -> Result<(),ErrList>{
         match self{
             Statment::Assign(_,x) => x.add_to_closure(scope,closure),
             Statment::Call(x) => x.add_to_closure(scope,closure),
@@ -315,7 +327,7 @@ impl LazyFunc {
         })
     }
 
-    pub fn add_to_closure<'a>(&self,scope: &VarScope<'a>,closure : &mut StaticVarScope) -> Result<(),ErrList> {
+    pub fn add_to_closure(&self,scope: &VarScope<'_>,closure : &mut StaticVarScope) -> Result<(),ErrList> {
         self.inner.add_to_closure(scope,closure)
     }
 }
@@ -356,7 +368,7 @@ impl LazyMatch {
     }
 
 
-    pub fn add_to_closure<'a>(&self,scope: &VarScope<'a>,closure : &mut StaticVarScope) -> Result<(),ErrList> {
+    pub fn add_to_closure(&self,scope: &VarScope<'_>,closure : &mut StaticVarScope) -> Result<(),ErrList> {
         self.inner.add_to_closure(scope,closure)
     }
 }
@@ -371,7 +383,7 @@ pub struct Func {
 
 impl Func {
     pub fn eval(&self,args: Vec<Value>) -> Result<Value,ErrList> {
-        _ = self.sig.matches(&args)?;
+        self.sig.matches(&args)?;;
         let mut scope = self.closure.make_subscope();
         for (i,a) in self.sig.arg_ids.iter().enumerate(){
             scope.add(*a,args[i].clone());
@@ -447,7 +459,7 @@ impl Block {
         Ok(ValueRet::Local(Value::Nil))
     }
 
-    pub fn add_to_closure<'a>(&self,scope: &VarScope<'a>,closure : &mut StaticVarScope) -> Result<(),ErrList>{
+    pub fn add_to_closure(&self,scope: &VarScope<'_>,closure : &mut StaticVarScope) -> Result<(),ErrList>{
         let mut ans = Ok(());
         for s in self.code.iter() {
             ans = append_err_list(ans,
@@ -473,7 +485,7 @@ impl MatchCond {
             MatchCond::Literal(x) => is_equal(v,x),
         }
     }
-    pub fn add_to_closure<'a>(&self,_scope: &VarScope<'a>,_closure : &mut StaticVarScope) -> Result<(),ErrList>{
+    pub fn add_to_closure(&self,_scope: &VarScope<'_>,_closure : &mut StaticVarScope) -> Result<(),ErrList>{
         Ok(())
     }
 }
@@ -495,10 +507,10 @@ impl MatchStatment {
                 return self.vals[i].eval(scope);
             }
         }
-        return Err(Error::Match(MatchError{span:self.debug_span}).to_list());
+        Err(Error::Match(MatchError{span:self.debug_span}).to_list())
     }
 
-    pub fn add_to_closure<'a>(&self,scope: &VarScope<'a>,closure : &mut StaticVarScope) -> Result<(),ErrList> {
+    pub fn add_to_closure(&self,scope: &VarScope<'_>,closure : &mut StaticVarScope) -> Result<(),ErrList> {
         let mut ans = Ok(());
         for a in self.arms.iter() {
             ans=append_err_list(ans,a.add_to_closure(scope,closure));
@@ -604,8 +616,8 @@ fn test_system_ffi_mock() {
     //define FFI functions for this test with loging
     //with this testing buffer 
     thread_local! {
-        static LOG_PRINT: RefCell<Vec<Vec<Value>>> = RefCell::new(Vec::new());
-        static LOG_SYSTEM: RefCell<Vec<Vec<Value>>> = RefCell::new(Vec::new());
+        static LOG_PRINT: RefCell<Vec<Vec<Value>>> = const { RefCell::new(Vec::new()) };
+        static LOG_SYSTEM: RefCell<Vec<Vec<Value>>> = const { RefCell::new(Vec::new()) };
     }
 
 

@@ -1,7 +1,7 @@
 use crate::ast::*;
 use crate::ir;
 use codespan::Span;
-use crate::ir::{VarScope,StaticVarScope,LazyVal,GcPointer,ScopeRet};
+use crate::ir::{LazyVal,GcPointer,ScopeRet};
 use crate::basic_ops::get_buildin_function;
 
 pub trait Translate<Output> {
