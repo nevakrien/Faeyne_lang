@@ -81,10 +81,6 @@ x = 1 + "error message";
 will work and should give line information.
 
 # dev notes
-
-right now we are assuming that all functions can be defined with some sort of closure including static scope ones. 
-this is wrong and we will need to rework the entire scope structure to acomedate recursion and zero copy global scope. 
-
-because we want to allow modules global scope should be passed to each kid when making a closure this operation would take O(num scopes) which is fine since thats the worse case for every lookup anyway. 
+note that all global scopes are assumed to be static so they should be leaked. For the common case this is perfectly acceptble. For the uncommon case when you want to be able to run a temporery process this would have to be achived with unsafe...
 
 It could be benifical in the future to fix scoping to colapse long scope chains when they are created so that lookup is more effishent.

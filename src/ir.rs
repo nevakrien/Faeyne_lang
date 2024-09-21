@@ -13,6 +13,15 @@ pub struct GlobalScope {
     vars : HashMap<usize,(FuncSig,Block)>,
 }
 
+impl Default for GlobalScope {
+    fn default() -> Self {
+        GlobalScope {
+            vars: HashMap::new(),
+        }
+    }
+}
+
+
 impl GlobalScope {
     pub fn get(&'static self,id:usize) -> Option<Value> {
         let (sig,inner) = self.vars.get(&id)?;
@@ -35,10 +44,6 @@ impl GlobalScope {
 
 #[derive(Debug,PartialEq,Clone,Copy)]
 pub enum Scopble<'a>{
-    //need to remove the None and static case and 
-    //and add a global case for the yet to be made lazy global scope
-
-    // None,
     Global(&'static GlobalScope),
     SubScope(&'a VarScope<'a>),
     Static(&'a StaticVarScope),
@@ -64,13 +69,12 @@ impl<'a> Scopble<'a>{
 
 #[derive(Debug,PartialEq,Clone)]
 pub struct VarScope<'parent> {
-	parent : Scopble<'parent>,//Option<&'parent VarScope<'parent>>,
+	parent : Scopble<'parent>,
 	vars : HashMap<usize,Value>
 }
 
 
 impl<'parent> VarScope<'parent>  {
-	//should require a parent global scope
     pub fn new(parent: Scopble<'parent>) -> Self {
 		VarScope{
 			parent,
@@ -131,8 +135,6 @@ fn test_scope_lifetimes(){
 	let _d = &mut a;
 }
 
-
-//needs to be moved in its entiryu into VarScope
 #[derive(Debug,PartialEq,Clone)]
 pub struct StaticVarScope {
     vars : HashMap<usize,Value>,
@@ -595,7 +597,7 @@ impl FunctionHandle{
     pub fn eval(self,args: Vec<Value>) -> Result<Value,ErrList> {
         match self {
             FunctionHandle::FFI(f) => f(args),
-            FunctionHandle::StaticDef(id) => todo!(),//f.eval(args),
+            FunctionHandle::StaticDef(f) => f.eval(args),
             FunctionHandle::Lambda(f) => f.eval(args),
 
             // FunctionHandle::MatchLambda(l) => {
@@ -701,8 +703,8 @@ fn test_system_ffi_mock() {
     let system_name = string_table.get_id("system");
     let println_name = string_table.get_id(":println");
 
-    let root = StaticVarScope::new();
-    let r = Scopble::Static(&root);
+    let root = Box::new(GlobalScope::default());
+    let r = Scopble::Global(Box::leak(root));
 
     let mut scope = VarScope::new(r);
     scope.add(system_name, Value::Func(FunctionHandle::FFI(ffi_system)));
@@ -739,13 +741,13 @@ fn test_system_ffi_mock() {
 
 #[test]
 fn test_varscope_add_and_get() {
-    let root = StaticVarScope::new();
-    let r = Scopble::Static(&root);
+    let global = Box::new(GlobalScope::default()); // Create the global scope using Default
+    let global_ref = Box::leak(global);            // Create a static reference
+    let r = Scopble::Global(global_ref);           // Use the global scope
 
     let mut scope = VarScope::new(r);
     let id = 1;
     let val = Value::Int(42);
-    
     scope.add(id, val.clone());
     
     // Check if the value can be retrieved
@@ -755,10 +757,11 @@ fn test_varscope_add_and_get() {
     assert_eq!(scope.get(2), None);
 }
 
+
 #[test]
 fn test_varscope_nested_scopes() {
-    let root = StaticVarScope::new();
-    let r = Scopble::Static(&root);
+    let root = Box::new(GlobalScope::default());
+    let r = Scopble::Global(Box::leak(root));
 
     let mut global_scope = VarScope::new(r);
     let id = 1;
@@ -802,8 +805,8 @@ fn test_function_handle_eval() {
 
 #[test]
 fn test_match_statement() {
-    let root = StaticVarScope::new();
-    let r = Scopble::Static(&root);
+    let root = Box::new(GlobalScope::default());
+    let r = Scopble::Global(Box::leak(root));
 
     let match_stmt = MatchStatment {
         arms: vec![
@@ -835,8 +838,8 @@ fn test_match_statement() {
 
 #[test]
 fn test_lazyval_func_call() {
-    let root = StaticVarScope::new();
-    let r = Scopble::Static(&root);
+    let root = Box::new(GlobalScope::default());
+    let r = Scopble::Global(Box::leak(root));
 
     let func = Func {
         sig: FuncSig { arg_ids: vec![1] },
@@ -859,8 +862,8 @@ fn test_lazyval_func_call() {
 
 #[test]
 fn test_match_statement_with_ref_and_func_call() {
-    let root = StaticVarScope::new();
-    let r = Scopble::Static(&root);
+    let root = Box::new(GlobalScope::default());
+    let r = Scopble::Global(Box::leak(root));
 
     // Create a VarScope and add a referenced value
     let mut scope = VarScope::new(r);
@@ -910,8 +913,8 @@ fn test_match_statement_with_ref_and_func_call() {
 
 #[test]
 fn test_closure_variable_isolation() {
-    let root = StaticVarScope::new();
-    let r = Scopble::Static(&root);
+    let root = Box::new(GlobalScope::default());
+    let r = Scopble::Global(Box::leak(root));
 
     // Create a global scope and add a variable
     let mut global_scope = VarScope::new(r);
@@ -950,8 +953,8 @@ fn test_closure_variable_isolation() {
 }
 #[test]
 fn test_closure_does_not_leak_into_global_scope() {
-    let root = StaticVarScope::new();
-    let r = Scopble::Static(&root);
+    let root = Box::new(GlobalScope::default());
+    let r = Scopble::Global(Box::leak(root));
 
     // Create the global scope
     let mut global_scope = VarScope::new(r);
@@ -986,8 +989,8 @@ fn test_closure_does_not_leak_into_global_scope() {
 
 #[test]
 fn test_closure_captures_variable_correctly() {
-    let root = StaticVarScope::new();
-    let r = Scopble::Static(&root);
+    let root = Box::new(GlobalScope::default());
+    let r = Scopble::Global(Box::leak(root));
 
     // Step 1: Create the global scope and add a variable
     let mut global_scope = VarScope::new(r);
@@ -1023,8 +1026,8 @@ fn test_closure_captures_variable_correctly() {
 
 #[test]
 fn test_match_fn_captures() {
-    let root = StaticVarScope::new();
-    let r = Scopble::Static(&root);
+    let root = Box::new(GlobalScope::default());
+    let r = Scopble::Global(Box::leak(root));
 
     // Step 1: Create the global scope and add a variable to be captured
     let mut global_scope = VarScope::new(r);
