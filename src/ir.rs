@@ -8,6 +8,30 @@ use codespan::Span;
 pub use crate::basic_ops::{is_equal};
 use crate::reporting::*;
 
+#[derive(Debug,PartialEq,Clone)]
+pub struct GlobalScope {
+    vars : HashMap<usize,(FuncSig,Block)>,
+}
+
+impl GlobalScope {
+    pub fn get(&'static self,id:usize) -> Option<Value> {
+        let (sig,inner) = self.vars.get(&id)?;
+        Some(Value::Func(FunctionHandle::StaticDef(
+            GlobalFunc{
+                sig:sig.clone(),
+                inner:inner.clone(),
+                global : self
+            }
+        )))
+    }
+
+    pub fn make_subscope(&'static self) -> VarScope<'_> {
+        VarScope{
+            parent:Scopble::Global(self),
+            vars:HashMap::new()
+        }
+    }
+}
 
 #[derive(Debug,PartialEq,Clone,Copy)]
 pub enum Scopble<'a>{
@@ -15,15 +39,15 @@ pub enum Scopble<'a>{
     //and add a global case for the yet to be made lazy global scope
 
     // None,
-    // Global(&'a GlobalScope),
+    Global(&'static GlobalScope),
     SubScope(&'a VarScope<'a>),
     Static(&'a StaticVarScope),
 }
 
 impl<'a> Scopble<'a>{
-    pub fn get(&self,id:usize) -> Option<&Value> {
+    pub fn get(&self,id:usize) -> Option<Value> {
         match self{
-            // Scopble::None => None,
+            Scopble::Global(s) => s.get(id),
             Scopble::SubScope(s) => s.get(id),
             Scopble::Static(s) => s.get(id),
         }
@@ -33,6 +57,7 @@ impl<'a> Scopble<'a>{
         match self {
             Scopble::SubScope(s) => s.parent.get_root(),
             Scopble::Static(s) => Scopble::Static(s),
+            Scopble::Global(s) => Scopble::Global(s),
         }
     }
 }
@@ -63,9 +88,9 @@ impl<'parent> VarScope<'parent>  {
 		self.vars.insert(id,val);
 	}
 
-	pub fn get(&self,id:usize) -> Option<&Value> {
+	pub fn get(&self,id:usize) -> Option<Value> {
 		match self.vars.get(&id) {
-			Some(v) => Some(v),
+			Some(v) => Some(v.clone()),
 			None => self.parent.get(id),
 		}
 	}
@@ -124,9 +149,9 @@ impl StaticVarScope {
         StaticVarScope{vars: HashMap::new()}
     }
 
-    pub fn get(&self,id:usize) -> Option<&Value> {
+    pub fn get(&self,id:usize) -> Option<Value> {
         match self.vars.get(&id) {
-            Some(v) => Some(v),
+            Some(v) => Some(v.clone()),
             None => None,       
         }
     }
@@ -388,6 +413,24 @@ impl LazyMatch {
     }
 }
 
+#[derive(Debug,PartialEq,Clone)]
+pub struct GlobalFunc {
+    sig:FuncSig,
+    global: &'static GlobalScope,
+    inner:Block,
+}
+
+impl GlobalFunc {
+    pub fn eval(&self,args: Vec<Value>) -> Result<Value,ErrList> {
+        self.sig.matches(&args)?;
+        let mut scope = self.global.make_subscope();
+        for (i,a) in self.sig.arg_ids.iter().enumerate(){
+            scope.add(*a,args[i].clone());
+        }
+        
+        self.inner.eval(&scope).map(|x| x.into())
+    }
+}
 
 #[derive(Debug,PartialEq,Clone)]
 pub struct Func {
@@ -398,7 +441,7 @@ pub struct Func {
 
 impl Func {
     pub fn eval(&self,args: Vec<Value>) -> Result<Value,ErrList> {
-        self.sig.matches(&args)?;;
+        self.sig.matches(&args)?;
         let mut scope = self.closure.make_subscope();
         for (i,a) in self.sig.arg_ids.iter().enumerate(){
             scope.add(*a,args[i].clone());
@@ -541,7 +584,7 @@ impl MatchStatment {
 pub enum FunctionHandle{
     FFI(fn(Vec<Value>)->Result<Value,ErrList>),
 	//StaticDef(&'static Func),//wrong
-    StaticDef(()), //id to function and its table 
+    StaticDef(GlobalFunc), //id to function and its table 
     Lambda(GcPointer<Func>),
     //we need a better premise for matchlamdas or just make them Funcs
     // MatchLambda(GcPointer<MatchStatment>),
@@ -706,7 +749,7 @@ fn test_varscope_add_and_get() {
     scope.add(id, val.clone());
     
     // Check if the value can be retrieved
-    assert_eq!(scope.get(id), Some(&val));
+    assert_eq!(scope.get(id), Some(val));
     
     // Check a non-existent value
     assert_eq!(scope.get(2), None);
@@ -725,7 +768,7 @@ fn test_varscope_nested_scopes() {
     
     // Create a subscope and check if it can access the parent value
     let subscope = global_scope.make_subscope();
-    assert_eq!(subscope.get(id), Some(&val));
+    assert_eq!(subscope.get(id), Some(val.clone()));
     
     // Add a new value in the subscope and check it
     let sub_id = 2;
@@ -733,8 +776,8 @@ fn test_varscope_nested_scopes() {
     let mut mutable_subscope = subscope.make_subscope();
     mutable_subscope.add(sub_id, sub_val.clone());
     
-    assert_eq!(mutable_subscope.get(sub_id), Some(&sub_val));
-    assert_eq!(mutable_subscope.get(id), Some(&val)); // Should still be able to access parent's value
+    assert_eq!(mutable_subscope.get(sub_id), Some(sub_val));
+    assert_eq!(mutable_subscope.get(id), Some(val.clone())); // Should still be able to access parent's value
 }
 
 #[test]
@@ -893,7 +936,7 @@ fn test_closure_variable_isolation() {
     handle.clone().eval(vec![Value::Int(5)]).unwrap();
 
     // The global scope should still have the original value, as the closure should not modify it
-    assert_eq!(global_scope.get(global_var_id), Some(&global_value));
+    assert_eq!(global_scope.get(global_var_id), Some(global_value));
 
     // Modify the global scope directly to verify that inner scopes aren't affecting the global scope
     let modified_global_value = Value::Int(300);
@@ -903,7 +946,7 @@ fn test_closure_variable_isolation() {
     handle.eval(vec![Value::Int(5)]).unwrap();
 
     // Verify the function's internal scope is isolated and does not affect the outer scope
-    assert_eq!(global_scope.get(global_var_id), Some(&modified_global_value));
+    assert_eq!(global_scope.get(global_var_id), Some(modified_global_value));
 }
 #[test]
 fn test_closure_does_not_leak_into_global_scope() {
@@ -936,7 +979,7 @@ fn test_closure_does_not_leak_into_global_scope() {
     assert_eq!(global_scope.get(2), None);
 
     // Ensure that the global variable (ID 1) has not been modified by the closure
-    assert_eq!(global_scope.get(global_var_id), Some(&global_value));
+    assert_eq!(global_scope.get(global_var_id), Some(global_value));
 }
 
 
@@ -975,7 +1018,7 @@ fn test_closure_captures_variable_correctly() {
     assert_eq!(result, initial_value);
 
     // Confirm that the global scope has the new value (100)
-    assert_eq!(global_scope.get(var_id), Some(&new_value));
+    assert_eq!(global_scope.get(var_id), Some(new_value));
 }
 
 #[test]
@@ -1029,5 +1072,5 @@ fn test_match_fn_captures() {
     assert_eq!(result, return_value);
 
     // Confirm that the global scope holds the modified value, not the old one
-    assert_eq!(global_scope.get(capture_id), Some(&new_value));
+    assert_eq!(global_scope.get(capture_id), Some(new_value));
 }
