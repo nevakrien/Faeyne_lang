@@ -19,13 +19,13 @@ pub struct GlobalScope {
 impl GlobalScope {
     pub fn get(&'static self,id:usize) -> Option<Value> {
         let (sig,inner) = self.vars.get(&id)?;
-        Some(Value::Func(FunctionHandle::StaticDef(
+        Some(Value::Func(FunctionHandle::StaticDef(Box::new(
             GlobalFunc{
                 sig:sig.clone(),
                 inner:inner.clone(),
                 global : self
             }
-        )))
+        ))))
     }
 
     pub fn add(&mut self, id: usize, block: Block, sig: FuncSig) -> Result<(), ErrList> {
@@ -591,8 +591,7 @@ impl MatchStatment {
 #[derive(Debug,PartialEq,Clone)]
 pub enum FunctionHandle{
     FFI(fn(Vec<Value>)->Result<Value,ErrList>),
-	//StaticDef(&'static Func),//wrong
-    StaticDef(GlobalFunc), //id to function and its table 
+    StaticDef(Box<GlobalFunc>),
     Lambda(GcPointer<Func>),
     //we need a better premise for matchlamdas or just make them Funcs
     // MatchLambda(GcPointer<MatchStatment>),
