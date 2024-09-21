@@ -8,22 +8,31 @@ use codespan::Span;
 pub use crate::basic_ops::{is_equal};
 use crate::reporting::*;
 
+
 #[derive(Debug,PartialEq,Clone,Copy)]
 pub enum Scopble<'a>{
     //need to remove the None and static case and 
     //and add a global case for the yet to be made lazy global scope
-    
-    None,
+
+    // None,
+    // Global(&'a GlobalScope),
     SubScope(&'a VarScope<'a>),
-    Static(&'a HashMap<usize,Value>),
+    Static(&'a StaticVarScope),
 }
 
 impl<'a> Scopble<'a>{
     pub fn get(&self,id:usize) -> Option<&Value> {
         match self{
-            Scopble::None => None,
+            // Scopble::None => None,
             Scopble::SubScope(s) => s.get(id),
-            Scopble::Static(s) => s.get(&id),
+            Scopble::Static(s) => s.get(id),
+        }
+    }
+
+    pub fn get_root(&'a self) -> Scopble<'a> {
+        match self {
+            Scopble::SubScope(s) => s.parent.get_root(),
+            Scopble::Static(s) => Scopble::Static(s),
         }
     }
 }
@@ -34,17 +43,12 @@ pub struct VarScope<'parent> {
 	vars : HashMap<usize,Value>
 }
 
-impl<'parent> Default for VarScope<'parent> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 impl<'parent> VarScope<'parent>  {
 	//should require a parent global scope
-    pub fn new() -> Self {
+    pub fn new(parent: Scopble<'parent>) -> Self {
 		VarScope{
-			parent:Scopble::None,
+			parent,
 			vars:HashMap::new()
 		}
 	}
@@ -66,9 +70,9 @@ impl<'parent> VarScope<'parent>  {
 		}
 	}
 
-    pub fn capture_entire_scope(self) -> StaticVarScope {
+    pub fn capture_entire_scope(&self) -> StaticVarScope {
         let mut all_vars = HashMap::new();
-        let mut current_scope = Scopble::SubScope(&self);
+        let mut current_scope = Scopble::SubScope(self);
 
 
         while let Scopble::SubScope(scope) = current_scope {
@@ -80,8 +84,8 @@ impl<'parent> VarScope<'parent>  {
             current_scope = scope.parent;
         }
 
-        if let Scopble::Static(table) = current_scope {
-            for (id, value) in table {
+        if let Scopble::Static(scope) = current_scope {
+            for (id, value) in &scope.vars {
                 all_vars.entry(*id).or_insert_with(|| value.clone());
             }
         }
@@ -92,7 +96,8 @@ impl<'parent> VarScope<'parent>  {
 
 #[test]
 fn test_scope_lifetimes(){
-	let g = VarScope::new();
+    let r = StaticVarScope::new();
+	let g = VarScope::new(Scopble::Static(&r));
 	let mut a = g.make_subscope();
 	let _b = g.make_subscope();
 	{
@@ -119,6 +124,13 @@ impl StaticVarScope {
         StaticVarScope{vars: HashMap::new()}
     }
 
+    pub fn get(&self,id:usize) -> Option<&Value> {
+        match self.vars.get(&id) {
+            Some(v) => Some(v),
+            None => None,       
+        }
+    }
+
     pub fn maybe_add(&mut self,id : usize ,outer_scope: &VarScope<'_>) -> Result<(),ErrList> {
         match self.vars.entry(id){
             Entry::Occupied(_) => Ok(()), 
@@ -132,9 +144,9 @@ impl StaticVarScope {
     }
 
 
-    pub fn make_subscope(&self) -> VarScope<'_> {
+    pub fn make_subscope<'a>(&'a self) -> VarScope<'a> {
         VarScope{
-            parent:Scopble::Static(&self.vars),
+            parent:Scopble::Static(self),
             vars:HashMap::new(),
         }
     }
@@ -646,7 +658,10 @@ fn test_system_ffi_mock() {
     let system_name = string_table.get_id("system");
     let println_name = string_table.get_id(":println");
 
-    let mut scope = VarScope::new();
+    let root = StaticVarScope::new();
+    let r = Scopble::Static(&root);
+
+    let mut scope = VarScope::new(r);
     scope.add(system_name, Value::Func(FunctionHandle::FFI(ffi_system)));
 
     // Inner call for accessing the `system` variable from the scope
@@ -681,7 +696,10 @@ fn test_system_ffi_mock() {
 
 #[test]
 fn test_varscope_add_and_get() {
-    let mut scope = VarScope::new();
+    let root = StaticVarScope::new();
+    let r = Scopble::Static(&root);
+
+    let mut scope = VarScope::new(r);
     let id = 1;
     let val = Value::Int(42);
     
@@ -696,7 +714,10 @@ fn test_varscope_add_and_get() {
 
 #[test]
 fn test_varscope_nested_scopes() {
-    let mut global_scope = VarScope::new();
+    let root = StaticVarScope::new();
+    let r = Scopble::Static(&root);
+
+    let mut global_scope = VarScope::new(r);
     let id = 1;
     let val = Value::Int(42);
     
@@ -718,6 +739,7 @@ fn test_varscope_nested_scopes() {
 
 #[test]
 fn test_function_handle_eval() {
+
     let func = Func {
         sig: FuncSig { arg_ids: vec![1, 2] },
         inner: Block::new_simple(LazyVal::Terminal(Value::Int(42))),
@@ -737,6 +759,9 @@ fn test_function_handle_eval() {
 
 #[test]
 fn test_match_statement() {
+    let root = StaticVarScope::new();
+    let r = Scopble::Static(&root);
+
     let match_stmt = MatchStatment {
         arms: vec![
             MatchCond::Literal(Value::Int(1)),
@@ -751,7 +776,7 @@ fn test_match_statement() {
         debug_span: Span::new(0, 0),
     };
     
-    let scope = VarScope::new();
+    let scope = VarScope::new(r);
     
     // Test matching on a specific value
     let result_one = match_stmt.eval(Value::Int(1), &scope).unwrap();
@@ -767,13 +792,16 @@ fn test_match_statement() {
 
 #[test]
 fn test_lazyval_func_call() {
+    let root = StaticVarScope::new();
+    let r = Scopble::Static(&root);
+
     let func = Func {
         sig: FuncSig { arg_ids: vec![1] },
         inner: Block::new_simple(LazyVal::Terminal(Value::Int(42))),
         closure: StaticVarScope::new()
     };
     let handle = Value::Func(FunctionHandle::Lambda(Rc::new(func)));
-    let scope = VarScope::new();
+    let scope = VarScope::new(r);
 
     // Create a function call LazyVal
     let call = Call {
@@ -788,8 +816,11 @@ fn test_lazyval_func_call() {
 
 #[test]
 fn test_match_statement_with_ref_and_func_call() {
+    let root = StaticVarScope::new();
+    let r = Scopble::Static(&root);
+
     // Create a VarScope and add a referenced value
-    let mut scope = VarScope::new();
+    let mut scope = VarScope::new(r);
     let ref_id = 10;
     let ref_value = Value::String(Rc::new("Referenced".to_string()));
     scope.add(ref_id, ref_value.clone());
@@ -836,8 +867,11 @@ fn test_match_statement_with_ref_and_func_call() {
 
 #[test]
 fn test_closure_variable_isolation() {
+    let root = StaticVarScope::new();
+    let r = Scopble::Static(&root);
+
     // Create a global scope and add a variable
-    let mut global_scope = VarScope::new();
+    let mut global_scope = VarScope::new(r);
     let global_var_id = 1;
     let global_value = Value::Int(100);
     global_scope.add(global_var_id, global_value.clone());
@@ -873,8 +907,11 @@ fn test_closure_variable_isolation() {
 }
 #[test]
 fn test_closure_does_not_leak_into_global_scope() {
+    let root = StaticVarScope::new();
+    let r = Scopble::Static(&root);
+
     // Create the global scope
-    let mut global_scope = VarScope::new();
+    let mut global_scope = VarScope::new(r);
     let global_var_id = 1;
     let global_value = Value::Int(100);
     global_scope.add(global_var_id, global_value.clone());
@@ -906,8 +943,11 @@ fn test_closure_does_not_leak_into_global_scope() {
 
 #[test]
 fn test_closure_captures_variable_correctly() {
+    let root = StaticVarScope::new();
+    let r = Scopble::Static(&root);
+
     // Step 1: Create the global scope and add a variable
-    let mut global_scope = VarScope::new();
+    let mut global_scope = VarScope::new(r);
     let var_id = 6;
     let initial_value = Value::Int(42);  // Initial value for the variable at ID 6
     global_scope.add(var_id, initial_value.clone());
@@ -940,8 +980,11 @@ fn test_closure_captures_variable_correctly() {
 
 #[test]
 fn test_match_fn_captures() {
+    let root = StaticVarScope::new();
+    let r = Scopble::Static(&root);
+
     // Step 1: Create the global scope and add a variable to be captured
-    let mut global_scope = VarScope::new();
+    let mut global_scope = VarScope::new(r);
     let capture_id = 5; // Using realistic return ID (5 or higher)
     let initial_value = Value::Int(42);  // Initial value to be captured
     global_scope.add(capture_id, initial_value.clone());
