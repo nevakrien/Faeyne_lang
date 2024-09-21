@@ -9,17 +9,11 @@ pub use crate::basic_ops::{is_equal};
 use crate::reporting::*;
 
 #[derive(Debug,PartialEq,Clone)]
+#[derive(Default)]
 pub struct GlobalScope {
     vars : HashMap<usize,(FuncSig,Block)>,
 }
 
-impl Default for GlobalScope {
-    fn default() -> Self {
-        GlobalScope {
-            vars: HashMap::new(),
-        }
-    }
-}
 
 
 impl GlobalScope {
@@ -35,16 +29,16 @@ impl GlobalScope {
     }
 
     pub fn add(&mut self, id: usize, block: Block, sig: FuncSig) -> Result<(), ErrList> {
-        if self.vars.contains_key(&id) {
+        if let std::collections::hash_map::Entry::Vacant(e) = self.vars.entry(id) {
+            e.insert((sig, block));
+            Ok(())
+        } else {
             // TODO: Handle this case with more complex behavior when adding multiple catching patterns
             // For now, we mark this as a TODO to indicate the behavior needs more consideration.
             Err(Error::UnreachableCase(UnreachableCase{
                 name:id,
-                sig: sig,
+                sig,
             }).to_list())
-        } else {
-            self.vars.insert(id, (sig, block));
-            Ok(())
         }
     }
 
@@ -167,10 +161,7 @@ impl StaticVarScope {
     }
 
     pub fn get(&self,id:usize) -> Option<Value> {
-        match self.vars.get(&id) {
-            Some(v) => Some(v.clone()),
-            None => None,       
-        }
+        self.vars.get(&id).cloned()
     }
 
     pub fn maybe_add(&mut self,id : usize ,outer_scope: &VarScope<'_>) -> Result<(),ErrList> {
@@ -186,7 +177,7 @@ impl StaticVarScope {
     }
 
 
-    pub fn make_subscope<'a>(&'a self) -> VarScope<'a> {
+    pub fn make_subscope(&self) -> VarScope<'_> {
         VarScope{
             parent:Scopble::Static(self),
             vars:HashMap::new(),
