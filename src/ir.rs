@@ -10,6 +10,9 @@ use crate::reporting::*;
 
 #[derive(Debug,PartialEq,Clone,Copy)]
 pub enum Scopble<'a>{
+    //need to remove the None and static case and 
+    //and add a global case for the yet to be made lazy global scope
+    
     None,
     SubScope(&'a VarScope<'a>),
     Static(&'a HashMap<usize,Value>),
@@ -38,7 +41,8 @@ impl<'parent> Default for VarScope<'parent> {
 }
 
 impl<'parent> VarScope<'parent>  {
-	pub fn new() -> Self {
+	//should require a parent global scope
+    pub fn new() -> Self {
 		VarScope{
 			parent:Scopble::None,
 			vars:HashMap::new()
@@ -98,6 +102,7 @@ fn test_scope_lifetimes(){
 }
 
 
+//needs to be moved in its entiryu into VarScope
 #[derive(Debug,PartialEq,Clone)]
 pub struct StaticVarScope {
     vars : HashMap<usize,Value>,
@@ -134,8 +139,6 @@ impl StaticVarScope {
         }
     }
 }
-
-
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum GenericRet<T> {
@@ -525,7 +528,8 @@ impl MatchStatment {
 #[derive(Debug,PartialEq,Clone)]
 pub enum FunctionHandle{
     FFI(fn(Vec<Value>)->Result<Value,ErrList>),
-	StaticDef(&'static Func),
+	//StaticDef(&'static Func),//wrong
+    StaticDef(()), //id to function and its table 
     Lambda(GcPointer<Func>),
     //we need a better premise for matchlamdas or just make them Funcs
     // MatchLambda(GcPointer<MatchStatment>),
@@ -536,7 +540,7 @@ impl FunctionHandle{
     pub fn eval(self,args: Vec<Value>) -> Result<Value,ErrList> {
         match self {
             FunctionHandle::FFI(f) => f(args),
-            FunctionHandle::StaticDef(f) => f.eval(args),
+            FunctionHandle::StaticDef(id) => todo!(),//f.eval(args),
             FunctionHandle::Lambda(f) => f.eval(args),
 
             // FunctionHandle::MatchLambda(l) => {
