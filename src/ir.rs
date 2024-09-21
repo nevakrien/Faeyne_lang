@@ -34,6 +34,21 @@ impl GlobalScope {
         )))
     }
 
+    pub fn add(&mut self, id: usize, block: Block, sig: FuncSig) -> Result<(), ErrList> {
+        if self.vars.contains_key(&id) {
+            // TODO: Handle this case with more complex behavior when adding multiple catching patterns
+            // For now, we mark this as a TODO to indicate the behavior needs more consideration.
+            Err(Error::UnreachableCase(UnreachableCase{
+                name:id,
+                sig: sig,
+            }).to_list())
+        } else {
+            self.vars.insert(id, (sig, block));
+            Ok(())
+        }
+    }
+
+
     pub fn make_subscope(&'static self) -> VarScope<'_> {
         VarScope{
             parent:Scopble::Global(self),
@@ -1076,4 +1091,72 @@ fn test_match_fn_captures() {
 
     // Confirm that the global scope holds the modified value, not the old one
     assert_eq!(global_scope.get(capture_id), Some(new_value));
+}
+
+#[test]
+fn test_global_function_recursive_call() {
+    // Initialize the string table and get IDs for `a`, `b`, and `x`
+    let mut string_table = StringTable::new();
+    let a_id = string_table.get_id("a");
+    let b_id = string_table.get_id("b");
+    let x_id = string_table.get_id("x");
+
+    // Create the global scope and add functions before leaking it
+    let mut global_scope = GlobalScope::default();
+
+    // Define function `b`: call `a` with argument 1
+    let b_sig = FuncSig { arg_ids: vec![x_id] }; // signature expects one argument (x)
+    let b_block = Block::new(vec![
+        Statment::Return(ScopeRet::Local(LazyVal::FuncCall(Call {
+            called: Box::new(LazyVal::Ref(a_id)), // call function `a`
+            args: vec![LazyVal::Terminal(Value::Int(1))], // with argument 1
+            debug_span: Span::new(0, 1),
+        }))),
+    ]);
+
+    // Add function `b` to global scope
+    global_scope.add(b_id, b_block, b_sig).unwrap();
+
+    // Define function `a`: match on the input `x`
+    // If `x == 0`, call `b(0)`; otherwise, return 10.
+    let a_block = Block::new(vec![
+        Statment::Return(ScopeRet::Local(LazyVal::Match {
+            var: Box::new(LazyVal::Ref(x_id)), // `x` is passed as argument
+            statment: MatchStatment::new(
+                vec![
+                    MatchCond::Literal(Value::Int(0)), // match on x == 0
+                    MatchCond::Any,                    // default match
+                ],
+                vec![
+                    // If `x == 0`, call `b(0)`
+                    Block::new(vec![Statment::Return(ScopeRet::Local(LazyVal::FuncCall(Call {
+                        called: Box::new(LazyVal::Ref(b_id)), // call function `b`
+                        args: vec![LazyVal::Terminal(Value::Int(0))], // with argument 0
+                        debug_span: Span::new(0, 1),
+                    })))]),
+                    // Else, return 10
+                    Block::new(vec![Statment::Return(ScopeRet::Local(LazyVal::Terminal(Value::Int(10))))]),
+                ],
+                Span::new(0, 1),
+            ),
+        })),
+    ]);
+
+    // Add function `a` to global scope
+    let a_sig = FuncSig { arg_ids: vec![x_id] }; // signature expects one argument (x)
+    global_scope.add(a_id, a_block, a_sig).unwrap();
+
+    // Leak the global scope
+    let global_scope = Box::leak(Box::new(global_scope));
+
+    // Now, retrieve `a` from the global scope and call it with argument 0
+    let a_func = global_scope.get(a_id).unwrap();
+    let result = if let Value::Func(f) = a_func {
+        f.eval(vec![Value::Int(0)]).unwrap() // call `a(0)`
+    } else {
+        panic!("Expected a function");
+    };
+
+    // Check that the result is 10
+    assert_eq!(result, Value::Int(10));
 }

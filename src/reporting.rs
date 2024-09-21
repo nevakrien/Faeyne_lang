@@ -1,14 +1,18 @@
 use codespan::{ByteIndex, Span};
 use std::collections::LinkedList;
 
+use crate::ir::FuncSig;
+
 #[derive(Debug,PartialEq)]
 pub enum Error {
     Match(MatchError),
     Sig(SigError),
     Missing(UndefinedName),
+    UnreachableCase(UnreachableCase),
     NoneCallble(NoneCallble)
     //UndocumentedError,
 }
+
 
 pub type ErrList = LinkedList<Error>;
 impl Error {
@@ -48,6 +52,11 @@ pub struct NoneCallble {
     //placeholder
 }
 
+#[derive(Debug,PartialEq)]
+pub struct UnreachableCase {
+    pub name : usize,
+    pub sig : FuncSig,
+}
 
 #[derive(Debug,PartialEq)]
 pub struct UndefinedName {
