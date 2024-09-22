@@ -110,7 +110,7 @@ impl<'parent> VarScope<'parent>  {
 
     pub fn capture_entire_scope(&self) -> StaticVarScope {
         let mut all_vars = HashMap::new();
-        let mut current_scope = Scopble::SubScope(self);
+        let mut current_scope = &Scopble::SubScope(self);
 
 
         while let Scopble::SubScope(scope) = current_scope {
@@ -119,7 +119,7 @@ impl<'parent> VarScope<'parent>  {
                 all_vars.entry(*id).or_insert_with(|| value.clone());
             }
 
-            current_scope = scope.parent;
+            current_scope = &scope.parent;
         }
 
         if let Scopble::Static(scope) = current_scope {
@@ -135,9 +135,8 @@ impl<'parent> VarScope<'parent>  {
 #[test]
 fn test_scope_lifetimes(){
     let r = StaticVarScope::new();
-	let g = VarScope::new(Scopble::Static(&r));
+	let mut g = VarScope::new(Scopble::Static(&r));
 	let mut a = g.make_subscope();
-	let _b = g.make_subscope();
 	{
 		let _c = a.make_subscope();
 	}
@@ -270,7 +269,7 @@ pub enum LazyVal{
 }
 
 impl LazyVal {
-    pub fn eval(&self,scope: &VarScope) -> Result<ValueRet,ErrList> {
+    pub fn eval(&self,scope: &mut VarScope) -> Result<ValueRet,ErrList> {
         match self {
             LazyVal::Terminal(v) => Ok(v.clone().into()),
             LazyVal::Ref(id) => match scope.get(*id) {
@@ -436,7 +435,7 @@ impl GlobalFunc {
             scope.add(*a,args[i].clone());
         }
         
-        self.inner.eval(&scope).map(|x| x.into())
+        self.inner.eval(&mut scope).map(|x| x.into())
     }
 }
 
@@ -455,7 +454,7 @@ impl Func {
             scope.add(*a,args[i].clone());
         }
         
-        self.inner.eval(&scope).map(|x| x.into())
+        self.inner.eval(&mut scope).map(|x| x.into())
     }
 }
 
@@ -491,17 +490,17 @@ impl Block {
         }
     }
 
-    pub fn eval(&self,parent_scope: &VarScope)-> Result<ValueRet,ErrList>{
-        let mut scope = parent_scope.make_subscope();
+    pub fn eval(&self,scope: &mut VarScope)-> Result<ValueRet,ErrList>{
+        // let mut scope = parent_scope.make_subscope();
 
         for s in self.code.iter() {
             match s {
                 Statment::Return(a) => match a{
-                    GenericRet::Local(x) => {return x.eval(&scope);},
-                    GenericRet::Unwind(x)=> {return x.eval(&scope);},
+                    GenericRet::Local(x) => {return x.eval(scope);},
+                    GenericRet::Unwind(x)=> {return x.eval(scope);},
                 },
                 Statment::Assign(id,a) =>{
-                    let ret = a.eval(&scope)?;
+                    let ret = a.eval(scope)?;
                     match ret{
                         ValueRet::Local(x) => {scope.add(*id,x);},
                         ValueRet::Unwind(_) => {return Ok(ret);}
@@ -509,15 +508,15 @@ impl Block {
                     
                 },
                 Statment::Call(v) => {
-                    _ = v.eval(&scope)?;
+                    _ = v.eval(scope)?;
                 },
                 Statment::Match((val,statment)) => {
-                    let  r = val.eval(&scope)?;
+                    let  r = val.eval(scope)?;
                     let x = match r {
                         ValueRet::Local(x) => x,
                         ValueRet::Unwind(_) =>{return Ok(r);},
                     };
-                    _ = statment.eval(x,&scope)?;
+                    _ = statment.eval(x,scope)?;
                 },
             }
         }
@@ -567,7 +566,7 @@ impl MatchStatment {
     pub fn new (arms: Vec<MatchCond>,vals: Vec<Block>,debug_span: Span,) -> Self {
         MatchStatment{arms,vals,debug_span}
     }
-    pub fn eval(&self, x:Value ,scope: &VarScope) -> Result<ValueRet,ErrList> {
+    pub fn eval(&self, x:Value ,scope: &mut VarScope) -> Result<ValueRet,ErrList> {
         for (i,a) in self.arms.iter().enumerate() {
             if a.matches(&x) {
                 return self.vals[i].eval(scope);
@@ -589,7 +588,7 @@ impl MatchStatment {
 }
 
 #[derive(Debug,PartialEq,Clone)]
-pub enum FunctionHandle{
+pub enum FunctionHandle {
     FFI(fn(Vec<Value>)->Result<Value,ErrList>),
     StaticDef(Box<GlobalFunc>),
     Lambda(GcPointer<Func>),
@@ -598,7 +597,7 @@ pub enum FunctionHandle{
     
 }
 
-impl FunctionHandle{
+impl FunctionHandle {
     pub fn eval(self,args: Vec<Value>) -> Result<Value,ErrList> {
         match self {
             FunctionHandle::FFI(f) => f(args),
@@ -625,7 +624,7 @@ pub struct Call{
 }
 
 impl Call {
-    pub fn eval(&self,scope: &VarScope) -> Result<ValueRet,ErrList> {
+    pub fn eval(&self,scope: &mut VarScope) -> Result<ValueRet,ErrList> {
         let handle = match self.called.eval(scope)? {
             ValueRet::Unwind(v) => {return Ok(ValueRet::Unwind(v));}
             ValueRet::Local(v) => match v {
@@ -730,7 +729,7 @@ fn test_system_ffi_mock() {
 
     //asserts
 
-    let ans = outer_call.eval(&scope).unwrap();
+    let ans = outer_call.eval(&mut scope).unwrap();
     assert_eq!(ans, ValueRet::Local(Value::Nil));
 
     LOG_SYSTEM.with(|log| {
@@ -827,17 +826,17 @@ fn test_match_statement() {
         debug_span: Span::new(0, 0),
     };
     
-    let scope = VarScope::new(r);
+    let mut scope = VarScope::new(r);
     
     // Test matching on a specific value
-    let result_one = match_stmt.eval(Value::Int(1), &scope).unwrap();
+    let result_one = match_stmt.eval(Value::Int(1), &mut scope).unwrap();
     assert_eq!(result_one, ValueRet::Local(Value::String(Rc::new("One".to_string()))));
 
-    let result_two = match_stmt.eval(Value::Int(2), &scope).unwrap();
+    let result_two = match_stmt.eval(Value::Int(2), &mut scope).unwrap();
     assert_eq!(result_two, ValueRet::Local(Value::String(Rc::new("Two".to_string()))));
 
     // Test matching on a default case
-    let result_default = match_stmt.eval(Value::Int(3), &scope).unwrap();
+    let result_default = match_stmt.eval(Value::Int(3), &mut scope).unwrap();
     assert_eq!(result_default, ValueRet::Local(Value::String(Rc::new("Default".to_string()))));
 }
 
@@ -852,7 +851,7 @@ fn test_lazyval_func_call() {
         closure: StaticVarScope::new()
     };
     let handle = Value::Func(FunctionHandle::Lambda(Rc::new(func)));
-    let scope = VarScope::new(r);
+    let mut scope = VarScope::new(r);
 
     // Create a function call LazyVal
     let call = Call {
@@ -861,7 +860,7 @@ fn test_lazyval_func_call() {
         debug_span : Span::new(0,1),
     };
 
-    let result = LazyVal::FuncCall(call).eval(&scope).unwrap();
+    let result = LazyVal::FuncCall(call).eval(&mut scope).unwrap();
     assert_eq!(result, ValueRet::Local(Value::Int(42)));
 }
 
@@ -904,15 +903,15 @@ fn test_match_statement_with_ref_and_func_call() {
     };
 
     // Test matching on a specific value (1)
-    let result_one = match_stmt.eval(Value::Int(1), &scope).unwrap();
+    let result_one = match_stmt.eval(Value::Int(1), &mut scope).unwrap();
     assert_eq!(result_one, ValueRet::Local(Value::String(Rc::new("One".to_string()))));
 
     // Test matching on a specific value (2) which is a Ref
-    let result_two = match_stmt.eval(Value::Int(2), &scope).unwrap();
+    let result_two = match_stmt.eval(Value::Int(2), &mut scope).unwrap();
     assert_eq!(result_two, ValueRet::Local(ref_value));  // Should match the referenced value
 
     // Test matching on a default case, which is a function call
-    let result_default = match_stmt.eval(Value::Int(3), &scope).unwrap();
+    let result_default = match_stmt.eval(Value::Int(3), &mut scope).unwrap();
     assert_eq!(result_default, ValueRet::Local(Value::String(Rc::new("FunctionCall".to_string()))));
 }
 
@@ -1064,7 +1063,7 @@ fn test_match_fn_captures() {
     let lazy_match_fn = LazyVal::MakeMatchFunc(LazyMatch::new(match_stmt));
 
     // Step 5: Evaluate the `match fn` (this implicitly captures the variables)
-    let handle = match lazy_match_fn.eval(&global_scope).unwrap() {
+    let handle = match lazy_match_fn.eval(&mut global_scope).unwrap() {
         ValueRet::Local(Value::Func(f)) => f,  // Ensure we get the function handle
         _ => panic!("Expected a function handle"),
     };
