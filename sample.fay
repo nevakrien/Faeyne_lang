@@ -36,14 +36,22 @@ def bug_main(system){
     system(:println)(factorial(-4));
 }
 
-def factorial(i) {
+def base_factorial(i) {
     match i {
         0 => 1,
-        #PARSER BUG: _ => {return a*factorial(i-1);}
-        _ => {a = factorial(i-1); return i*a;}
+        #PARSER BUG: _ => {return a*base_factorial(i-1);}
+        _ => {a = base_factorial(i-1); return i*a;}
+    }
+}
+
+def factorial(i) {
+    match i>=0 {
+        true => base_factorial(i),
+        false => :err
     }
 }
 
 def main(system){
     system(:println)(factorial(4));
+    system(:println)(factorial(-4));
 }
