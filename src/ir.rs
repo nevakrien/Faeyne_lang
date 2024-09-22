@@ -5,6 +5,9 @@ use std::collections::hash_map::Entry;
 use std::rc::Rc;
 use codespan::Span;
 
+use std::fmt;
+use std::ptr;
+
 pub use crate::basic_ops::{is_equal};
 use crate::reporting::*;
 
@@ -602,34 +605,62 @@ impl MatchStatment {
     }
 }
 
-#[derive(Debug,PartialEq,Clone)]
+#[derive(Clone)]
 pub enum FunctionHandle {
-    FFI(fn(Vec<Value>)->Result<Value,ErrList>),
+    FFI(fn(Vec<Value>) -> Result<Value, ErrList>),
+    StateFFI(&'static dyn Fn(Vec<Value>) -> Result<Value, ErrList>),
+    DataFFI(GcPointer<dyn Fn(Vec<Value>) -> Result<Value, ErrList>>),
+    // MutFFI(Box<dyn FnMut(Vec<Value>) -> Result<Value, ErrList>>), // New FnMut variant
     StaticDef(Box<GlobalFunc>),
     Lambda(GcPointer<Func>),
-    //we need a better premise for matchlamdas or just make them Funcs
-    // MatchLambda(GcPointer<MatchStatment>),
-    
+}
+
+impl PartialEq for FunctionHandle {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (FunctionHandle::FFI(f1), FunctionHandle::FFI(f2)) => f1 == f2,
+            (FunctionHandle::StateFFI(f1), FunctionHandle::StateFFI(f2)) => ptr::eq(f1, f2),
+            (FunctionHandle::DataFFI(f1), FunctionHandle::DataFFI(f2)) => GcPointer::ptr_eq(f1, f2),
+            // (FunctionHandle::MutFFI(f1), FunctionHandle::MutFFI(f2)) => Box::ptr_eq(f1, f2),
+            (FunctionHandle::StaticDef(f1), FunctionHandle::StaticDef(f2)) => f1 == f2,
+            (FunctionHandle::Lambda(f1), FunctionHandle::Lambda(f2)) => GcPointer::ptr_eq(f1, f2),
+            _ => false,
+        }
+    }
+}
+
+impl fmt::Debug for FunctionHandle {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            FunctionHandle::FFI(func) => write!(f, "{:?}", func),
+            FunctionHandle::StateFFI(func) => {
+                write!(f, "StateFFI({:p})", func as *const dyn Fn(Vec<Value>) -> Result<Value, ErrList>)
+            },
+            FunctionHandle::DataFFI(func) => {
+                write!(f, "DataFFI({:p})", GcPointer::as_ptr(func))
+            },
+            // FunctionHandle::MutFFI(func) => {
+            //     write!(f, "MutFFI({:p})", Box::as_ptr(func))
+            // },
+            FunctionHandle::StaticDef(func) => write!(f, "{:?}", func),
+            FunctionHandle::Lambda(func) => write!(f, "{:?}", func),
+        }
+    }
 }
 
 impl FunctionHandle {
-    pub fn eval(self,args: Vec<Value>) -> Result<Value,ErrList> {
+    pub fn eval(self, args: Vec<Value>) -> Result<Value, ErrList> {
         match self {
             FunctionHandle::FFI(f) => f(args),
+            FunctionHandle::StateFFI(f) => f(args),
+            FunctionHandle::DataFFI(f) => f(args),
+            // FunctionHandle::MutFFI(mut f) => f(args),
             FunctionHandle::StaticDef(f) => f.eval(args),
             FunctionHandle::Lambda(f) => f.eval(args),
-
-            // FunctionHandle::MatchLambda(l) => {
-            //     if args.len()!=1 {
-            //         return Err(Error::Sig(SigError{}));
-            //     }
-            //     let ret = l.eval(args[0].clone(),&VarScope::new())?;
-            //     Ok(ret.into())
-            // },
         }
-        
     }
 }
+
 
 #[derive(Debug,PartialEq,Clone)]
 pub struct Call{
@@ -1164,3 +1195,45 @@ fn test_global_function_recursive_call() {
     // Check that the result is 10 (via the recursive call through `b`)
     assert_eq!(result, Value::Int(10));
 }
+
+#[test]
+fn test_refcell_mutability_in_ffi() {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    // Step 1: Create an Rc<RefCell> to hold a mutable value
+    let cell = Rc::new(RefCell::new(42)); // Initial value is 42
+    let cell_clone = Rc::clone(&cell); // Clone Rc to move into the closure
+
+    // Step 2: Define an FFI function that mutates the value inside the RefCell
+    let ffi_mutate = move |_: Vec<Value>| -> Result<Value, ErrList> {
+        // Mutate the value inside the RefCell by incrementing it
+        *cell_clone.borrow_mut() += 1;
+        Ok(Value::Nil) // Return Value::Nil after the mutation
+    };
+
+    // Step 3: Wrap the FFI function in a GcPointer and use DataFFI
+    let ffi_handle = FunctionHandle::DataFFI(GcPointer::new(ffi_mutate));
+
+    // Step 4: Initialize the global scope
+    let mut string_table = StringTable::new();
+    let ffi_id = string_table.get_id("ffi_mutate");
+
+    let global_scope = Box::leak(Box::new(GlobalScope::default()));
+
+    // Step 5: Use global_scope.make_subscope() to create a new subscope
+    let mut scope = global_scope.make_subscope();
+
+    // Step 6: Add the FFI function to the scope
+    scope.add(ffi_id, Value::Func(ffi_handle));
+
+    // Step 7: Retrieve the FFI function and call it
+    let ffi_func = scope.get(ffi_id).unwrap();
+    if let Value::Func(f) = ffi_func {
+        f.eval(vec![]).unwrap(); // Call the FFI function (mutates the RefCell)
+    }
+
+    // Step 8: Check if the RefCell value was mutated
+    assert_eq!(*cell.borrow(), 43); // The value should now be 43 (incremented by 1)
+}
+
