@@ -21,8 +21,9 @@ fn simple_string_arith() {
 fn test_string_and_number_addition() {
     let input = r#"
         def main(system) {
-            let result1 = 'hello' + ' world';
-            let result2 = 5 + 10;
+            result1 = 'hello' + ' world';
+            result2 = 5 + 10;
+            result1+' - '+result2
         }
     "#;
 

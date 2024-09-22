@@ -1,6 +1,13 @@
 use codespan::{ByteIndex, Span};
 use std::collections::LinkedList;
 
+use codespan_reporting::diagnostic::{Diagnostic, Label};
+use codespan_reporting::term::{self, termcolor::Buffer, termcolor::WriteColor};
+use codespan_reporting::files::SimpleFiles;
+
+use lalrpop_util::ParseError;
+use crate::lexer::LexTag;
+
 use crate::ir::FuncSig;
 
 #[derive(Debug,PartialEq)]
@@ -80,6 +87,37 @@ pub fn get_subslice_span<'a>(source: &'a str, subslice: &'a str) -> Span {
     Span::new(ByteIndex(start_index as u32), ByteIndex(end_index as u32))
 }
 
+// Function to handle and report parsing errors
+pub fn report_parse_error(err: ParseError<usize, LexTag, ()>, input_ref: &str) -> ! {
+    let mut buffer = Buffer::ansi();
+    let mut files = SimpleFiles::new();
+    let file_id = files.add("input", input_ref);
+
+    let diagnostic = match err {
+        ParseError::InvalidToken { location } => Diagnostic::error()
+            .with_message("Invalid token")
+            .with_labels(vec![Label::primary(file_id, location..location + 1)]),
+        ParseError::UnrecognizedEof { location, expected } => Diagnostic::error()
+            .with_message("Unexpected end of file")
+            .with_labels(vec![Label::primary(file_id, location..location + 1)])
+            .with_notes(expected),
+        ParseError::UnrecognizedToken { token, expected } => Diagnostic::error()
+            .with_message("Unrecognized token")
+            .with_labels(vec![Label::primary(file_id, token.0..token.2)])
+            .with_notes(expected),
+        ParseError::ExtraToken { token } => Diagnostic::error()
+            .with_message("Extra token")
+            .with_labels(vec![Label::primary(file_id, token.0..token.2)]),
+        ParseError::User { error } => unreachable!(),
+    };
+
+    let config = term::Config::default();
+    term::emit(&mut buffer, &config, &files, &diagnostic).unwrap();
+
+    println!("{}", String::from_utf8(buffer.into_inner()).unwrap());
+    panic!("Parse error occurred");
+}
+
 #[test]
 fn test_subslice_span_and_diagnostic_reporting() {
     let source = "Hello, world!\nThis is a test.\nAnother line here.";
@@ -90,10 +128,7 @@ fn test_subslice_span_and_diagnostic_reporting() {
     // Use the utility function to get the Span
     let span = get_subslice_span(source, subslice);
 
-    // Use codespan to map byte indices to line/column information
-    use codespan_reporting::diagnostic::{Diagnostic, Label};
-    use codespan_reporting::term::{self, termcolor::{Buffer}};
-    use codespan_reporting::files::SimpleFiles;
+
 
     let mut files = SimpleFiles::new();
     let file_id = files.add("example.rs", source);
@@ -126,3 +161,4 @@ fn test_subslice_span_and_diagnostic_reporting() {
     // Ensure the extracted subslice matches the original one
     assert_eq!(extracted_subslice, subslice, "The extracted subslice does not match the original subslice.");
 }
+

@@ -8,10 +8,11 @@ use crate::lexer::Lexer;
 use crate::parser;
 
 use std::process;
+use crate::reporting::report_parse_error;
 
 pub unsafe fn clean_string_run(junk:(*mut ir::GlobalScope,*mut StringTable<'static>,*mut str)){
     let (global_raw,table_raw,raw_str) = junk;
-    {
+    if !global_raw.is_null(){
         _ = Box::from_raw(&mut *global_raw);
     }
     {
@@ -25,7 +26,7 @@ pub unsafe fn clean_string_run(junk:(*mut ir::GlobalScope,*mut StringTable<'stat
 pub unsafe fn clean_str_run(junk: (*mut ir::GlobalScope,*mut StringTable<'static>)){
     let (global_raw,table_raw) = junk;
     
-    {
+    if !global_raw.is_null(){
         _ = Box::from_raw(&mut *global_raw);
     }
     {
@@ -39,9 +40,17 @@ pub fn run_str(input_ref: &'static str) ->(Value,(*mut ir::GlobalScope,*mut Stri
     let table_raw = table as *mut StringTable;
 
     let parser = parser::ProgramParser::new();
-    let result = parser.parse(input_ref, table, lexer);
+    let result = match parser.parse(input_ref, table, lexer) {
+        Ok(r) =>  r,
+        Err(e) => {
+            report_parse_error(e,input_ref); 
+            panic!();
+        }
+    };
 
-    let global = Box::leak(translate_program(result.unwrap(), table).unwrap());
+
+
+    let global = Box::leak(translate_program(result, table).unwrap());
     let global_raw = global as *mut ir::GlobalScope;
 
     let ir::Value::Func(main_func) = global.get(table.get_id("main")).expect("We need a main function") else {unreachable!()};

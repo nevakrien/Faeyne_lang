@@ -251,37 +251,37 @@ PipableValue: Value = {
 
 //### expressions
 pub Value: Value = {
-    #[precedence(level="10")] #[assoc(side="left")]
+    #[precedence(level="0")] //#[assoc(side="left")]
     <x:FuncCall> => Value::FuncCall(x),
     <x:Lambda> => Value::Lambda(Box::new(x)),
     <m:MatchLambda>  => Value::MatchLambda(Box::new(m)),
 
-    #[precedence(level="0")]
+    #[precedence(level="1")]
     <x:Name> => Value::Variable(x),
     <l:Literal> => l.into(),
     <m:MatchStatment>  => Value::Match(m),
 
 
     // Parentheses should have the highest precedence
-    #[precedence(level="1")] 
+    #[precedence(level="2")] 
     <a:OpenExpr> ")" => a,
 
     // Exponentiation (Power) should have higher precedence than multiplication
-    #[precedence(level="2")] #[assoc(side="right")]
+    #[precedence(level="3")] #[assoc(side="right")]
     <start:@L> <a:Value> <op:PowerOp> <b:Value> <end:@R> => Value::FuncCall(FunctionCall {
         name: FValue::BuildIn(op),
         args: vec![a, b],
         debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
     }),
 
-    #[precedence(level="3")] #[assoc(side="left")]
+    #[precedence(level="4")] #[assoc(side="left")]
     <start:@L> <a:Value> <op:MulOp> <b:Value> <end:@R> => Value::FuncCall(FunctionCall {
         name: FValue::BuildIn(op),
         args: vec![a, b],
         debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
     }),
 
-    #[precedence(level="4")] #[assoc(side="left")]
+    #[precedence(level="5")] #[assoc(side="left")]
     <start:@L> <a:Value> <op:AddOp> <b:Value> <end:@R> => Value::FuncCall(FunctionCall {
         name: FValue::BuildIn(op),
         args: vec![a, b],
@@ -289,7 +289,7 @@ pub Value: Value = {
     }),
 
     // Bitwise XOR and OR should be higher precedence than comparison but lower than arithmetic
-    #[precedence(level="5")] #[assoc(side="left")]
+    #[precedence(level="6")] #[assoc(side="left")]
     <start:@L> <a:Value> <op:BitwiseOp> <b:Value> <end:@R> => Value::FuncCall(FunctionCall {
         name: FValue::BuildIn(op),
         args: vec![a, b],
@@ -297,14 +297,14 @@ pub Value: Value = {
     }),
 
     // Comparison operators should have higher precedence than logical operators
-    #[precedence(level="6")] #[assoc(side="left")]
+    #[precedence(level="7")] #[assoc(side="left")]
     <start:@L> <a:Value> <op:ComparisonOp> <b:Value> <end:@R> => Value::FuncCall(FunctionCall {
         name: FValue::BuildIn(op),
         args: vec![a, b],
         debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
     }),
 
-    #[precedence(level="7")] #[assoc(side="left")]
+    #[precedence(level="8")] #[assoc(side="left")]
     <start:@L> <a:Value> <op:LogicalOp> <b:Value> <end:@R> => Value::FuncCall(FunctionCall {
         name: FValue::BuildIn(op),
         args: vec![a, b],
