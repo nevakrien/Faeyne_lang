@@ -3,6 +3,9 @@ use crate::ast::BuildIn;
 use crate::ir::Value;
 use crate::reporting::*;
 use crate::get_id;
+use crate::ir::GcPointer;
+
+use crate::system::*;
 
 pub fn get_type(v : Value, table:&mut StringTable) -> Value {
 	Value::Atom(get_type_id(v,table))
@@ -10,13 +13,13 @@ pub fn get_type(v : Value, table:&mut StringTable) -> Value {
 
 pub fn get_type_id(v : Value, table:&mut StringTable) -> usize{
 	match v {
-		Value::Nil => table.get_existing_id(":nil"),
-		Value::Bool(_) => table.get_existing_id(":bool"),
-		Value::String(_) => table.get_existing_id(":string"),
-		Value::Int(_) => table.get_existing_id(":int"),
-		Value::Float(_) => table.get_existing_id(":float"),
-		Value::Atom(_) => table.get_existing_id(":atom"),
-		Value::Func(_) => table.get_existing_id(":func"),
+		Value::Nil => get_id!(":nil"),
+		Value::Bool(_) => get_id!(":bool"),
+		Value::String(_) => get_id!(":string"),
+		Value::Int(_) => get_id!(":int"),
+		Value::Float(_) => get_id!(":float"),
+		Value::Atom(_) => get_id!(":atom"),
+		Value::Func(_) => get_id!(":func"),
 
 	}
 }
@@ -99,9 +102,11 @@ pub fn handle_buildin(args: Vec<Value>, op: BuildIn) -> Result<Value, SigError> 
         //string
         BuildIn::Add => {
             if let (Value::String(s1), Value::String(s2)) = (&args[0], &args[1]) {
-                let mut concatenated = (**s1).clone();
-                concatenated.push_str(s2);
-                Ok(Value::String(concatenated.into()))
+                let mut ans = String::with_capacity(s1.len()+s2.len());
+                ans.push_str(s1);
+                ans.push_str(s2);
+                
+                Ok(Value::String(ans.into()))
             } else {
                 perform_arithmetic!(&args[0], &args[1], |a, b| a + b)
             }
