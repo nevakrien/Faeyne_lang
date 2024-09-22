@@ -26,7 +26,7 @@ fn main() {
 
     
     
-    let junk = run_string(input);
+    let (_ans,junk) = run_string(input);
 
     // This is here to test if we can manually free memory.
     //probably should have been handled via lifetimes but after half an hour of cleanup meh

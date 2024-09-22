@@ -1,5 +1,7 @@
 use crate::ast::StringTable;
 use crate::ir;
+use crate::ir::Value;
+
 use crate::translate::translate_program;
 use crate::system::get_system;
 use crate::lexer::Lexer;
@@ -31,7 +33,7 @@ pub unsafe fn clean_str_run(junk: (*mut ir::GlobalScope,*mut StringTable<'static
     }
 }
 
-pub fn run_str(input_ref: &'static str) -> (*mut ir::GlobalScope,*mut StringTable<'static>) {
+pub fn run_str(input_ref: &'static str) ->(Value,(*mut ir::GlobalScope,*mut StringTable<'static>)) {
     let lexer = Lexer::new(input_ref);
     let table = Box::leak(Box::new(StringTable::new()));
     let table_raw = table as *mut StringTable;
@@ -46,17 +48,17 @@ pub fn run_str(input_ref: &'static str) -> (*mut ir::GlobalScope,*mut StringTabl
 
     let system = get_system(table);
 
-    let _ans = main_func.eval(vec![system]).unwrap();
+    let ans = main_func.eval(vec![system]).unwrap();
 
-    (global_raw, table_raw)
+    (ans,(global_raw, table_raw))
 }
 
 
-pub fn run_string(code: String) -> (*mut ir::GlobalScope,*mut StringTable<'static>,*mut str) {
+pub fn run_string(code: String) -> (Value,(*mut ir::GlobalScope,*mut StringTable<'static>,*mut str)) {
     let input_ref = code.leak();
     let raw_str = input_ref as *mut str;
 
-    let (global_raw, table_raw) = run_str(input_ref);
+    let (ans,(global_raw, table_raw)) = run_str(input_ref);
 
-    (global_raw, table_raw, raw_str)
+    (ans,(global_raw, table_raw, raw_str))
 }

@@ -87,6 +87,8 @@ fn create_ffi_println(table: &'static StringTable) -> &'static dyn Fn(Vec<Value>
         if args.len()!=1 {
         	return Err(Error::Sig(SigError {}).to_list());
         }
+
+
         match &args[0] {
         	Value::Atom(id) => {println!("{}", table.get_string(*id).unwrap());},
         	Value::Int(x) => {println!("{:?}", x);},
