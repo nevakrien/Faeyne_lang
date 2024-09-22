@@ -28,7 +28,7 @@ pub fn preload_table(table: &mut StringTable) {
     assert_eq!(table.get_id(":println"), PRINTLN_ID);
 }
 
-
+#[macro_export]
 macro_rules! get_id {
     (":nil") => { NIL_ID };
     (":bool") => { BOOL_ID };

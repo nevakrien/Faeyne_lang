@@ -2,6 +2,7 @@ use crate::ast::StringTable;
 use crate::ast::BuildIn;
 use crate::ir::Value;
 use crate::reporting::*;
+use crate::get_id;
 
 pub fn get_type(v : Value, table:&mut StringTable) -> Value {
 	Value::Atom(get_type_id(v,table))
@@ -95,8 +96,17 @@ pub fn handle_buildin(args: Vec<Value>, op: BuildIn) -> Result<Value, SigError> 
         BuildIn::IntDiv => perform_int_div(&args[0], &args[1]),
         BuildIn::Modulo => perform_modulo(&args[0], &args[1]),
 
-        // standard arithmetic
-        BuildIn::Add => perform_arithmetic!(&args[0], &args[1], |a, b| a + b),
+        //string
+        BuildIn::Add => {
+            if let (Value::String(s1), Value::String(s2)) = (&args[0], &args[1]) {
+                let mut concatenated = (**s1).clone();
+                concatenated.push_str(s2);
+                Ok(Value::String(concatenated.into()))
+            } else {
+                perform_arithmetic!(&args[0], &args[1], |a, b| a + b)
+            }
+        },
+        // standard arithmetic,
         BuildIn::Sub => perform_arithmetic!(&args[0], &args[1], |a, b| a - b),
         BuildIn::Mul => perform_arithmetic!(&args[0], &args[1], |a, b| a * b),
 
