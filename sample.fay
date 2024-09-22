@@ -24,7 +24,7 @@ def dumby(k) {
 def bug(i) {
     match i>0 {
         true => {},
-        false => {return nil;}
+        false => {return true;}
     };
 
     9
@@ -54,5 +54,6 @@ def main(system){
     factorial(4)  |> system(:println)();
     factorial(-4) |> system(:println)();
     system(:println)(dumby(2));
-    system(:println)(system(:println))   
+    system(:println)(system(:println));
+    system(:println)("hello world");
 }

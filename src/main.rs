@@ -31,16 +31,17 @@ fn main() {
         }
     };
 
+    let input_ref = input.leak();
     
     // Create the lexer and string table.
-    let lexer = Lexer::new(&input);
-    let mut table = StringTable::new();
+    let lexer = Lexer::new(input_ref);
+    let mut table = Box::new(StringTable::new());
     
     // Create the parser.
     let parser = parser::ProgramParser::new();
     
     // Parse the program.
-    let result = parser.parse(&input, &mut table, lexer);
+    let result = parser.parse(input_ref, &mut table, lexer);
     
     // // Print the parsed program or an error message.
     // match result {
@@ -59,6 +60,8 @@ fn main() {
     let global = Box::leak(translate_program(result.unwrap(),&table).unwrap());
     let ir::Value::Func(main_func) = global.get(table.get_id("main")).expect("we need a main function") else {unreachable!()};
 
-    let _ans = main_func.eval(vec![get_system()]).unwrap(); 
+    let system = get_system(Box::leak(table));
+
+    let _ans = main_func.eval(vec![system]).unwrap(); 
 
 }

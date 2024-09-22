@@ -200,7 +200,7 @@ pub enum OuterExp {
     FuncDec(FuncDec),
 }
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Clone)]
 pub struct StringTable<'input> {
     map: HashMap<&'input str, usize>,
     vec: Vec<&'input str>,

@@ -2,10 +2,6 @@ use crate::reporting::*;
 use crate::ir::*;
 use crate::ast::StringTable;
 
-pub fn get_system() -> Value {
-	Value::Func(FunctionHandle::FFI(ffi_system))
-}
-
 //IMPORTANT first value is assumed to not be a var
 //if this is broken then Lamda match statments will break
 //we have it as the nil type so that we can do easy nil checks
@@ -48,25 +44,80 @@ macro_rules! get_id {
     };
 }
 
+pub fn get_system(string_table: &'static StringTable) -> Value {
+    let print_fn = create_ffi_println(string_table);
 
-fn ffi_println(args: Vec<Value>) -> Result<Value, ErrList> {
-	println!("{:?}",args);
-    Ok(Value::Nil)
+    
+    let x = move |args: Vec<Value>| -> Result<Value, ErrList> {
+        if args.len() != 1 {
+            return Err(Error::Sig(SigError {}).to_list());
+        }
+
+        let atom = match args[0] {
+            Value::Atom(id) => id,
+            _ => {
+                return Err(Error::Sig(SigError {}).to_list());
+            }
+        };
+
+        match atom {
+            get_id!(":println") => Ok(Value::Func(FunctionHandle::StateFFI(
+                print_fn,
+            ))),
+            _ => Err(Error::Sig(SigError {}).to_list()),
+        }
+    };
+
+    let b :Box<dyn Fn(Vec<Value>) -> Result<Value, ErrList>>= Box::new(x); 
+
+
+    Value::Func(FunctionHandle::StateFFI(Box::leak(b)))
 }
 
-fn ffi_system(args: Vec<Value>) -> Result<Value, ErrList> {
-	if args.len() != 1 {
-		return Err(Error::Sig(SigError{}).to_list());
-	}
+fn create_ffi_println(table: &'static StringTable) -> &'static dyn Fn(Vec<Value>) -> Result<Value, ErrList> {
+    let x  = move |args: Vec<Value>| -> Result<Value, ErrList> {
+        // Here we capture the string table reference and print using it
+        if args.len()!=1 {
+        	return Err(Error::Sig(SigError {}).to_list());
+        }
+        match &args[0] {
+        	Value::Atom(id) => {println!("{}", table.get_string(*id).unwrap());},
+        	Value::Int(x) => {println!("{:?}", x);},
+        	Value::Float(x) => {println!("{:?}", x);},
+        	Value::String(s) => {println!("{}", s);},
+        	_ => {println!("{:?}", args[0]);}
+        }
+        
+        Ok(Value::Nil)
+    };
 
-	let atom = match args[0]{
-		Value::Atom(id) => id,
-		_ => {return Err(Error::Sig(SigError{}).to_list());}
-	};
+    let b :Box<dyn Fn(Vec<Value>) -> Result<Value, ErrList>>= Box::new(x);
 
-	match atom {
-		get_id!(":println") => Ok(Value::Func(FunctionHandle::FFI(ffi_println))),
-		_ => Err(Error::Sig(SigError{}).to_list())
-	}
-
+    Box::leak(b)
 }
+
+// pub fn get_system() -> Value {
+// 	Value::Func(FunctionHandle::FFI(ffi_system))
+// }
+
+// fn ffi_println(args: Vec<Value>) -> Result<Value, ErrList> {
+// 	println!("{:?}",args);
+//     Ok(Value::Nil)
+// }
+
+// fn ffi_system(args: Vec<Value>) -> Result<Value, ErrList> {
+// 	if args.len() != 1 {
+// 		return Err(Error::Sig(SigError{}).to_list());
+// 	}
+
+// 	let atom = match args[0]{
+// 		Value::Atom(id) => id,
+// 		_ => {return Err(Error::Sig(SigError{}).to_list());}
+// 	};
+
+// 	match atom {
+// 		get_id!(":println") => Ok(Value::Func(FunctionHandle::FFI(ffi_println))),
+// 		_ => Err(Error::Sig(SigError{}).to_list())
+// 	}
+
+// }
