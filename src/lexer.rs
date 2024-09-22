@@ -630,7 +630,6 @@ fn test_lex_operators_with_comments_newlines() {
         LexTag::Arrow,      // =>
         LexTag::SmallArrow, // ->
         LexTag::Pipe, // |>
-        LexTag::ReversePipe, // <|
         LexTag::OpenParen,  // (
         LexTag::CloseParen, // )
         LexTag::OpenCurly,  // {
