@@ -39,6 +39,7 @@ def bug_main(system){
 def factorial(i) {
     match i {
         0 => 1,
+        #PARSER BUG: _ => {return a*factorial(i-1);}
         _ => {a = factorial(i-1); return i*a;}
     }
 }
