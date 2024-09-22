@@ -2,6 +2,8 @@
 
 use crate::runners::{safe_run, safe_run_compare};  // Assuming you have both safe_run and safe_run_compare
 use crate::ir::*;
+use crate::system::*;
+use crate::get_id;
 
 #[test]
 fn simple_parse_hello_world_function() {
@@ -108,3 +110,26 @@ fn test_boolean_logic() {
 
     safe_run_compare(input, Value::Int(42));
 }
+
+#[test]
+fn test_type_checks() {
+    let input = r#"
+        def main(system) {
+            system(:type)("hi")
+        }
+    "#;
+
+    safe_run_compare(input, Value::Atom(get_id!(":string")));
+}
+
+
+// #[test]
+// fn test_atom_str() {
+//     let input = r#"
+//         def main(system) {
+//             system(:to_string)(:hi)
+//         }
+//     "#;
+
+//     safe_run_compare(input, Value::String(GcPointer::new(":hi".to_string())));
+// }
