@@ -42,6 +42,7 @@ pub fn to_bool(v: &Value) -> bool {
         _ => true, // default to truthy for other types
     }
 }
+
 pub fn is_equal(v1: &Value, v2: &Value) -> bool {
     match (v1, v2) {
         (Value::Int(i1), Value::Int(i2)) => i1 == i2,
@@ -52,6 +53,26 @@ pub fn is_equal(v1: &Value, v2: &Value) -> bool {
         (Value::String(a), Value::String(b)) => a == b,
         (Value::Nil, Value::Nil) => true,
         _ => false, // Type mismatch or unsupported types
+    }
+}
+
+pub fn to_string(value: &Value, table: &StringTable) -> String {
+    match value {
+        Value::Atom(id) => table.get_string(*id).unwrap_or("<unknown atom>").to_string(),
+        Value::Int(x) => format!("{}", x),
+        Value::Float(x) => format!("{}", x),
+        Value::String(s) => s.to_string(),
+        _ => format!("{:?}", value), // For other types
+    }
+}
+
+fn nerfed_to_string(value: &Value) -> String {
+    match value {
+        Value::Atom(id) => format!("Atom<{}>", id),
+        Value::Int(x) => format!("{}", x),
+        Value::Float(x) => format!("{}", x),
+        Value::String(s) => s.to_string(),
+        _ => format!("{:?}", value), // For other types
     }
 }
 
@@ -109,14 +130,23 @@ pub fn handle_buildin(args: Vec<Value>, op: BuildIn) -> Result<Value, SigError> 
 
         //string
         BuildIn::Add => {
-            if let (Value::String(s1), Value::String(s2)) = (&args[0], &args[1]) {
-                let mut ans = String::with_capacity(s1.len()+s2.len());
-                ans.push_str(s1);
-                ans.push_str(s2);
-                
-                Ok(Value::String(ans.into()))
-            } else {
-                perform_arithmetic!(&args[0], &args[1], |a, b| a + b)
+            match (&args[0], &args[1]) {
+                (Value::String(s1), Value::String(s2)) => {
+                    let mut ans = String::with_capacity(s1.len() + s2.len());
+                    ans.push_str(s1);
+                    ans.push_str(s2);
+
+                    Ok(Value::String(ans.into()))
+                },
+                (Value::String(s1), b) => {
+                    let s2 = nerfed_to_string(b);
+                    let mut ans = String::with_capacity(s1.len() + s2.len());
+                    ans.push_str(s1);
+                    ans.push_str(&s2);
+
+                    Ok(Value::String(ans.into()))
+                }
+                (a, b) => perform_arithmetic!(a, b, |a, b| a + b),
             }
         },
         // standard arithmetic,
