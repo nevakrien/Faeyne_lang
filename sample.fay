@@ -51,7 +51,9 @@ def factorial(i) {
 
 def main(system){
     bug_main(system);
-    system(:println)(factorial(4));
-    system(:println)(factorial(-4));
+    factorial(4)  |> system(:println)();
+    factorial(-4) |> system(:println)();
+    system(:println)() <| factorial(-4);
     system(:println)(dumby(2));
+    system(:println)(system(:println))   
 }

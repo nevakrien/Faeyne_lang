@@ -46,6 +46,7 @@ extern {
         "[" => LexTag::OpenSquare,
         "]" => LexTag::CloseSquare,
         "|>" => LexTag::Pipe,
+        "<|" => LexTag::ReversePipe,
 
         "+" => LexTag::Plus,
         "-" => LexTag::Minus,
@@ -179,6 +180,16 @@ NoPipeFuncCall: FunctionCall = {
 Pipe: FunctionCall = {
     #[precedence(level="0")]
     <start:@L> <a:PipableValue> "|>" <b:NoPipeFuncCall> <end:@R> => {
+        let mut new_args = vec![a];
+        new_args.extend(b.args);
+        FunctionCall {
+            name: b.name,
+            args: new_args,
+            debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
+        }
+    },
+
+    <start:@L> <b:NoPipeFuncCall> "<|"  <a:PipableValue>  <end:@R> => {
         let mut new_args = vec![a];
         new_args.extend(b.args);
         FunctionCall {

@@ -51,6 +51,7 @@ pub enum LexTag {
     CloseSquare,
 
     Pipe,
+    ReversePipe,
 
     // Operators
     Plus,
@@ -152,6 +153,7 @@ fn lex_operator<'a>(input: &'a str) -> LexResult<'a> {
     let (input, token) = alt((
         // Match multi-character operators first
         recognize(tag("|>")),
+        recognize(tag("<|")),
         recognize(tag("=>")),
         recognize(tag("->")),
         recognize(tag("==")),
@@ -171,6 +173,7 @@ fn lex_operator<'a>(input: &'a str) -> LexResult<'a> {
 
     let op_tag = match token {
         "|>" => LexTag::Pipe,
+        "<|" => LexTag::ReversePipe,
         "|" => LexTag::Or,
 
         "&&" => LexTag::DoubleAnd,
@@ -627,6 +630,7 @@ fn test_lex_operators_with_comments_newlines() {
         LexTag::Arrow,      // =>
         LexTag::SmallArrow, // ->
         LexTag::Pipe, // |>
+        LexTag::ReversePipe, // <|
         LexTag::OpenParen,  // (
         LexTag::CloseParen, // )
         LexTag::OpenCurly,  // {
