@@ -151,6 +151,17 @@ NoPipeFuncCall: FunctionCall = {
         debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
     },
 
+    <start:@L> <x:MatchLambda> "(" <args:CommaSepValue> ")" <end:@R> => FunctionCall {
+        name: FValue::MatchLambda(Box::new(x)),
+        args,
+        debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
+    },
+    <start:@L> <x:MatchLambda> "(" ")" <end:@R> => FunctionCall {
+        name: FValue::MatchLambda(Box::new(x)),
+        args: vec![],
+        debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
+    },
+
     #[precedence(level="1")] 
     <start:@L> <func:NoPipeFuncCall> "(" <args:CommaSepValue> ")" <end:@R> => FunctionCall {
         name:  FValue::FuncCall(Box::new(func)),
