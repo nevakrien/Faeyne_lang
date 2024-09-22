@@ -6,6 +6,7 @@ pub mod reporting;
 
 pub mod translate;
 pub mod system;
+pub mod runners;
 
 mod test_parsing;
 
