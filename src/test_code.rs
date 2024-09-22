@@ -1,20 +1,16 @@
 #![cfg(test)]
 
-use crate::runners::{run_str, clean_str_run};
+use crate::runners::{safe_run, safe_run_compare};  // Assuming you have both safe_run and safe_run_compare
 use crate::ir::*;
 
 #[test]
 fn simple_parse_hello_world_function() {
-    let input = "def main(system) { system(:println)('hello world'); }";
-    let (_ans,junk) = run_str(input);
-    unsafe{clean_str_run(junk);}
+    safe_run("def main(system) { system(:println)('hello world'); }");
 }
 
 #[test]
 fn simple_string_arith() {
-    let input = "def main(system) { system(:println)('hello'+' world'); }";
-    let  (_ans,junk) = run_str(input);
-    unsafe{clean_str_run(junk);}
+    safe_run("def main(system) { system(:println)('hello'+' world'); }");
 }
 
 #[test]
@@ -26,12 +22,8 @@ fn test_string_and_number_addition() {
             result1+' - '+result2
         }
     "#;
-
-    let (ans, junk) = run_str(input);
-    assert_eq!(ans, Value::String(GcPointer::new("hello world - 15".to_string())));
-
-    std::mem::drop(ans);
-    unsafe { clean_str_run(junk); }
+    
+    safe_run_compare(input, Value::String(GcPointer::new("hello world - 15".to_string())));
 }
 
 #[test]
@@ -45,11 +37,7 @@ fn test_simple_conditional() {
         }
     "#;
 
-    let (ans, junk) = run_str(input);
-    assert_eq!(ans, Value::String(GcPointer::new("greater".to_string())));
-
-    std::mem::drop(ans);
-    unsafe { clean_str_run(junk); }
+    safe_run_compare(input, Value::String(GcPointer::new("greater".to_string())));
 }
 
 #[test]
@@ -67,11 +55,7 @@ fn test_factorial_easy() {
         }
     "#;
 
-    let (ans, junk) = run_str(input);
-    assert_eq!(ans, Value::Int(120));
-
-    std::mem::drop(ans);
-    unsafe { clean_str_run(junk); }
+    safe_run_compare(input, Value::Int(120));
 }
 
 #[test]
@@ -89,12 +73,9 @@ fn test_factorial() {
         }
     "#;
 
-    let (ans, junk) = run_str(input);
-    assert_eq!(ans, Value::Int(120));
-
-    std::mem::drop(ans);
-    unsafe { clean_str_run(junk); }
+    safe_run_compare(input, Value::Int(120));
 }
+
 #[test]
 fn test_fibonacci() {
     let input = r#"
@@ -111,11 +92,7 @@ fn test_fibonacci() {
         }
     "#;
 
-    let (ans, junk) = run_str(input);
-    assert_eq!(ans, Value::Int(8));
-
-    std::mem::drop(ans);
-    unsafe { clean_str_run(junk); }
+    safe_run_compare(input, Value::Int(8));
 }
 
 #[test]
@@ -129,9 +106,5 @@ fn test_boolean_logic() {
         }
     "#;
 
-    let (ans, junk) = run_str(input);
-    assert_eq!(ans, Value::Int(42));
-
-    std::mem::drop(ans);
-    unsafe { clean_str_run(junk); }
+    safe_run_compare(input, Value::Int(42));
 }

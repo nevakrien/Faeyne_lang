@@ -10,6 +10,20 @@ use crate::parser;
 use std::process;
 use crate::reporting::report_parse_error;
 
+pub fn safe_run_compare(input: &'static str, expected: Value) {
+    let (ans, junk) = run_str(input);
+    assert_eq!(ans, expected);
+    std::mem::drop(ans);
+    unsafe { clean_str_run(junk); }
+}
+
+pub fn safe_run(input: &'static str) {
+    let (ans, junk) = run_str(input);
+    std::mem::drop(ans);
+    unsafe { clean_str_run(junk); }
+}
+
+
 pub unsafe fn clean_string_run(junk:(*mut ir::GlobalScope,*mut StringTable<'static>,*mut str)){
     let (global_raw,table_raw,raw_str) = junk;
     if !global_raw.is_null(){
