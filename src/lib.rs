@@ -4,7 +4,8 @@ pub mod ir;
 pub mod basic_ops;
 pub mod reporting;
 
-// pub mod translate;
+pub mod translate;
+pub mod system;
 
 mod test_parsing;
 

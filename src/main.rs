@@ -5,6 +5,11 @@ use std::process;
 use faeyne_lang::lexer::Lexer;
 use faeyne_lang::parser;
 use faeyne_lang::ast::StringTable;
+use faeyne_lang::ir;
+        
+use faeyne_lang::translate::translate_program;
+use faeyne_lang::system::get_system;
+// use faeyne_lang::reporting::ErrList;
 
 fn main() {
     // Get the command line arguments.
@@ -37,17 +42,23 @@ fn main() {
     // Parse the program.
     let result = parser.parse(&input, &mut table, lexer);
     
-    // Print the parsed program or an error message.
-    match result {
-        Ok(program) => {
-            for exp in program {
-                println!("{:?}\n\n", exp);
-            }
+    // // Print the parsed program or an error message.
+    // match result {
+    //     Ok(program) => {
+    //         for exp in program {
+    //             println!("{:?}\n\n", exp);
+    //         }
             
-        }
-        Err(err) => {
-            eprintln!("Error parsing the program: {:?}", err);
-            process::exit(1);
-        }
-    }
+    //     }
+    //     Err(err) => {
+    //         eprintln!("Error parsing the program: {:?}", err);
+    //         process::exit(1);
+    //     }
+    // }
+
+    let global = Box::leak(translate_program(result.unwrap(),&table).unwrap());
+    let ir::Value::Func(main_func) = global.get(table.get_id("main")).expect("we need a main function") else {unreachable!()};
+
+    let _ans = main_func.eval(vec![get_system()]).unwrap(); 
+
 }

@@ -135,7 +135,7 @@ impl<'parent> VarScope<'parent>  {
 #[test]
 fn test_scope_lifetimes(){
     let r = StaticVarScope::new();
-	let mut g = VarScope::new(Scopble::Static(&r));
+	let g = VarScope::new(Scopble::Static(&r));
 	let mut a = g.make_subscope();
 	{
 		let _c = a.make_subscope();
@@ -460,7 +460,7 @@ impl Func {
 
 #[derive(Debug,PartialEq,Clone)]
 pub struct FuncSig{
-    arg_ids: Vec<usize>, //for now its all simple
+    pub arg_ids: Vec<usize>, //for now its all simple
 }
 
 impl FuncSig {

@@ -1,4 +1,4 @@
-from path import func;
+#from path import func;
 
 def handler(event) {
     match event {

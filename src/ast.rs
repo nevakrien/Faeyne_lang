@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use codespan::Span;
+use crate::system::preload_table;
 //names are represented as a usize which is a key into our table names
 
 #[derive(Debug,PartialEq)]
@@ -213,19 +214,7 @@ impl<'input> StringTable<'input> {
             vec: Vec::new(),
         };
 
-        //IMPORTANT first value is assumed to not be a var
-        //if this is broken then Lamda match statments will break
-        
-        table.get_id(":nil");
-        table.get_id(":bool");
-        table.get_id(":string");
-        table.get_id(":int");
-        table.get_id(":float");
-        table.get_id(":atom");
-        table.get_id(":func");
-
-        // Preload core literals
-        table.get_id("_");
+        preload_table(&mut table);
         
         table
     }
@@ -241,6 +230,16 @@ impl<'input> StringTable<'input> {
             id
         }
     }
+
+    // Returns the ID of the string, inserting it if it doesn't exist.
+    pub fn check_id(&mut self, s: &'input str) -> Option<usize> {
+        if let Some(&id) = self.map.get(s) {
+            Some(id)
+        } else {
+            None
+        }
+    }
+
     pub fn get_existing_id(&self, s: &'input str) -> usize {
         self.map[s]
     }

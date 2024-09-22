@@ -1,8 +1,55 @@
 use crate::ast::*;
 use crate::ir;
 use codespan::Span;
-use crate::ir::{LazyVal,GcPointer,ScopeRet};
+use crate::ir::{LazyVal,GcPointer,ScopeRet,GlobalScope};
 use crate::basic_ops::get_buildin_function;
+use crate::reporting::*;
+
+pub fn translate_program(v:Vec<OuterExp>,table: &StringTable) -> Result<Box<GlobalScope>,ErrList>{
+	let mut scope = Box::new(GlobalScope::default());
+	let mut e = Ok(());
+
+	for s in v.into_iter(){
+		let e1 = match s {
+			OuterExp::FuncDec(f) => scope.add_func_dec(f,table),
+			OuterExp::ImportFunc(i) => scope.add_import(i,table),
+		};
+
+		e=append_err_list(e,e1);
+	}
+	e?;
+	Ok(scope)
+}
+
+trait AddToGlobalScope {
+    fn add_func_dec(&mut self, func_dec: FuncDec, table: &StringTable) -> Result<(), ErrList>;
+    fn add_import(&mut self, import_func: ImportFunc,table: &StringTable) -> Result<(), ErrList>; // TODO handler for imports
+}
+
+impl AddToGlobalScope for GlobalScope {
+    fn add_func_dec(&mut self, func_dec: FuncDec, table: &StringTable) -> Result<(), ErrList> {
+        // Extract the function name ID
+        let func_name_id = func_dec.sig.name;
+
+        // Translate the function signature
+        let func_sig = ir::FuncSig { arg_ids: func_dec.sig.args };
+
+        // Translate the function body (block)
+        let func_body = func_dec.body.translate(table);
+
+        // Insert the function into the global scope
+        _=self.add(func_name_id, func_body, func_sig)?;
+        Ok(())
+
+    }
+
+    fn add_import(&mut self, _import_func: ImportFunc,_table: &StringTable) -> Result<(), ErrList> {
+        // Use the todo! macro for now to indicate unimplemented import functionality
+        todo!("Handling of imports is not yet implemented.");
+    }
+}
+
+
 
 pub trait Translate<Output> {
     fn translate(self, table: &StringTable) -> Output;
@@ -111,15 +158,18 @@ impl Translate<(LazyVal,ir::MatchStatment)> for MatchStatment {
 }
 
 impl Translate<ir::LazyMatch> for MatchLambda {
-	fn translate(self, table: &StringTable) -> ir::LazyMatch {
-		todo!()
-	}
+    fn translate(self, table: &StringTable) -> ir::LazyMatch {
+        let match_statement = (self.arms, self.debug_span).translate(table);
+        ir::LazyMatch::new(match_statement)
+    }
 }
 
 impl Translate<ir::LazyFunc> for Lambda {
-	fn translate(self, table: &StringTable) -> ir::LazyFunc {
-		todo!()
-	}
+    fn translate(self, table: &StringTable) -> ir::LazyFunc {
+        let sig = ir::FuncSig { arg_ids: self.sig };
+        let body = self.body.translate(table);
+        ir::LazyFunc::new(sig, body)
+    }
 }
 
 impl Translate<ir::Statment> for Statment {
@@ -133,13 +183,34 @@ impl Translate<ir::Statment> for Statment {
 }
 
 impl Translate<ir::MatchCond> for MatchPattern {
-	fn translate(self, table: &StringTable) -> ir::MatchCond {
-		todo!()
-	}
+    fn translate(self, table: &StringTable) -> ir::MatchCond {
+        match self {
+            MatchPattern::Literal(lit) => {ir::MatchCond::Literal(lit.translate(table))},
+            MatchPattern::Variable(_id) => unreachable!("not implemented"),
+            MatchPattern::Wildcard => ir::MatchCond::Any,
+        }
+    }
 }
 
+
 impl Translate<ir::Block> for MatchOut {
-	fn translate(self, table: &StringTable) -> ir::Block {
-		todo!()
-	}
+    fn translate(self, table: &StringTable) -> ir::Block {
+        match self {
+            MatchOut::Value(val) => ir::Block::new_simple(val.translate(table)),
+            MatchOut::Block(block) => block.translate(table),
+        }
+    }
+}
+
+impl Translate<ir::Value> for Literal {
+    fn translate(self, _table: &StringTable) -> ir::Value {
+        match self {
+            Literal::Int(i) => ir::Value::Int(i),
+            Literal::Float(f) => ir::Value::Float(f),
+            Literal::Atom(a) => ir::Value::Atom(a),
+            Literal::String(s) => ir::Value::String(GcPointer::new(_table.get_string(s).unwrap().to_string())),
+            Literal::Bool(b) => ir::Value::Bool(b),
+            Literal::Nil => ir::Value::Nil,
+        }
+    }
 }
