@@ -30,6 +30,7 @@ fn test_string_and_number_addition() {
     let (ans, junk) = run_str(input);
     assert_eq!(ans, Value::String(GcPointer::new("hello world - 15".to_string())));
 
+    std::mem::drop(ans);
     unsafe { clean_str_run(junk); }
 }
 
@@ -47,6 +48,7 @@ fn test_simple_conditional() {
     let (ans, junk) = run_str(input);
     assert_eq!(ans, Value::String(GcPointer::new("greater".to_string())));
 
+    std::mem::drop(ans);
     unsafe { clean_str_run(junk); }
 }
 
@@ -68,6 +70,7 @@ fn test_factorial_easy() {
     let (ans, junk) = run_str(input);
     assert_eq!(ans, Value::Int(120));
 
+    std::mem::drop(ans);
     unsafe { clean_str_run(junk); }
 }
 
@@ -89,6 +92,7 @@ fn test_factorial() {
     let (ans, junk) = run_str(input);
     assert_eq!(ans, Value::Int(120));
 
+    std::mem::drop(ans);
     unsafe { clean_str_run(junk); }
 }
 #[test]
@@ -110,6 +114,7 @@ fn test_fibonacci() {
     let (ans, junk) = run_str(input);
     assert_eq!(ans, Value::Int(8));
 
+    std::mem::drop(ans);
     unsafe { clean_str_run(junk); }
 }
 
@@ -127,5 +132,6 @@ fn test_boolean_logic() {
     let (ans, junk) = run_str(input);
     assert_eq!(ans, Value::Int(42));
 
+    std::mem::drop(ans);
     unsafe { clean_str_run(junk); }
 }
