@@ -14,17 +14,21 @@ use faeyne_lang::system::get_system;
 fn main() {
     let (global_raw, table_raw,raw_str)= run_main();
 
-    // At the end of the program, manually free the leaked memory.
+    //this is here to test if we can actually manually free.
     unsafe {
-        {
-            _ = Box::from_raw(&mut *global_raw);
-        }
-        {
-            _ = Box::from_raw(&mut *table_raw);
-        }
-        {
-            _ = Box::from_raw(&mut *raw_str);
-        }
+        clean_main(global_raw,table_raw,raw_str);
+    }
+}
+
+pub unsafe fn clean_main(global_raw:*mut ir::GlobalScope,table_raw:*mut StringTable<'static>,raw_str:*mut str){
+    {
+        _ = Box::from_raw(&mut *global_raw);
+    }
+    {
+        _ = Box::from_raw(&mut *table_raw);
+    }
+    {
+        _ = Box::from_raw(&mut *raw_str);
     }
 }
 
