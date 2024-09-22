@@ -223,6 +223,13 @@ impl<T> GenericRet<T> {
 pub type ScopeRet = GenericRet<LazyVal>;
 pub type ValueRet = GenericRet<Value>;
 
+impl ValueRet {
+    fn to_unwind(self) -> Self {
+        let value : Value = self.into();
+        ValueRet::Unwind(value)
+    }
+}
+
 impl From<Value> for ValueRet {
     fn from(value: Value) -> Self {
         ValueRet::Local(value)
@@ -497,7 +504,7 @@ impl Block {
             match s {
                 Statment::Return(a) => match a{
                     GenericRet::Local(x) => {return x.eval(scope);},
-                    GenericRet::Unwind(x)=> {return x.eval(scope);},
+                    GenericRet::Unwind(x)=> {return x.eval(scope).map(|x| x.to_unwind());},
                 },
                 Statment::Assign(id,a) =>{
                     let ret = a.eval(scope)?;
@@ -508,7 +515,11 @@ impl Block {
                     
                 },
                 Statment::Call(v) => {
-                    _ = v.eval(scope)?;
+                    let ret = v.eval(scope)?;
+                    match ret {
+                        ValueRet::Local(_) => {},
+                        ValueRet::Unwind(_) => {return Ok(ret);}
+                    }
                 },
                 Statment::Match((val,statment)) => {
                     let  r = val.eval(scope)?;
@@ -516,7 +527,11 @@ impl Block {
                         ValueRet::Local(x) => x,
                         ValueRet::Unwind(_) =>{return Ok(r);},
                     };
-                    _ = statment.eval(x,scope)?;
+                    let ret = statment.eval(x,scope)?;
+                    match ret {
+                        ValueRet::Local(_) => {},
+                        ValueRet::Unwind(_) => {return Ok(ret);}
+                    }
                 },
             }
         }

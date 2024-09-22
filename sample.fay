@@ -33,7 +33,7 @@ def bug(i) {
 }
 
 def bug_main(system){
-    system(:println)(factorial(-4));
+    system(:println)(bug(-4));
 }
 
 def base_factorial(i) {
@@ -52,6 +52,7 @@ def factorial(i) {
 }
 
 def main(system){
+    bug_main(system);
     system(:println)(factorial(4));
     system(:println)(factorial(-4));
 }
