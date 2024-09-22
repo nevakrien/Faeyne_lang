@@ -7,7 +7,8 @@ use crate::parser;
 
 use std::process;
 
-pub unsafe fn clean_string_run(global_raw:*mut ir::GlobalScope,table_raw:*mut StringTable<'static>,raw_str:*mut str){
+pub unsafe fn clean_string_run(junk:(*mut ir::GlobalScope,*mut StringTable<'static>,*mut str)){
+    let (global_raw,table_raw,raw_str) = junk;
     {
         _ = Box::from_raw(&mut *global_raw);
     }
@@ -19,7 +20,9 @@ pub unsafe fn clean_string_run(global_raw:*mut ir::GlobalScope,table_raw:*mut St
     }
 }
 
-pub unsafe fn clean_str_run(global_raw:*mut ir::GlobalScope,table_raw:*mut StringTable<'static>){
+pub unsafe fn clean_str_run(junk: (*mut ir::GlobalScope,*mut StringTable<'static>)){
+    let (global_raw,table_raw) = junk;
+    
     {
         _ = Box::from_raw(&mut *global_raw);
     }

@@ -26,12 +26,12 @@ fn main() {
 
     
     
-    let (global_raw, table_raw, raw_str) = run_string(input);
+    let junk = run_string(input);
 
     // This is here to test if we can manually free memory.
     //probably should have been handled via lifetimes but after half an hour of cleanup meh
     unsafe {
-        clean_string_run(global_raw, table_raw, raw_str);
+        clean_string_run(junk);
     }
 }
 
