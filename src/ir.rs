@@ -22,7 +22,7 @@ pub struct GlobalScope {
 impl GlobalScope {
     pub fn get(&'static self,id:usize) -> Option<Value> {
         let (sig,inner) = self.vars.get(&id)?;
-        Some(Value::Func(FunctionHandle::StaticDef(Box::new(
+        Some(Value::Func(FunctionHandle::StaticDef(GcPointer::new(
             GlobalFunc{
                 sig:sig.clone(),
                 inner:inner.clone(),
@@ -611,7 +611,7 @@ pub enum FunctionHandle {
     StateFFI(&'static dyn Fn(Vec<Value>) -> Result<Value, ErrList>),
     DataFFI(GcPointer<dyn Fn(Vec<Value>) -> Result<Value, ErrList>>),
     // MutFFI(Box<dyn FnMut(Vec<Value>) -> Result<Value, ErrList>>), // New FnMut variant
-    StaticDef(Box<GlobalFunc>),
+    StaticDef(GcPointer<GlobalFunc>),
     Lambda(GcPointer<Func>),
 }
 
