@@ -57,7 +57,7 @@ pub fn run_main() -> (*mut ir::GlobalScope,*mut StringTable<'static>,*mut str) {
     
     // Create the lexer and string table.
     let lexer = Lexer::new(input_ref);
-    let mut table = Box::leak(Box::new(StringTable::new()));
+    let table = Box::leak(Box::new(StringTable::new()));
     let table_raw = table as *mut StringTable;
 
     
@@ -65,7 +65,7 @@ pub fn run_main() -> (*mut ir::GlobalScope,*mut StringTable<'static>,*mut str) {
     let parser = parser::ProgramParser::new();
     
     // Parse the program.
-    let result = parser.parse(input_ref, &mut table, lexer);
+    let result = parser.parse(input_ref, table, lexer);
     
     // // Print the parsed program or an error message.
     // match result {
@@ -81,7 +81,7 @@ pub fn run_main() -> (*mut ir::GlobalScope,*mut StringTable<'static>,*mut str) {
     //     }
     // }
 
-    let global = Box::leak(translate_program(result.unwrap(),&table).unwrap());
+    let global = Box::leak(translate_program(result.unwrap(),table).unwrap());
     let global_raw = global as *mut ir::GlobalScope;
 
     let ir::Value::Func(main_func) = global.get(table.get_id("main")).expect("we need a main function") else {unreachable!()};

@@ -3,15 +3,23 @@ use crate::ast::BuildIn;
 use crate::ir::Value;
 use crate::reporting::*;
 use crate::get_id;
-use crate::ir::GcPointer;
 
 use crate::system::*;
 
-pub fn get_type(v : Value, table:&mut StringTable) -> Value {
-	Value::Atom(get_type_id(v,table))
+pub fn get_type_ffi(args : Vec<Value>) -> Result<Value,ErrList> {
+    if args.len() != 1 {
+        Err(Error::Sig(SigError{}).to_list())
+    }
+    else{
+        Ok(get_type(args[0].clone()))
+    }
 }
 
-pub fn get_type_id(v : Value, table:&mut StringTable) -> usize{
+pub fn get_type(v : Value) -> Value {
+	Value::Atom(get_type_id(v))
+}
+
+pub fn get_type_id(v : Value) -> usize{
 	match v {
 		Value::Nil => get_id!(":nil"),
 		Value::Bool(_) => get_id!(":bool"),

@@ -38,7 +38,7 @@ impl AddToGlobalScope for GlobalScope {
         let func_body = func_dec.body.translate(table);
 
         // Insert the function into the global scope
-        _=self.add(func_name_id, func_body, func_sig)?;
+        self.add(func_name_id, func_body, func_sig)?;
         Ok(())
 
     }

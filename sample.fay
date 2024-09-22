@@ -57,5 +57,6 @@ def main(system){
     system(:println)(system(:println));
     system(:println)("hello world");
     system(:println)("hello"+ "world");
+    system(:println)(system(:type)("hi"));
 
 }
