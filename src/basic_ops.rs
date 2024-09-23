@@ -6,7 +6,7 @@ use crate::get_id;
 
 use crate::system::*;
 
-pub fn get_type_ffi<'ctx>(args : Vec<Value<'ctx>>) -> Result<Value<'ctx>,ErrList> {
+pub fn get_type_ffi(args : Vec<Value<'_>>) -> Result<Value<'_>,ErrList> {
     if args.len() != 1 {
         Err(Error::Sig(SigError{}).to_list())
     }
@@ -15,11 +15,11 @@ pub fn get_type_ffi<'ctx>(args : Vec<Value<'ctx>>) -> Result<Value<'ctx>,ErrList
     }
 }
 
-pub fn get_type<'ctx>(v : Value<'ctx>) -> Value<'ctx> {
+pub fn get_type(v : Value<'_>) -> Value<'_> {
 	Value::Atom(get_type_id(v))
 }
 
-pub fn get_type_id<'ctx>(v : Value<'ctx>) -> usize{
+pub fn get_type_id(v : Value<'_>) -> usize{
 	match v {
 		Value::Nil => get_id!(":nil"),
 		Value::Bool(_) => get_id!(":bool"),
@@ -32,7 +32,7 @@ pub fn get_type_id<'ctx>(v : Value<'ctx>) -> usize{
 	}
 }
 
-pub fn to_bool<'ctx>(v: &Value<'ctx>) -> bool {
+pub fn to_bool(v: &Value<'_>) -> bool {
     match v {
         Value::Bool(b) => *b,
         Value::Int(i) => *i != 0,
@@ -66,7 +66,7 @@ pub fn to_string<'ctx>(value: &Value<'ctx>, table: &StringTable<'ctx>) -> String
     }
 }
 
-fn nerfed_to_string<'ctx>(value: &Value<'ctx>) -> String {
+fn nerfed_to_string(value: &Value<'_>) -> String {
     match value {
         Value::Atom(id) => format!("Atom<{}>", id),
         Value::Int(x) => format!("{}", x),
@@ -270,7 +270,7 @@ fn perform_logical_op<'ctx>(v1: &Value<'ctx>, v2: &Value<'ctx>, op: BuildIn) -> 
 macro_rules! define_builtin_function {
     ($($func_name:ident => $op:expr),* $(,)?) => {
         $(
-            pub fn $func_name<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+            pub fn $func_name(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
                 handle_buildin(args, $op)
                     .map_err(|e| Error::Sig(e).to_list())
             }

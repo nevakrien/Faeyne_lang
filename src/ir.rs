@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 
@@ -291,7 +292,7 @@ pub enum LazyVal<'ctx>{
 }
 
 impl<'ctx> LazyVal<'ctx> {
-    pub fn eval<'parent>(&self,scope: &mut VarScope<'ctx, 'parent>) -> Result<ValueRet<'ctx>,ErrList> 
+    pub fn eval<'parent>(&self,scope: &mut VarScope<'ctx, 'parent>) -> Result<ValueRet<'ctx     >,ErrList> 
     where 'ctx: 'parent,
      {
         match self {
@@ -809,106 +810,111 @@ fn test_system_ffi_mock() {
 fn test_system_state_ffi() {
     use std::cell::RefCell;
 
-    //we are about to do some C style manual freeing because rustc cant do lifetimes for this setup
-    let root = Box::leak(Box::new(GlobalScope::default()));
-    let root_ptr = root as *mut GlobalScope;
+    let root = GlobalScope::default();
 
-    //note that all refrences to root are in the following block
-    //and they all die at the end of that scope
-    //thus its completly safe to free root at the end
-    {    
+    let log_print: GcPointer<RefCell<Vec<Vec<Value>>>> = GcPointer::new(RefCell::new(Vec::new()));
+    let log_system: GcPointer<RefCell<Vec<Vec<Value>>>> = GcPointer::new(RefCell::new(Vec::new()));
 
-        let log_print: GcPointer<RefCell<Vec<Vec<Value>>>> = GcPointer::new(RefCell::new(Vec::new()));
-        let log_system: GcPointer<RefCell<Vec<Vec<Value>>>> = GcPointer::new(RefCell::new(Vec::new()));
+    //define ffi function templates
+    fn ffi_println<'ctx>(
+        log_print: GcPointer<RefCell<Vec<Vec<Value<'ctx>>>>>,
+        args: Vec<Value<'ctx>>,
+    ) -> Result<Value<'ctx>, ErrList> {
+        log_print.borrow_mut().push(args.clone());
+        Ok(Value::Nil)
+    }
+    fn ffi_system_base<'ctx>(
+        log_system: GcPointer<RefCell<Vec<Vec<Value<'ctx>>>>>,
+        log_print: GcPointer<RefCell<Vec<Vec<Value<'ctx>>>>>,
+        args: Vec<Value<'ctx>>,
+    ) -> Result<Value<'ctx>, ErrList> {
+        log_system.borrow_mut().push(args.clone());
 
-        //define ffi function templates
-        fn ffi_println<'ctx>(
-            log_print: GcPointer<RefCell<Vec<Vec<Value<'ctx>>>>>,
-            args: Vec<Value<'ctx>>,
-        ) -> Result<Value<'ctx>, ErrList> {
-            log_print.borrow_mut().push(args.clone());
-            Ok(Value::Nil)
-        }
-        fn ffi_system<'ctx>(
-            log_system: GcPointer<RefCell<Vec<Vec<Value<'ctx>>>>>,
-            log_print: GcPointer<RefCell<Vec<Vec<Value<'ctx>>>>>,
-            args: Vec<Value<'ctx>>,
-        ) -> Result<Value<'ctx>, ErrList> {
-            log_system.borrow_mut().push(args.clone());
+        // Box the `ffi_println` closure and return a mutable reference to it
+        let boxed_println: Box<dyn Fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList>> =
+            Box::new(move |a: Vec<Value<'ctx>>| -> Result<Value<'ctx>, ErrList> {
+                ffi_println(log_print.clone(), a)
+            });
 
-            // Box the `ffi_println` closure and return a mutable reference to it
-            let boxed_println: Box<dyn Fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList>> =
-                Box::new(move |a: Vec<Value<'ctx>>| -> Result<Value<'ctx>, ErrList> {
-                    ffi_println(log_print.clone(), a)
-                });
+        Ok(Value::Func(FunctionHandle::StateFFI(&boxed_println)))
+    }
 
-            Ok(Value::Func(FunctionHandle::StateFFI(Box::leak(boxed_println))))
-        }
+    // Helper function to constrain the closure with a lifetime
+    fn constrain_lifetime<'ctx, F>(_root:&'ctx GlobalScope<'ctx>,f: F) -> F
+    where
+        F: Fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> + 'ctx,
+    {
+        f
+    }
 
-        // Helper function to constrain the closure with a lifetime
-        fn constrain_lifetime<'ctx, F>(f: F) -> F
-        where
-            F: Fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> + 'ctx,
-        {
-            f
-        }
+    fn evaluate<'ctx>(call : Call<'ctx>,scope : &mut VarScope<'ctx,'_>) -> ValueRet<'ctx> {
+        call.eval(scope).unwrap()
+    }
 
-
-
-        let mut string_table = StringTable::new();
-        let system_name = string_table.get_id("system");
-        let println_name = string_table.get_id(":println");
+    // fn make_root<'ctx, F>(_f: &'ctx F) -> GlobalScope<'ctx>
+    // where
+    //     F: Fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> + 'ctx,
+    // {
+    //     GlobalScope::default()
+    // }
 
 
-        // Clone GcPointer before moving into the closure
-        let log_system_clone = log_system.clone();
-        let log_print_clone = log_print.clone();
 
-        //Make a closure with the correct type anotation
-        let boxed_system = constrain_lifetime(move |args: Vec<Value<'_>>| -> Result<Value<'_>, ErrList> {
-            ffi_system(log_system_clone.clone(), log_print_clone.clone(), args)
-        });
+    let mut string_table = StringTable::new();
+    let system_name = string_table.get_id("system");
+    let println_name = string_table.get_id(":println");
 
+
+    // Clone GcPointer before moving into the closure
+    let log_system_clone = log_system.clone();
+    let log_print_clone = log_print.clone();
+
+    //Make a closure with the correct type anotation
+    let boxed_system = constrain_lifetime(&root,move |args: Vec<Value<'_>>| -> Result<Value<'_>, ErrList> {
+        ffi_system(log_system_clone.clone(), log_print_clone.clone(), args)
+    });
+    // let root = make_root(&boxed_system);
+    
+    let mut scope = root.make_subscope();
+    scope.add(system_name, Value::Func(FunctionHandle::StateFFI(&boxed_system)));
         
-        let mut scope = root.make_subscope();
-        scope.add(system_name, Value::Func(FunctionHandle::StateFFI(Box::leak(Box::new(boxed_system)))));
+    //Create the AST
+    // Inner call for accessing the `system` variable from the scope
+    let system_call = Call {
+        called: Box::new(LazyVal::Ref(system_name)),
+        args: vec![LazyVal::Terminal(Value::Atom(println_name))],
+        debug_span: Span::new(0, 1),
+    };
 
-        //Create the AST
-        // Inner call for accessing the `system` variable from the scope
-        let system_call = Call {
-            called: Box::new(LazyVal::Ref(system_name)),
-            args: vec![LazyVal::Terminal(Value::Atom(println_name))],
-            debug_span: Span::new(0, 1),
-        };
+    // Outer call for `system(:println)("hello world")`
+    let outer_call = Call {
+        called: Box::new(LazyVal::FuncCall(system_call)),
+        args: vec![LazyVal::Terminal(Value::String(GcPointer::new(
+            "hello world".to_string(),
+        )))],
+        debug_span: Span::new(0, 1),
+    };
 
-        // Outer call for `system(:println)("hello world")`
-        let outer_call = Call {
-            called: Box::new(LazyVal::FuncCall(system_call)),
-            args: vec![LazyVal::Terminal(Value::String(GcPointer::new(
-                "hello world".to_string(),
-            )))],
-            debug_span: Span::new(0, 1),
-        };
+    //evaluate
 
-        //evaluate
-        let ans = outer_call.eval(&mut scope).unwrap();
-        assert_eq!(ans, ValueRet::Local(Value::Nil));
+    let ans = evaluate(outer_call,&mut scope);//outer_call.eval(&mut scope).unwrap();
+    assert_eq!(ans, ValueRet::Local(Value::Nil));
 
-        assert_eq!(log_system.borrow().len(), 1);
-        assert_eq!(log_system.borrow()[0], vec![Value::Atom(println_name)]);
+    assert_eq!(log_system.borrow().len(), 1);
+    assert_eq!(log_system.borrow()[0], vec![Value::Atom(println_name)]);
 
-        assert_eq!(log_print.borrow().len(), 1);
-        assert_eq!(
-            log_print.borrow()[0],
-            vec![Value::String(GcPointer::new("hello world".to_string()))]
-        );
+    assert_eq!(log_print.borrow().len(), 1);
+    assert_eq!(
+        log_print.borrow()[0],
+        vec![Value::String(GcPointer::new("hello world".to_string()))]
+    );
 
-        //dont return anything
-    }
-    //c style freeing
-    unsafe {
-        _ = Box::from_raw(root_ptr);
-    }
+    std::mem::drop(scope);
+    std::mem::drop(log_system);
+    std::mem::drop(log_print);
+
+    // std::mem::drop(boxed_system);
+    // std::mem::drop(root);
 }
 
 

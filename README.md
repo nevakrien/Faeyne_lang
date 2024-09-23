@@ -81,6 +81,9 @@ x = 1 + "error message";
 will work and should give line information.
 
 # dev notes
-note that all global scopes are assumed to be static so they should be leaked. For the common case this is perfectly acceptble. For the uncommon case when you want to be able to run a temporery process this would have to be achived with unsafe...
+the lifetime of the global scope is giving me trouble.
+after a lot of fighting with it I got it to free everything while being ALMOST fully safe.
 
-It could be benifical in the future to fix scoping to colapse long scope chains when they are created so that lookup is more effishent.
+This required a 4 hours refactor to add a lifetime followed by some fairly weird code to get lifetime anotations where they should be.
+It is likely I am missing a more elegent way to do it but as of now I have made it where the global scope is leaked and needs to be manualy turned into a box.
+
