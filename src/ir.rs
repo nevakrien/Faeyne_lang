@@ -804,6 +804,115 @@ fn test_system_ffi_mock() {
 }
 
 #[test]
+fn test_system_state_ffi() {
+    use std::cell::RefCell;
+    
+    let root = Box::leak(Box::new(GlobalScope::default()));
+    let root_ptr = root as *mut GlobalScope;
+
+    {    
+        // Step 1: Create mutable buffers for logging (no static references)
+        let log_print: GcPointer<RefCell<Vec<Vec<Value>>>> = GcPointer::new(RefCell::new(Vec::new()));
+        let log_system: GcPointer<RefCell<Vec<Vec<Value>>>> = GcPointer::new(RefCell::new(Vec::new()));
+
+        // Step 2: Define the internal private functions for `ffi_println` and `ffi_system`
+
+        // `ffi_println` logs the arguments into `log_print` and returns `Value::Nil`
+        fn ffi_println<'ctx>(
+            log_print: GcPointer<RefCell<Vec<Vec<Value<'ctx>>>>>,
+            args: Vec<Value<'ctx>>,
+        ) -> Result<Value<'ctx>, ErrList> {
+            log_print.borrow_mut().push(args.clone());
+            Ok(Value::Nil)
+        }
+
+        // `ffi_system` logs the arguments into `log_system` and returns a function handle to `ffi_println`
+        fn ffi_system<'ctx>(
+            log_system: GcPointer<RefCell<Vec<Vec<Value<'ctx>>>>>,
+            log_print: GcPointer<RefCell<Vec<Vec<Value<'ctx>>>>>,
+            args: Vec<Value<'ctx>>,
+        ) -> Result<Value<'ctx>, ErrList> {
+            log_system.borrow_mut().push(args.clone());
+
+            // Box the `ffi_println` closure and return a mutable reference to it
+            let boxed_println: Box<dyn Fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList>> =
+                Box::new(move |a: Vec<Value<'ctx>>| -> Result<Value<'ctx>, ErrList> {
+                    ffi_println(log_print.clone(), a)
+                });
+
+            Ok(Value::Func(FunctionHandle::StateFFI(Box::leak(boxed_println))))
+        }
+
+        // Helper function to constrain the closure with a lifetime
+        fn constrain_lifetime<'ctx, F>(f: F) -> F
+        where
+            F: Fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> + 'ctx,
+        {
+            f
+        }
+
+
+        // Step 3: Initialize the scope (no leaking, just normal scoped variables)
+        let mut string_table = StringTable::new();
+        let system_name = string_table.get_id("system");
+        let println_name = string_table.get_id(":println");
+
+
+        // Clone GcPointer before moving into the closure
+        let log_system_clone = log_system.clone();
+        let log_print_clone = log_print.clone();
+
+        // Add the `ffi_system` closure to the scope (returning a mutable reference instead of leaking)
+        let boxed_system = constrain_lifetime(move |args: Vec<Value<'_>>| -> Result<Value<'_>, ErrList> {
+            ffi_system(log_system_clone.clone(), log_print_clone.clone(), args)
+        });
+
+        
+        let mut scope = root.make_subscope();
+        scope.add(system_name, Value::Func(FunctionHandle::StateFFI(Box::leak(Box::new(boxed_system)))));
+
+        // Step 4: Create the call structures
+        // Inner call for accessing the `system` variable from the scope
+        let system_call = Call {
+            called: Box::new(LazyVal::Ref(system_name)),
+            args: vec![LazyVal::Terminal(Value::Atom(println_name))],
+            debug_span: Span::new(0, 1),
+        };
+
+        // Outer call for `system(:println)("hello world")`
+        let outer_call = Call {
+            called: Box::new(LazyVal::FuncCall(system_call)),
+            args: vec![LazyVal::Terminal(Value::String(GcPointer::new(
+                "hello world".to_string(),
+            )))],
+            debug_span: Span::new(0, 1),
+        };
+
+        // Step 5: Evaluate the outer call
+        let ans = outer_call.eval(&mut scope).unwrap();
+        assert_eq!(ans, ValueRet::Local(Value::Nil));
+
+        // Step 6: Validate that the logs were updated correctly
+        assert_eq!(log_system.borrow().len(), 1);
+        assert_eq!(log_system.borrow()[0], vec![Value::Atom(println_name)]);
+
+        assert_eq!(log_print.borrow().len(), 1);
+        assert_eq!(
+            log_print.borrow()[0],
+            vec![Value::String(GcPointer::new("hello world".to_string()))]
+        );
+    }
+    //c style freeing
+    unsafe {
+        _ = Box::from_raw(root_ptr);
+    }
+}
+
+
+
+
+
+#[test]
 fn test_varscope_add_and_get() {
     let global = Box::new(GlobalScope::default()); // Create the global scope using Default
     let global_ref = Box::leak(global);            // Create a static reference

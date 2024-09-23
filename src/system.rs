@@ -88,16 +88,7 @@ fn create_ffi_println<'ctx>(table: &'static StringTable) -> &'static dyn Fn(Vec<
         	return Err(Error::Sig(SigError {}).to_list());
         }
 
-
-        // match &args[0] {
-        // 	Value::Atom(id) => {println!("{}", table.get_string(*id).unwrap());},
-        // 	Value::Int(x) => {println!("{:?}", x);},
-        // 	Value::Float(x) => {println!("{:?}", x);},
-        // 	Value::String(s) => {println!("{}", s);},
-        // 	_ => {println!("{:?}", args[0]);}
-        // }
-         println!("{}", to_string(&args[0],table));
-        
+        println!("{}", to_string(&args[0],table));
         Ok(Value::Nil)
     };
 
