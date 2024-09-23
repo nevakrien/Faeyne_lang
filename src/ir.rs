@@ -14,6 +14,8 @@ use crate::reporting::*;
 #[derive(Debug, PartialEq, Clone)]
 #[derive(Default)]
 pub struct GlobalScope<'ctx> {
+    //note that ctx can be thought of as 'static in the common case.
+    //this struct together with the FunctionHandle enum are the ONLY reason we need this 'ctx lifetime
     vars: HashMap<usize, (FuncSig, Block<'ctx>)>,
 }
 
@@ -806,18 +808,20 @@ fn test_system_ffi_mock() {
 #[test]
 fn test_system_state_ffi() {
     use std::cell::RefCell;
-    
+
+    //we are about to do some C style manual freeing because rustc cant do lifetimes for this setup
     let root = Box::leak(Box::new(GlobalScope::default()));
     let root_ptr = root as *mut GlobalScope;
 
+    //note that all refrences to root are in the following block
+    //and they all die at the end of that scope
+    //thus its completly safe to free root at the end
     {    
-        // Step 1: Create mutable buffers for logging (no static references)
+
         let log_print: GcPointer<RefCell<Vec<Vec<Value>>>> = GcPointer::new(RefCell::new(Vec::new()));
         let log_system: GcPointer<RefCell<Vec<Vec<Value>>>> = GcPointer::new(RefCell::new(Vec::new()));
 
-        // Step 2: Define the internal private functions for `ffi_println` and `ffi_system`
-
-        // `ffi_println` logs the arguments into `log_print` and returns `Value::Nil`
+        //define ffi function templates
         fn ffi_println<'ctx>(
             log_print: GcPointer<RefCell<Vec<Vec<Value<'ctx>>>>>,
             args: Vec<Value<'ctx>>,
@@ -825,8 +829,6 @@ fn test_system_state_ffi() {
             log_print.borrow_mut().push(args.clone());
             Ok(Value::Nil)
         }
-
-        // `ffi_system` logs the arguments into `log_system` and returns a function handle to `ffi_println`
         fn ffi_system<'ctx>(
             log_system: GcPointer<RefCell<Vec<Vec<Value<'ctx>>>>>,
             log_print: GcPointer<RefCell<Vec<Vec<Value<'ctx>>>>>,
@@ -852,7 +854,7 @@ fn test_system_state_ffi() {
         }
 
 
-        // Step 3: Initialize the scope (no leaking, just normal scoped variables)
+
         let mut string_table = StringTable::new();
         let system_name = string_table.get_id("system");
         let println_name = string_table.get_id(":println");
@@ -862,7 +864,7 @@ fn test_system_state_ffi() {
         let log_system_clone = log_system.clone();
         let log_print_clone = log_print.clone();
 
-        // Add the `ffi_system` closure to the scope (returning a mutable reference instead of leaking)
+        //Make a closure with the correct type anotation
         let boxed_system = constrain_lifetime(move |args: Vec<Value<'_>>| -> Result<Value<'_>, ErrList> {
             ffi_system(log_system_clone.clone(), log_print_clone.clone(), args)
         });
@@ -871,7 +873,7 @@ fn test_system_state_ffi() {
         let mut scope = root.make_subscope();
         scope.add(system_name, Value::Func(FunctionHandle::StateFFI(Box::leak(Box::new(boxed_system)))));
 
-        // Step 4: Create the call structures
+        //Create the AST
         // Inner call for accessing the `system` variable from the scope
         let system_call = Call {
             called: Box::new(LazyVal::Ref(system_name)),
@@ -888,11 +890,10 @@ fn test_system_state_ffi() {
             debug_span: Span::new(0, 1),
         };
 
-        // Step 5: Evaluate the outer call
+        //evaluate
         let ans = outer_call.eval(&mut scope).unwrap();
         assert_eq!(ans, ValueRet::Local(Value::Nil));
 
-        // Step 6: Validate that the logs were updated correctly
         assert_eq!(log_system.borrow().len(), 1);
         assert_eq!(log_system.borrow()[0], vec![Value::Atom(println_name)]);
 
@@ -901,6 +902,8 @@ fn test_system_state_ffi() {
             log_print.borrow()[0],
             vec![Value::String(GcPointer::new("hello world".to_string()))]
         );
+
+        //dont return anything
     }
     //c style freeing
     unsafe {
