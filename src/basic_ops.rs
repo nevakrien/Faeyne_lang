@@ -6,30 +6,28 @@ use crate::get_id;
 
 use crate::system::*;
 
-pub fn get_type_ffi<'ctx>(args : Vec<Value<'ctx>>) -> Result<Value<'ctx>,ErrList> {
+pub fn get_type_ffi<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
     if args.len() != 1 {
-        Err(Error::Sig(SigError{}).to_list())
-    }
-    else{
+        Err(Error::Sig(SigError {}).to_list())
+    } else {
         Ok(get_type(args[0].clone()))
     }
 }
 
-pub fn get_type<'ctx>(v : Value<'ctx>) -> Value<'ctx> {
-	Value::Atom(get_type_id(v))
+pub fn get_type<'ctx>(v: Value<'ctx>) -> Value<'ctx> {
+    Value::Atom(get_type_id(v))
 }
 
-pub fn get_type_id<'ctx>(v : Value<'ctx>) -> usize{
-	match v {
-		Value::Nil => get_id!(":nil"),
-		Value::Bool(_) => get_id!(":bool"),
-		Value::String(_) => get_id!(":string"),
-		Value::Int(_) => get_id!(":int"),
-		Value::Float(_) => get_id!(":float"),
-		Value::Atom(_) => get_id!(":atom"),
-		Value::Func(_) => get_id!(":func"),
-
-	}
+pub fn get_type_id<'ctx>(v: Value<'ctx>) -> usize {
+    match v {
+        Value::Nil => get_id!(":nil"),
+        Value::Bool(_) => get_id!(":bool"),
+        Value::String(_) => get_id!(":string"),
+        Value::Int(_) => get_id!(":int"),
+        Value::Float(_) => get_id!(":float"),
+        Value::Atom(_) => get_id!(":atom"),
+        Value::Func(_) => get_id!(":func"),
+    }
 }
 
 pub fn to_bool<'ctx>(v: &Value<'ctx>) -> bool {
@@ -38,7 +36,7 @@ pub fn to_bool<'ctx>(v: &Value<'ctx>) -> bool {
         Value::Int(i) => *i != 0,
         Value::Float(f) => *f != 0.0,
         Value::Nil => false,
-        Value::String(p) => p.len()>0,
+        Value::String(p) => !p.is_empty(),
         _ => true, // default to truthy for other types
     }
 }
@@ -58,7 +56,10 @@ pub fn is_equal<'ctx>(v1: &Value<'ctx>, v2: &Value<'ctx>) -> bool {
 
 pub fn to_string<'ctx>(value: &Value<'ctx>, table: &StringTable<'ctx>) -> String {
     match value {
-        Value::Atom(id) => table.get_string(*id).unwrap_or("<unknown atom>").to_string(),
+        Value::Atom(id) => table
+            .get_string(*id)
+            .unwrap_or("<unknown atom>")
+            .to_string(),
         Value::Int(x) => format!("{}", x),
         Value::Float(x) => format!("{}", x),
         Value::String(s) => s.to_string(),
@@ -76,237 +77,282 @@ fn nerfed_to_string<'ctx>(value: &Value<'ctx>) -> String {
     }
 }
 
+// Arithmetic Functions
 
-macro_rules! perform_arithmetic {
-    ($v1:expr, $v2:expr, $op:expr) => {
-        match ($v1, $v2) {
-            (Value::Int(i1), Value::Int(i2)) => Ok(Value::Int($op(*i1, *i2))),
-            (Value::Float(f1), Value::Float(f2)) => Ok(Value::Float($op(*f1, *f2))),
-            (Value::Int(i), Value::Float(f)) => Ok(Value::Float($op(*i as f64, *f))),
-            (Value::Float(f), Value::Int(i)) => Ok(Value::Float($op(*f, *i as f64))),
-            _ => Err(SigError {
-                // Handle type mismatch error here
-            }),
-        }
-    };
-}
-
-macro_rules! perform_num_comparison {
-    ($v1:expr, $v2:expr, $op:expr) => {
-        match ($v1, $v2) {
-            (Value::Int(i1), Value::Int(i2)) => Ok(Value::Bool($op(*i1 , *i2 ))),
-            (Value::Float(f1), Value::Float(f2)) => Ok(Value::Bool($op(*f1, *f2))),
-            (Value::Int(i), Value::Float(f)) | (Value::Float(f), Value::Int(i)) => {
-                Ok(Value::Bool($op(*i as f64, *f)))
-            },
-            _ => Err(SigError {
-                // handle type mismatch error here
-            }),
-        }
-    };
-}
-
-pub fn handle_buildin<'ctx>(args: Vec<Value<'ctx>>, op: BuildIn) -> Result<Value<'ctx>, SigError> {
-    if args.len()!=2 {
-    	return Err(SigError {
-                    // Handle type mismatch error here
-                });
+pub fn buildin_add<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+    if args.len() != 2 {
+        return Err(Error::Sig(SigError {}).to_list());
     }
+    let a = &args[0];
+    let b = &args[1];
 
-    match op {
-        //equality
-        BuildIn::Equal => Ok(Value::Bool(is_equal(&args[0], &args[1]))),
-        BuildIn::NotEqual => Ok(Value::Bool(!is_equal(&args[0], &args[1]))),
-
-         // Bitwise Operations
-        BuildIn::And | BuildIn::Or | BuildIn::Xor => perform_bitwise_op(&args[0], &args[1], op),
-        BuildIn::DoubleAnd | BuildIn::DoubleOr | BuildIn::DoubleXor => perform_logical_op(&args[0], &args[1], op),
-
-        //special cases for int int
-        BuildIn::Div => perform_division(&args[0], &args[1]), // Special case for division
-        BuildIn::Pow => perform_power(&args[0], &args[1]),    // Special case for power
-        BuildIn::IntDiv => perform_int_div(&args[0], &args[1]),
-        BuildIn::Modulo => perform_modulo(&args[0], &args[1]),
-
-        //string
-        BuildIn::Add => {
-            match (&args[0], &args[1]) {
-                (Value::String(s1), Value::String(s2)) => {
-                    let mut ans = String::with_capacity(s1.len() + s2.len());
-                    ans.push_str(s1);
-                    ans.push_str(s2);
-
-                    Ok(Value::String(ans.into()))
-                },
-                (Value::String(s1), b) => {
-                    let s2 = nerfed_to_string(b);
-                    let mut ans = String::with_capacity(s1.len() + s2.len());
-                    ans.push_str(s1);
-                    ans.push_str(&s2);
-
-                    Ok(Value::String(ans.into()))
-                }
-                (a, b) => perform_arithmetic!(a, b, |a, b| a + b),
-            }
-        },
-        // standard arithmetic,
-        BuildIn::Sub => perform_arithmetic!(&args[0], &args[1], |a, b| a - b),
-        BuildIn::Mul => perform_arithmetic!(&args[0], &args[1], |a, b| a * b),
-
-        //Standard numeric comperisons
-        BuildIn::Smaller => perform_num_comparison!(&args[0], &args[1], |a, b| a < b),
-        BuildIn::Bigger => perform_num_comparison!(&args[0], &args[1], |a, b| a > b),
-        BuildIn::SmallerEq => perform_num_comparison!(&args[0], &args[1], |a, b| a <= b),
-        BuildIn::BiggerEq => perform_num_comparison!(&args[0], &args[1], |a, b| a >= b),
+    match (a, b) {
+        (Value::String(s1), Value::String(s2)) => {
+            let mut ans = String::with_capacity(s1.len() + s2.len());
+            ans.push_str(s1);
+            ans.push_str(s2);
+            Ok(Value::String(ans.into()))
+        }
+        (Value::String(s1), b) => {
+            let s2 = nerfed_to_string(b);
+            let mut ans = String::with_capacity(s1.len() + s2.len());
+            ans.push_str(s1);
+            ans.push_str(&s2);
+            Ok(Value::String(ans.into()))
+        }
+        (Value::Int(i1), Value::Int(i2)) => Ok(Value::Int(i1 + i2)),
+        (Value::Float(f1), Value::Float(f2)) => Ok(Value::Float(f1 + f2)),
+        (Value::Int(i), Value::Float(f)) => Ok(Value::Float(*i as f64 + f)),
+        (Value::Float(f), Value::Int(i)) => Ok(Value::Float(f + *i as f64)),
+        _ => Err(Error::Sig(SigError {}).to_list()),
     }
 }
 
+pub fn buildin_sub<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+    if args.len() != 2 {
+        return Err(Error::Sig(SigError {}).to_list());
+    }
+    let a = &args[0];
+    let b = &args[1];
 
+    match (a, b) {
+        (Value::Int(i1), Value::Int(i2)) => Ok(Value::Int(i1 - i2)),
+        (Value::Float(f1), Value::Float(f2)) => Ok(Value::Float(f1 - f2)),
+        (Value::Int(i), Value::Float(f)) => Ok(Value::Float(*i as f64 - f)),
+        (Value::Float(f), Value::Int(i)) => Ok(Value::Float(f - *i as f64)),
+        _ => Err(Error::Sig(SigError {}).to_list()),
+    }
+}
 
+pub fn buildin_mul<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+    if args.len() != 2 {
+        return Err(Error::Sig(SigError {}).to_list());
+    }
+    let a = &args[0];
+    let b = &args[1];
 
-fn perform_division<'ctx>(v1: &Value<'ctx>, v2: &Value<'ctx>) -> Result<Value<'ctx>, SigError> {
-    match (v1, v2) {
-        (Value::Int(i), Value::Int(j)) => {
-            if i % j == 0 {
-                Ok(Value::Int(i / j))
+    match (a, b) {
+        (Value::Int(i1), Value::Int(i2)) => Ok(Value::Int(i1 * i2)),
+        (Value::Float(f1), Value::Float(f2)) => Ok(Value::Float(f1 * f2)),
+        (Value::Int(i), Value::Float(f)) => Ok(Value::Float(*i as f64 * f)),
+        (Value::Float(f), Value::Int(i)) => Ok(Value::Float(f * *i as f64)),
+        _ => Err(Error::Sig(SigError {}).to_list()),
+    }
+}
+
+pub fn buildin_div<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+    if args.len() != 2 {
+        return Err(Error::Sig(SigError {}).to_list());
+    }
+    let a = &args[0];
+    let b = &args[1];
+
+    match (a, b) {
+        (Value::Int(i1), Value::Int(i2)) => {
+            if *i2 == 0 {
+                Err(Error::Sig(SigError {}).to_list())
+            } else if i1 % i2 == 0 {
+                Ok(Value::Int(i1 / i2))
             } else {
-                Ok(Value::Float(*i as f64 / *j as f64))
+                Ok(Value::Float(*i1 as f64 / *i2 as f64))
             }
         }
         (Value::Float(f1), Value::Float(f2)) => Ok(Value::Float(f1 / f2)),
-        (Value::Int(i), Value::Float(f)) | (Value::Float(f), Value::Int(i)) => {
-            Ok(Value::Float(*i as f64 / *f))
-        }
-        _ => Err(SigError {
-            // handle type mismatch error here
-        }),
+        (Value::Int(i), Value::Float(f)) => Ok(Value::Float(*i as f64 / f)),
+        (Value::Float(f), Value::Int(i)) => Ok(Value::Float(*f / *i as f64)),
+        _ => Err(Error::Sig(SigError {}).to_list()),
     }
 }
 
-fn perform_power<'ctx>(v1: &Value<'ctx>, v2: &Value<'ctx>) -> Result<Value<'ctx>, SigError> {
-    match (v1, v2) {
-        (Value::Int(i), Value::Int(j)) => {
-            if *j >= 0 {
-                Ok(Value::Int(i.pow(*j as u32)))
+pub fn buildin_int_div<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+    if args.len() != 2 {
+        return Err(Error::Sig(SigError {}).to_list());
+    }
+    if let (Value::Int(i1), Value::Int(i2)) = (&args[0], &args[1]) {
+        if *i2 == 0 {
+            Err(Error::Sig(SigError {}).to_list())
+        } else {
+            Ok(Value::Int(i1 / i2))
+        }
+    } else {
+        Err(Error::Sig(SigError {}).to_list())
+    }
+}
+
+pub fn buildin_modulo<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+    if args.len() != 2 {
+        return Err(Error::Sig(SigError {}).to_list());
+    }
+    if let (Value::Int(i1), Value::Int(i2)) = (&args[0], &args[1]) {
+        if *i2 == 0 {
+            Err(Error::Sig(SigError {}).to_list())
+        } else {
+            Ok(Value::Int(i1 % i2))
+        }
+    } else {
+        Err(Error::Sig(SigError {}).to_list())
+    }
+}
+
+pub fn buildin_pow<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+    if args.len() != 2 {
+        return Err(Error::Sig(SigError {}).to_list());
+    }
+    let a = &args[0];
+    let b = &args[1];
+
+    match (a, b) {
+        (Value::Int(i1), Value::Int(i2)) => {
+            if *i2 >= 0 {
+                Ok(Value::Int(i1.pow(*i2 as u32)))
             } else {
-                Ok(Value::Float((*i as f64).powf(*j as f64)))
+                Ok(Value::Float((*i1 as f64).powf(*i2 as f64)))
             }
         }
         (Value::Float(f1), Value::Float(f2)) => Ok(Value::Float(f1.powf(*f2))),
-        (Value::Int(i), Value::Float(f)) | (Value::Float(f), Value::Int(i)) => {
-            Ok(Value::Float((*i as f64).powf(*f)))
-        }
-        _ => Err(SigError {
-            // handle type mismatch error here
-        }),
+        (Value::Int(i), Value::Float(f)) => Ok(Value::Float((*i as f64).powf(*f))),
+        (Value::Float(f), Value::Int(i)) => Ok(Value::Float(f.powf(*i as f64))),
+        _ => Err(Error::Sig(SigError {}).to_list()),
     }
 }
 
+// Comparison Functions
 
-fn perform_int_div<'ctx>(v1: &Value<'ctx>, v2: &Value<'ctx>) -> Result<Value<'ctx>, SigError> {
-    if let (Value::Int(i), Value::Int(j)) = (v1, v2) {
-        if *j == 0 {
-            Err(SigError {
-                // Handle division by zero error here
-            })
-        } else {
-            Ok(Value::Int(i / j))
-        }
+pub fn buildin_equal<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+    if args.len() != 2 {
+        return Err(Error::Sig(SigError {}).to_list());
+    }
+    Ok(Value::Bool(is_equal(&args[0], &args[1])))
+}
+
+pub fn buildin_not_equal<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+    if args.len() != 2 {
+        return Err(Error::Sig(SigError {}).to_list());
+    }
+    Ok(Value::Bool(!is_equal(&args[0], &args[1])))
+}
+
+pub fn buildin_smaller<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+    if args.len() != 2 {
+        return Err(Error::Sig(SigError {}).to_list());
+    }
+    match (&args[0], &args[1]) {
+        (Value::Int(i1), Value::Int(i2)) => Ok(Value::Bool(i1 < i2)),
+        (Value::Float(f1), Value::Float(f2)) => Ok(Value::Bool(f1 < f2)),
+        (Value::Int(i), Value::Float(f)) => Ok(Value::Bool((*i as f64) < *f)),
+        (Value::Float(f), Value::Int(i)) => Ok(Value::Bool(*f < *i as f64)),
+        _ => Err(Error::Sig(SigError {}).to_list()),
+    }
+}
+
+pub fn buildin_bigger<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+    if args.len() != 2 {
+        return Err(Error::Sig(SigError {}).to_list());
+    }
+    match (&args[0], &args[1]) {
+        (Value::Int(i1), Value::Int(i2)) => Ok(Value::Bool(i1 > i2)),
+        (Value::Float(f1), Value::Float(f2)) => Ok(Value::Bool(f1 > f2)),
+        (Value::Int(i), Value::Float(f)) => Ok(Value::Bool((*i as f64) > *f)),
+        (Value::Float(f), Value::Int(i)) => Ok(Value::Bool(*f > *i as f64)),
+        _ => Err(Error::Sig(SigError {}).to_list()),
+    }
+}
+
+pub fn buildin_smaller_eq<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+    if args.len() != 2 {
+        return Err(Error::Sig(SigError {}).to_list());
+    }
+    match (&args[0], &args[1]) {
+        (Value::Int(i1), Value::Int(i2)) => Ok(Value::Bool(i1 <= i2)),
+        (Value::Float(f1), Value::Float(f2)) => Ok(Value::Bool(f1 <= f2)),
+        (Value::Int(i), Value::Float(f)) => Ok(Value::Bool((*i as f64) <= *f)),
+        (Value::Float(f), Value::Int(i)) => Ok(Value::Bool(*f <= *i as f64)),
+        _ => Err(Error::Sig(SigError {}).to_list()),
+    }
+}
+
+pub fn buildin_bigger_eq<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+    if args.len() != 2 {
+        return Err(Error::Sig(SigError {}).to_list());
+    }
+    match (&args[0], &args[1]) {
+        (Value::Int(i1), Value::Int(i2)) => Ok(Value::Bool(i1 >= i2)),
+        (Value::Float(f1), Value::Float(f2)) => Ok(Value::Bool(f1 >= f2)),
+        (Value::Int(i), Value::Float(f)) => Ok(Value::Bool((*i as f64) >= *f)),
+        (Value::Float(f), Value::Int(i)) => Ok(Value::Bool(*f >= *i as f64)),
+        _ => Err(Error::Sig(SigError {}).to_list()),
+    }
+}
+
+// Bitwise Operations
+
+pub fn buildin_and<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+    if args.len() != 2 {
+        return Err(Error::Sig(SigError {}).to_list());
+    }
+    if let (Value::Int(i1), Value::Int(i2)) = (&args[0], &args[1]) {
+        Ok(Value::Int(i1 & i2))
     } else {
-        Err(SigError {
-            // Handle type mismatch error here
-        })
+        Err(Error::Sig(SigError {}).to_list())
     }
 }
 
-fn perform_modulo<'ctx>(v1: &Value<'ctx>, v2: &Value<'ctx>) -> Result<Value<'ctx>, SigError> {
-    if let (Value::Int(i), Value::Int(j)) = (v1, v2) {
-        if *j == 0 {
-            Err(SigError {
-                // Handle division by zero error here
-            })
-        } else {
-            Ok(Value::Int(i % j))
-        }
+pub fn buildin_or<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+    if args.len() != 2 {
+        return Err(Error::Sig(SigError {}).to_list());
+    }
+    if let (Value::Int(i1), Value::Int(i2)) = (&args[0], &args[1]) {
+        Ok(Value::Int(i1 | i2))
     } else {
-        Err(SigError {
-            // Handle type mismatch error here
-        })
+        Err(Error::Sig(SigError {}).to_list())
     }
 }
 
-fn perform_bitwise_op<'ctx>(v1: &Value<'ctx>, v2: &Value<'ctx>, op: BuildIn) -> Result<Value<'ctx>, SigError> {
-    match (v1, v2) {
-        (Value::Int(i), Value::Int(j)) => {
-            let result = match op {
-                BuildIn::And => i & j,
-                BuildIn::Or => i | j,
-                BuildIn::Xor => i ^ j,
-                _ => unreachable!(),
-            };
-            Ok(Value::Int(result))
-        }
-        _ => Err(SigError {
-            // handle type mismatch error here
-        }),
+pub fn buildin_xor<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+    if args.len() != 2 {
+        return Err(Error::Sig(SigError {}).to_list());
+    }
+    if let (Value::Int(i1), Value::Int(i2)) = (&args[0], &args[1]) {
+        Ok(Value::Int(i1 ^ i2))
+    } else {
+        Err(Error::Sig(SigError {}).to_list())
     }
 }
 
-fn perform_logical_op<'ctx>(v1: &Value<'ctx>, v2: &Value<'ctx>, op: BuildIn) -> Result<Value<'ctx>, SigError> {
-    let lhs_bool = to_bool(v1);
-    let rhs_bool = to_bool(v2);
+// Logical Operations
 
-    let result = match op {
-        BuildIn::DoubleAnd => lhs_bool && rhs_bool,
-        BuildIn::DoubleOr => lhs_bool || rhs_bool,
-        BuildIn::DoubleXor => lhs_bool ^ rhs_bool,
-        _ => unreachable!(),
-    };
-
-    Ok(Value::Bool(result))
+pub fn buildin_double_and<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+    if args.len() != 2 {
+        return Err(Error::Sig(SigError {}).to_list());
+    }
+    let lhs_bool = to_bool(&args[0]);
+    let rhs_bool = to_bool(&args[1]);
+    Ok(Value::Bool(lhs_bool && rhs_bool))
 }
 
-
-macro_rules! define_builtin_function {
-    ($($func_name:ident => $op:expr),* $(,)?) => {
-        $(
-            pub fn $func_name<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
-                handle_buildin(args, $op)
-                    .map_err(|e| Error::Sig(e).to_list())
-            }
-        )*
-    };
+pub fn buildin_double_or<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+    if args.len() != 2 {
+        return Err(Error::Sig(SigError {}).to_list());
+    }
+    let lhs_bool = to_bool(&args[0]);
+    let rhs_bool = to_bool(&args[1]);
+    Ok(Value::Bool(lhs_bool || rhs_bool))
 }
 
-// Use the macro to generate all the functions with full function names
-define_builtin_function!(
-    buildin_add => BuildIn::Add,
-    buildin_sub => BuildIn::Sub,
-    buildin_mul => BuildIn::Mul,
-    buildin_div => BuildIn::Div,
-    buildin_int_div => BuildIn::IntDiv,
-    buildin_modulo => BuildIn::Modulo,
-    buildin_pow => BuildIn::Pow,
+pub fn buildin_double_xor<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+    if args.len() != 2 {
+        return Err(Error::Sig(SigError {}).to_list());
+    }
+    let lhs_bool = to_bool(&args[0]);
+    let rhs_bool = to_bool(&args[1]);
+    Ok(Value::Bool(lhs_bool ^ rhs_bool))
+}
 
-    buildin_equal => BuildIn::Equal,
-    buildin_not_equal => BuildIn::NotEqual,
+// Function Mapper
 
-    buildin_smaller => BuildIn::Smaller,
-    buildin_bigger => BuildIn::Bigger,
-    buildin_smaller_eq => BuildIn::SmallerEq,
-    buildin_bigger_eq => BuildIn::BiggerEq,
-
-    buildin_and => BuildIn::And,
-    buildin_or => BuildIn::Or,
-    buildin_xor => BuildIn::Xor,
-
-    buildin_double_and => BuildIn::DoubleAnd,
-    buildin_double_or => BuildIn::DoubleOr,
-    buildin_double_xor => BuildIn::DoubleXor,
-);
-
-
-pub fn get_buildin_function(op: BuildIn) ->  for<'ctx> fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+pub fn get_buildin_function(
+    op: BuildIn,
+) -> for<'ctx> fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
     match op {
         BuildIn::Add => buildin_add,
         BuildIn::Sub => buildin_sub,
