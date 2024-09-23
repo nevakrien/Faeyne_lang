@@ -7,7 +7,6 @@ use crate::system::get_system;
 use crate::lexer::Lexer;
 use crate::parser;
 
-use std::process;
 use crate::reporting::report_parse_error;
 
 pub fn safe_run_compare(input: &'static str, expected: Value) {

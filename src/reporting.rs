@@ -2,7 +2,7 @@ use codespan::{ByteIndex, Span};
 use std::collections::LinkedList;
 
 use codespan_reporting::diagnostic::{Diagnostic, Label};
-use codespan_reporting::term::{self, termcolor::Buffer, termcolor::WriteColor};
+use codespan_reporting::term::{self, termcolor::Buffer};
 use codespan_reporting::files::SimpleFiles;
 
 use lalrpop_util::ParseError;
@@ -88,7 +88,7 @@ pub fn get_subslice_span<'a>(source: &'a str, subslice: &'a str) -> Span {
 }
 
 // Function to handle and report parsing errors
-pub fn report_parse_error(err: ParseError<usize, LexTag, ()>, input_ref: &str) -> ! {
+pub fn report_parse_error(err: ParseError<usize, LexTag, ()>, input_ref: &str)  {
     let mut buffer = Buffer::ansi();
     let mut files = SimpleFiles::new();
     let file_id = files.add("input", input_ref);
@@ -108,14 +108,14 @@ pub fn report_parse_error(err: ParseError<usize, LexTag, ()>, input_ref: &str) -
         ParseError::ExtraToken { token } => Diagnostic::error()
             .with_message("Extra token")
             .with_labels(vec![Label::primary(file_id, token.0..token.2)]),
-        ParseError::User { error } => unreachable!(),
+        ParseError::User { .. } => unreachable!(),
     };
 
     let config = term::Config::default();
     term::emit(&mut buffer, &config, &files, &diagnostic).unwrap();
 
     println!("{}", String::from_utf8(buffer.into_inner()).unwrap());
-    panic!("Parse error occurred");
+    // panic!("Parse error occurred");
 }
 
 #[test]
