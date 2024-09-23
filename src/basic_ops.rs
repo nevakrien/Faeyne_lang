@@ -6,7 +6,7 @@ use crate::get_id;
 
 use crate::system::*;
 
-pub fn get_type_ffi(args : Vec<Value<'_>>) -> Result<Value<'_>,ErrList> {
+pub fn get_type_ffi<'ctx>(args : Vec<Value<'ctx>>) -> Result<Value<'ctx>,ErrList> {
     if args.len() != 1 {
         Err(Error::Sig(SigError{}).to_list())
     }
@@ -15,11 +15,11 @@ pub fn get_type_ffi(args : Vec<Value<'_>>) -> Result<Value<'_>,ErrList> {
     }
 }
 
-pub fn get_type(v : Value<'_>) -> Value<'_> {
+pub fn get_type<'ctx>(v : Value<'ctx>) -> Value<'ctx> {
 	Value::Atom(get_type_id(v))
 }
 
-pub fn get_type_id(v : Value<'_>) -> usize{
+pub fn get_type_id<'ctx>(v : Value<'ctx>) -> usize{
 	match v {
 		Value::Nil => get_id!(":nil"),
 		Value::Bool(_) => get_id!(":bool"),
@@ -32,7 +32,7 @@ pub fn get_type_id(v : Value<'_>) -> usize{
 	}
 }
 
-pub fn to_bool(v: &Value<'_>) -> bool {
+pub fn to_bool<'ctx>(v: &Value<'ctx>) -> bool {
     match v {
         Value::Bool(b) => *b,
         Value::Int(i) => *i != 0,
@@ -66,7 +66,7 @@ pub fn to_string<'ctx>(value: &Value<'ctx>, table: &StringTable<'ctx>) -> String
     }
 }
 
-fn nerfed_to_string(value: &Value<'_>) -> String {
+fn nerfed_to_string<'ctx>(value: &Value<'ctx>) -> String {
     match value {
         Value::Atom(id) => format!("Atom<{}>", id),
         Value::Int(x) => format!("{}", x),
@@ -106,7 +106,7 @@ macro_rules! perform_num_comparison {
     };
 }
 
-pub fn handle_buildin(args: Vec<Value>, op: BuildIn) -> Result<Value, SigError> {
+pub fn handle_buildin<'ctx>(args: Vec<Value<'ctx>>, op: BuildIn) -> Result<Value<'ctx>, SigError> {
     if args.len()!=2 {
     	return Err(SigError {
                     // Handle type mismatch error here
@@ -270,7 +270,7 @@ fn perform_logical_op<'ctx>(v1: &Value<'ctx>, v2: &Value<'ctx>, op: BuildIn) -> 
 macro_rules! define_builtin_function {
     ($($func_name:ident => $op:expr),* $(,)?) => {
         $(
-            pub fn $func_name(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
+            pub fn $func_name<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
                 handle_buildin(args, $op)
                     .map_err(|e| Error::Sig(e).to_list())
             }
@@ -306,7 +306,7 @@ define_builtin_function!(
 );
 
 
-pub fn get_buildin_function(op: BuildIn) -> for<'ctx> fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+pub fn get_buildin_function(op: BuildIn) ->  for<'ctx> fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
     match op {
         BuildIn::Add => buildin_add,
         BuildIn::Sub => buildin_sub,

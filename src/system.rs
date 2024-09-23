@@ -73,7 +73,7 @@ pub fn get_system<'ctx>(string_table: &'static StringTable<'ctx>) -> (Value<'ctx
     let print_fn = {create_ffi_println(string_table,&mut handle)};
 
     
-    let x = move |args: Vec<Value>| -> Result<Value, ErrList> {
+    let x = move |args: Vec<Value<'ctx>>| -> Result<Value<'ctx>, ErrList> {
         if args.len() != 1 {
             return Err(Error::Sig(SigError {}).to_list());
         }
