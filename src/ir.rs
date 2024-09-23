@@ -805,80 +805,81 @@ fn test_system_ffi_mock() {
         assert_eq!(log.borrow()[0], vec![Value::String(GcPointer::new("hello world".to_string()))]);
     });
 }
-
 #[test]
 fn test_system_state_ffi() {
     use std::cell::RefCell;
 
+    // Initialize root for GlobalScope
     let root = GlobalScope::default();
 
+    // Create log buffers
     let log_print: GcPointer<RefCell<Vec<Vec<Value>>>> = GcPointer::new(RefCell::new(Vec::new()));
     let log_system: GcPointer<RefCell<Vec<Vec<Value>>>> = GcPointer::new(RefCell::new(Vec::new()));
 
-    //define ffi function templates
+    // Step 1: Define the `ffi_println` function
     fn ffi_println<'ctx>(
-        log_print: GcPointer<RefCell<Vec<Vec<Value<'ctx>>>>>,
+        log_print: &RefCell<Vec<Vec<Value<'ctx>>>>,
         args: Vec<Value<'ctx>>,
     ) -> Result<Value<'ctx>, ErrList> {
         log_print.borrow_mut().push(args.clone());
         Ok(Value::Nil)
     }
-    fn ffi_system_base<'ctx>(
-        log_system: GcPointer<RefCell<Vec<Vec<Value<'ctx>>>>>,
-        log_print: GcPointer<RefCell<Vec<Vec<Value<'ctx>>>>>,
+
+    // Step 2: Define the `ffi_system` function, now taking references for `log_system` and a reference to the boxed `ffi_println`
+    fn ffi_system<'ctx>(
+        log_system: &RefCell<Vec<Vec<Value<'ctx>>>>,
+        log_print_box: &'ctx Box<dyn Fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> + 'ctx>,
         args: Vec<Value<'ctx>>,
     ) -> Result<Value<'ctx>, ErrList> {
         log_system.borrow_mut().push(args.clone());
-
-        // Box the `ffi_println` closure and return a mutable reference to it
-        let boxed_println: Box<dyn Fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList>> =
-            Box::new(move |a: Vec<Value<'ctx>>| -> Result<Value<'ctx>, ErrList> {
-                ffi_println(log_print.clone(), a)
-            });
-
-        Ok(Value::Func(FunctionHandle::StateFFI(&boxed_println)))
+        // Now use the passed-in reference to the boxed `ffi_println`
+        Ok(Value::Func(FunctionHandle::StateFFI(log_print_box)))
     }
 
-    // Helper function to constrain the closure with a lifetime
-    fn constrain_lifetime<'ctx, F>(_root:&'ctx GlobalScope<'ctx>,f: F) -> F
-    where
-        F: Fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> + 'ctx,
-    {
-        f
+    // Helper function to box the `ffi_println` and return it
+    fn create_println_box<'ctx>(
+        log_print: &'ctx RefCell<Vec<Vec<Value<'ctx>>>>,
+    ) -> Box<dyn Fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> + 'ctx> {
+        Box::new(move |a: Vec<Value<'ctx>>| -> Result<Value<'ctx>, ErrList> {
+            ffi_println(log_print, a)
+        })
     }
 
-    fn evaluate<'ctx>(call : Call<'ctx>,scope : &mut VarScope<'ctx,'_>) -> ValueRet<'ctx> {
-        call.eval(scope).unwrap()
+    // Helper function to box `ffi_system` and return it
+    fn create_system_box<'ctx>(
+        log_system: &'ctx RefCell<Vec<Vec<Value<'ctx>>>>,
+        log_print_box: &'ctx Box<dyn Fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> + 'ctx>,
+    ) -> Box<dyn Fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> + 'ctx> {
+        Box::new(move |args: Vec<Value<'ctx>>| -> Result<Value<'ctx>, ErrList> {
+            ffi_system(log_system, log_print_box, args)
+        })
     }
 
-    // fn make_root<'ctx, F>(_f: &'ctx F) -> GlobalScope<'ctx>
-    // where
-    //     F: Fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> + 'ctx,
-    // {
-    //     GlobalScope::default()
-    // }
+    // Helper function to add the boxed closure to the scope
+    fn add_function_to_scope<'ctx>(
+        scope: &mut VarScope<'ctx, '_>,
+        system_name: usize,
+        boxed_closure: &'ctx dyn Fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList>,
+    ) {
+        scope.add(system_name, Value::Func(FunctionHandle::StateFFI(boxed_closure)));
+    }
 
-
-
+    // Step 3: Initialize string table and IDs
     let mut string_table = StringTable::new();
     let system_name = string_table.get_id("system");
     let println_name = string_table.get_id(":println");
 
+    // Step 4: Create the boxed `ffi_println`
+    let boxed_println = create_println_box(&log_print);
 
-    // Clone GcPointer before moving into the closure
-    let log_system_clone = log_system.clone();
-    let log_print_clone = log_print.clone();
+    // Step 5: Create the boxed `ffi_system` that takes a reference to the boxed `ffi_println`
+    let boxed_system = create_system_box(&log_system, &boxed_println);
 
-    //Make a closure with the correct type anotation
-    let boxed_system = constrain_lifetime(&root,move |args: Vec<Value<'_>>| -> Result<Value<'_>, ErrList> {
-        ffi_system(log_system_clone.clone(), log_print_clone.clone(), args)
-    });
-    // let root = make_root(&boxed_system);
-    
+    // Step 6: Add boxed `ffi_system` to the scope
     let mut scope = root.make_subscope();
-    scope.add(system_name, Value::Func(FunctionHandle::StateFFI(&boxed_system)));
-        
-    //Create the AST
+    add_function_to_scope(&mut scope, system_name, &boxed_system);
+
+    // Step 7: Create the call structures
     // Inner call for accessing the `system` variable from the scope
     let system_call = Call {
         called: Box::new(LazyVal::Ref(system_name)),
@@ -895,11 +896,11 @@ fn test_system_state_ffi() {
         debug_span: Span::new(0, 1),
     };
 
-    //evaluate
-
-    let ans = evaluate(outer_call,&mut scope);//outer_call.eval(&mut scope).unwrap();
+    // Step 8: Evaluate the outer call
+    let ans = outer_call.eval(&mut scope).unwrap();
     assert_eq!(ans, ValueRet::Local(Value::Nil));
 
+    // Step 9: Validate that the logs were updated correctly
     assert_eq!(log_system.borrow().len(), 1);
     assert_eq!(log_system.borrow()[0], vec![Value::Atom(println_name)]);
 
@@ -908,14 +909,10 @@ fn test_system_state_ffi() {
         log_print.borrow()[0],
         vec![Value::String(GcPointer::new("hello world".to_string()))]
     );
-
-    std::mem::drop(scope);
-    std::mem::drop(log_system);
-    std::mem::drop(log_print);
-
-    // std::mem::drop(boxed_system);
-    // std::mem::drop(root);
 }
+
+
+
 
 
 
