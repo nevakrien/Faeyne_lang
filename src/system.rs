@@ -48,7 +48,7 @@ macro_rules! get_id {
     };
 }
 
-pub fn get_system(string_table: &'static StringTable) -> Value {
+pub fn get_system<'ctx>(string_table: &'static StringTable<'ctx>) -> Value<'ctx> {
     let print_fn = create_ffi_println(string_table);
 
     
@@ -75,13 +75,13 @@ pub fn get_system(string_table: &'static StringTable) -> Value {
         }
     };
 
-    let b :Box<dyn Fn(Vec<Value>) -> Result<Value, ErrList>>= Box::new(x); 
+    let b :Box<dyn Fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList>>= Box::new(x); 
 
 
     Value::Func(FunctionHandle::StateFFI(Box::leak(b)))
 }
 
-fn create_ffi_println(table: &'static StringTable) -> &'static dyn Fn(Vec<Value>) -> Result<Value, ErrList> {
+fn create_ffi_println<'ctx>(table: &'static StringTable) -> &'static dyn Fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
     let x  = move |args: Vec<Value>| -> Result<Value, ErrList> {
         // Here we capture the string table reference and print using it
         if args.len()!=1 {
@@ -101,7 +101,7 @@ fn create_ffi_println(table: &'static StringTable) -> &'static dyn Fn(Vec<Value>
         Ok(Value::Nil)
     };
 
-    let b :Box<dyn Fn(Vec<Value>) -> Result<Value, ErrList>>= Box::new(x);
+    let b :Box<dyn Fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList>>= Box::new(x);
 
     Box::leak(b)
 }

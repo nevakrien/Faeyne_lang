@@ -9,7 +9,7 @@ use crate::parser;
 
 use crate::reporting::report_parse_error;
 
-pub fn safe_run_compare(input: &'static str, expected: Value) {
+pub fn safe_run_compare(input: &'static str, expected: Value<'static>) {
     let (ans, junk) = run_str(input);
     assert_eq!(ans, expected);
     std::mem::drop(ans);
@@ -47,7 +47,7 @@ pub unsafe fn clean_str_run(junk: (*mut ir::GlobalScope,*mut StringTable<'static
     }
 }
 
-pub fn run_str(input_ref: &'static str) ->(Value,(*mut ir::GlobalScope,*mut StringTable<'static>)) {
+pub fn run_str(input_ref: &'static str) ->(Value<'static>,(*mut ir::GlobalScope,*mut StringTable<'static>)) {
     let lexer = Lexer::new(input_ref);
     let table = Box::leak(Box::new(StringTable::new()));
     let table_raw = table as *mut StringTable;
@@ -76,7 +76,7 @@ pub fn run_str(input_ref: &'static str) ->(Value,(*mut ir::GlobalScope,*mut Stri
 }
 
 
-pub fn run_string(code: String) -> (Value,(*mut ir::GlobalScope,*mut StringTable<'static>,*mut str)) {
+pub fn run_string(code: String) -> (Value<'static>,(*mut ir::GlobalScope<'static>,*mut StringTable<'static>,*mut str)) {
     let input_ref = code.leak();
     let raw_str = input_ref as *mut str;
 

@@ -6,7 +6,7 @@ use crate::get_id;
 
 use crate::system::*;
 
-pub fn get_type_ffi(args : Vec<Value>) -> Result<Value,ErrList> {
+pub fn get_type_ffi<'ctx>(args : Vec<Value<'ctx>>) -> Result<Value<'ctx>,ErrList> {
     if args.len() != 1 {
         Err(Error::Sig(SigError{}).to_list())
     }
@@ -15,11 +15,11 @@ pub fn get_type_ffi(args : Vec<Value>) -> Result<Value,ErrList> {
     }
 }
 
-pub fn get_type(v : Value) -> Value {
+pub fn get_type<'ctx>(v : Value<'ctx>) -> Value<'ctx> {
 	Value::Atom(get_type_id(v))
 }
 
-pub fn get_type_id(v : Value) -> usize{
+pub fn get_type_id<'ctx>(v : Value<'ctx>) -> usize{
 	match v {
 		Value::Nil => get_id!(":nil"),
 		Value::Bool(_) => get_id!(":bool"),
@@ -32,7 +32,7 @@ pub fn get_type_id(v : Value) -> usize{
 	}
 }
 
-pub fn to_bool(v: &Value) -> bool {
+pub fn to_bool<'ctx>(v: &Value<'ctx>) -> bool {
     match v {
         Value::Bool(b) => *b,
         Value::Int(i) => *i != 0,
@@ -43,7 +43,7 @@ pub fn to_bool(v: &Value) -> bool {
     }
 }
 
-pub fn is_equal(v1: &Value, v2: &Value) -> bool {
+pub fn is_equal<'ctx>(v1: &Value<'ctx>, v2: &Value<'ctx>) -> bool {
     match (v1, v2) {
         (Value::Int(i1), Value::Int(i2)) => i1 == i2,
         (Value::Float(f1), Value::Float(f2)) => f1 == f2,
@@ -56,7 +56,7 @@ pub fn is_equal(v1: &Value, v2: &Value) -> bool {
     }
 }
 
-pub fn to_string(value: &Value, table: &StringTable) -> String {
+pub fn to_string<'ctx>(value: &Value<'ctx>, table: &StringTable<'ctx>) -> String {
     match value {
         Value::Atom(id) => table.get_string(*id).unwrap_or("<unknown atom>").to_string(),
         Value::Int(x) => format!("{}", x),
@@ -66,7 +66,7 @@ pub fn to_string(value: &Value, table: &StringTable) -> String {
     }
 }
 
-fn nerfed_to_string(value: &Value) -> String {
+fn nerfed_to_string<'ctx>(value: &Value<'ctx>) -> String {
     match value {
         Value::Atom(id) => format!("Atom<{}>", id),
         Value::Int(x) => format!("{}", x),
@@ -164,7 +164,7 @@ pub fn handle_buildin(args: Vec<Value>, op: BuildIn) -> Result<Value, SigError> 
 
 
 
-fn perform_division(v1: &Value, v2: &Value) -> Result<Value, SigError> {
+fn perform_division<'ctx>(v1: &Value<'ctx>, v2: &Value<'ctx>) -> Result<Value<'ctx>, SigError> {
     match (v1, v2) {
         (Value::Int(i), Value::Int(j)) => {
             if i % j == 0 {
@@ -183,7 +183,7 @@ fn perform_division(v1: &Value, v2: &Value) -> Result<Value, SigError> {
     }
 }
 
-fn perform_power(v1: &Value, v2: &Value) -> Result<Value, SigError> {
+fn perform_power<'ctx>(v1: &Value<'ctx>, v2: &Value<'ctx>) -> Result<Value<'ctx>, SigError> {
     match (v1, v2) {
         (Value::Int(i), Value::Int(j)) => {
             if *j >= 0 {
@@ -203,7 +203,7 @@ fn perform_power(v1: &Value, v2: &Value) -> Result<Value, SigError> {
 }
 
 
-fn perform_int_div(v1: &Value, v2: &Value) -> Result<Value, SigError> {
+fn perform_int_div<'ctx>(v1: &Value<'ctx>, v2: &Value<'ctx>) -> Result<Value<'ctx>, SigError> {
     if let (Value::Int(i), Value::Int(j)) = (v1, v2) {
         if *j == 0 {
             Err(SigError {
@@ -219,7 +219,7 @@ fn perform_int_div(v1: &Value, v2: &Value) -> Result<Value, SigError> {
     }
 }
 
-fn perform_modulo(v1: &Value, v2: &Value) -> Result<Value, SigError> {
+fn perform_modulo<'ctx>(v1: &Value<'ctx>, v2: &Value<'ctx>) -> Result<Value<'ctx>, SigError> {
     if let (Value::Int(i), Value::Int(j)) = (v1, v2) {
         if *j == 0 {
             Err(SigError {
@@ -235,7 +235,7 @@ fn perform_modulo(v1: &Value, v2: &Value) -> Result<Value, SigError> {
     }
 }
 
-fn perform_bitwise_op(v1: &Value, v2: &Value, op: BuildIn) -> Result<Value, SigError> {
+fn perform_bitwise_op<'ctx>(v1: &Value<'ctx>, v2: &Value<'ctx>, op: BuildIn) -> Result<Value<'ctx>, SigError> {
     match (v1, v2) {
         (Value::Int(i), Value::Int(j)) => {
             let result = match op {
@@ -252,7 +252,7 @@ fn perform_bitwise_op(v1: &Value, v2: &Value, op: BuildIn) -> Result<Value, SigE
     }
 }
 
-fn perform_logical_op(v1: &Value, v2: &Value, op: BuildIn) -> Result<Value, SigError> {
+fn perform_logical_op<'ctx>(v1: &Value<'ctx>, v2: &Value<'ctx>, op: BuildIn) -> Result<Value<'ctx>, SigError> {
     let lhs_bool = to_bool(v1);
     let rhs_bool = to_bool(v2);
 
@@ -270,7 +270,7 @@ fn perform_logical_op(v1: &Value, v2: &Value, op: BuildIn) -> Result<Value, SigE
 macro_rules! define_builtin_function {
     ($($func_name:ident => $op:expr),* $(,)?) => {
         $(
-            pub fn $func_name(args: Vec<Value>) -> Result<Value, ErrList> {
+            pub fn $func_name<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
                 handle_buildin(args, $op)
                     .map_err(|e| Error::Sig(e).to_list())
             }
@@ -306,7 +306,7 @@ define_builtin_function!(
 );
 
 
-pub fn get_buildin_function(op: BuildIn) -> fn(Vec<Value>) -> Result<Value, ErrList> {
+pub fn get_buildin_function(op: BuildIn) -> for<'ctx> fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
     match op {
         BuildIn::Add => buildin_add,
         BuildIn::Sub => buildin_sub,
