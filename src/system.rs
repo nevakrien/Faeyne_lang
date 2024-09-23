@@ -48,8 +48,29 @@ macro_rules! get_id {
     };
 }
 
-pub fn get_system<'ctx>(string_table: &'static StringTable<'ctx>) -> Value<'ctx> {
-    let print_fn = create_ffi_println(string_table);
+
+
+pub struct FreeHandle<'ctx> {
+    vars : Vec <*mut DynFFI<'ctx>>
+}
+
+
+impl FreeHandle<'_>{
+    pub fn new() -> Self {
+        FreeHandle{vars:Vec::new()}
+    }
+    pub unsafe fn free(self) {
+        for p in self.vars.into_iter().rev() {
+            {
+                _ = Box::from_raw(p);
+            }
+        }
+    }
+}
+
+pub fn get_system<'ctx>(string_table: &'static StringTable<'ctx>) -> (Value<'ctx>,FreeHandle<'ctx>) {
+    let mut handle = FreeHandle::new();
+    let print_fn = {create_ffi_println(string_table,&mut handle)};
 
     
     let x = move |args: Vec<Value>| -> Result<Value, ErrList> {
@@ -75,13 +96,15 @@ pub fn get_system<'ctx>(string_table: &'static StringTable<'ctx>) -> Value<'ctx>
         }
     };
 
-    let b :Box<dyn Fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList>>= Box::new(x); 
+    let mut b :Box<DynFFI<'ctx>>= Box::new(x);
+    let ptr = {b.as_mut() as *mut _}; 
+    handle.vars.push(ptr);
 
-
-    Value::Func(FunctionHandle::StateFFI(Box::leak(b)))
+    (Value::Func(FunctionHandle::StateFFI(Box::leak(b))),handle)
+    
 }
 
-fn create_ffi_println<'ctx>(table: &'static StringTable) -> &'static dyn Fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+fn create_ffi_println<'ctx>(table: &'static StringTable<'ctx>,handle:&mut FreeHandle<'ctx>) -> &'ctx DynFFI<'ctx> {
     let x  = move |args: Vec<Value>| -> Result<Value, ErrList> {
         // Here we capture the string table reference and print using it
         if args.len()!=1 {
@@ -92,33 +115,8 @@ fn create_ffi_println<'ctx>(table: &'static StringTable) -> &'static dyn Fn(Vec<
         Ok(Value::Nil)
     };
 
-    let b :Box<dyn Fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList>>= Box::new(x);
-
+    let mut b = Box::new(x);
+    let ptr = {b.as_mut() as *mut _};
+    handle.vars.push(ptr);
     Box::leak(b)
 }
-
-// pub fn get_system() -> Value {
-// 	Value::Func(FunctionHandle::FFI(ffi_system))
-// }
-
-// fn ffi_println(args: Vec<Value>) -> Result<Value, ErrList> {
-// 	println!("{:?}",args);
-//     Ok(Value::Nil)
-// }
-
-// fn ffi_system(args: Vec<Value>) -> Result<Value, ErrList> {
-// 	if args.len() != 1 {
-// 		return Err(Error::Sig(SigError{}).to_list());
-// 	}
-
-// 	let atom = match args[0]{
-// 		Value::Atom(id) => id,
-// 		_ => {return Err(Error::Sig(SigError{}).to_list());}
-// 	};
-
-// 	match atom {
-// 		get_id!(":println") => Ok(Value::Func(FunctionHandle::FFI(ffi_println))),
-// 		_ => Err(Error::Sig(SigError{}).to_list())
-// 	}
-
-// }

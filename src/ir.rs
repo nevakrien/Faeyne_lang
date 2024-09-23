@@ -619,11 +619,13 @@ impl<'ctx> MatchStatment<'ctx> {
     }
 }
 
+pub type DynFFI<'ctx> = dyn Fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList>;
+
 #[derive(Clone)]
 pub enum FunctionHandle<'ctx> {
     FFI(fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList>),
-    StateFFI(&'ctx dyn Fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList>),
-    DataFFI(GcPointer<dyn Fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList>>),
+    StateFFI(&'ctx DynFFI<'ctx>),
+    DataFFI(GcPointer<DynFFI<'ctx>>),
     // MutFFI(Box<dyn FnMut(Vec<Value>) -> Result<Value, ErrList>>), // New FnMut variant
     StaticDef(GcPointer<GlobalFunc<'ctx>>),
     Lambda(GcPointer<Func<'ctx>>),
@@ -820,7 +822,7 @@ fn test_system_state_ffi() {
     // `ffi_system` logs the arguments into `log_system` and returns a function handle to `ffi_println`
     fn ffi_system<'ctx>(
         log_system: GcPointer<RefCell<Vec<Vec<Value<'ctx>>>>>,
-        print_func: * const dyn Fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList>,
+        print_func: * const DynFFI<'ctx>,
         args: Vec<Value<'ctx>>,
     ) -> Result<Value<'ctx>, ErrList> {
         log_system.borrow_mut().push(args.clone());
@@ -839,7 +841,7 @@ fn test_system_state_ffi() {
     }
 
 
-    
+    //we will use these for freeing later
     let  root_ptr;
     let  print_ptr;
     let  system_ptr;

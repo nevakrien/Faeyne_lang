@@ -3,7 +3,7 @@ use crate::ir;
 use crate::ir::Value;
 
 use crate::translate::translate_program;
-use crate::system::get_system;
+use crate::system::{get_system,FreeHandle};
 use crate::lexer::Lexer;
 use crate::parser;
 
@@ -23,8 +23,10 @@ pub fn safe_run(input: &'static str) {
 }
 
 
-pub unsafe fn clean_string_run(junk:(*mut ir::GlobalScope,*mut StringTable<'static>,*mut str)){
-    let (global_raw,table_raw,raw_str) = junk;
+pub unsafe fn clean_string_run(junk:(FreeHandle<'_>,*mut ir::GlobalScope,*mut StringTable<'static>,*mut str)){
+    let (handle,global_raw,table_raw,raw_str) = junk;
+    handle.free();
+    
     if !global_raw.is_null(){
         _ = Box::from_raw(&mut *global_raw);
     }
@@ -36,9 +38,9 @@ pub unsafe fn clean_string_run(junk:(*mut ir::GlobalScope,*mut StringTable<'stat
     }
 }
 
-pub unsafe fn clean_str_run(junk: (*mut ir::GlobalScope,*mut StringTable<'static>)){
-    let (global_raw,table_raw) = junk;
-    
+pub unsafe fn clean_str_run(junk: (FreeHandle<'_>,*mut ir::GlobalScope<'static>, *mut StringTable<'static>)){
+    let (handle,global_raw,table_raw) = junk;
+    handle.free();
     if !global_raw.is_null(){
         _ = Box::from_raw(&mut *global_raw);
     }
@@ -47,7 +49,7 @@ pub unsafe fn clean_str_run(junk: (*mut ir::GlobalScope,*mut StringTable<'static
     }
 }
 
-pub fn run_str(input_ref: &'static str) ->(Value<'static>,(*mut ir::GlobalScope,*mut StringTable<'static>)) {
+pub fn run_str(input_ref: &'static str) ->(Value<'static>,(FreeHandle<'_>,*mut ir::GlobalScope<'static>, *mut StringTable<'static>)) {
     let lexer = Lexer::new(input_ref);
     let table = Box::leak(Box::new(StringTable::new()));
     let table_raw = table as *mut StringTable;
@@ -68,19 +70,19 @@ pub fn run_str(input_ref: &'static str) ->(Value<'static>,(*mut ir::GlobalScope,
 
     let ir::Value::Func(main_func) = global.get(table.get_id("main")).expect("We need a main function") else {unreachable!()};
 
-    let system = get_system(table);
+    let (system,handle) = get_system(table);
 
     let ans = main_func.eval(vec![system]).unwrap();
 
-    (ans,(global_raw, table_raw))
+    (ans,(handle,global_raw, table_raw))
 }
 
 
-pub fn run_string(code: String) -> (Value<'static>,(*mut ir::GlobalScope<'static>,*mut StringTable<'static>,*mut str)) {
+pub fn run_string(code: String) -> (Value<'static>,(FreeHandle<'static>, *mut ir::GlobalScope<'static>,*mut StringTable<'static>,*mut str)) {
     let input_ref = code.leak();
     let raw_str = input_ref as *mut str;
 
-    let (ans,(global_raw, table_raw)) = run_str(input_ref);
+    let (ans,(handle, global_raw, table_raw)) = run_str(input_ref);
 
-    (ans,(global_raw, table_raw, raw_str))
+    (ans,(handle, global_raw, table_raw, raw_str))
 }
