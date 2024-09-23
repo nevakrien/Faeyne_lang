@@ -25,7 +25,10 @@ pub fn safe_run(input: &'static str) {
 
 pub unsafe fn clean_string_run(junk:(FreeHandle<'_>,*mut ir::GlobalScope,*mut StringTable<'static>,*mut str)){
     let (handle,global_raw,table_raw,raw_str) = junk;
+    {
     handle.free();
+
+    }
     
     if !global_raw.is_null(){
         _ = Box::from_raw(&mut *global_raw);
@@ -40,7 +43,10 @@ pub unsafe fn clean_string_run(junk:(FreeHandle<'_>,*mut ir::GlobalScope,*mut St
 
 pub unsafe fn clean_str_run(junk: (FreeHandle<'_>,*mut ir::GlobalScope<'static>, *mut StringTable<'static>)){
     let (handle,global_raw,table_raw) = junk;
-    handle.free();
+    {
+        handle.free();
+
+    }
     if !global_raw.is_null(){
         _ = Box::from_raw(&mut *global_raw);
     }

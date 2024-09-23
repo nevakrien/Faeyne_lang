@@ -97,10 +97,13 @@ pub fn get_system<'ctx>(string_table: &'static StringTable<'ctx>) -> (Value<'ctx
     };
 
     let mut b :Box<DynFFI<'ctx>>= Box::new(x);
+    let ptr = Box::into_raw(b);
+    handle.vars.push(ptr);
+    let leaked = unsafe{Box::leak(Box::from_raw(ptr))};
     // let ptr = {b.as_mut() as *mut _}; 
     // handle.vars.push(ptr);
 
-    (Value::Func(FunctionHandle::StateFFI(Box::leak(b))),handle)
+    (Value::Func(FunctionHandle::StateFFI(leaked)),handle)
     
 }
 
@@ -115,8 +118,7 @@ fn create_ffi_println<'ctx>(table: &'static StringTable<'ctx>,handle:&mut FreeHa
         Ok(Value::Nil)
     };
 
-    let mut b = Box::new(x);
-    // let ptr = {b.as_mut() as *mut _};
-    // handle.vars.push(ptr);
-    Box::leak(b)
+    let ptr = Box::into_raw(Box::new(x));
+    handle.vars.push(ptr);
+    unsafe{Box::leak(Box::from_raw(ptr))}
 }
