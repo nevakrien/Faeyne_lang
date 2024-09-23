@@ -803,53 +803,60 @@ fn test_system_ffi_mock() {
     });
 }
 
+
 #[test]
 fn test_system_state_ffi() {
-    use std::cell::RefCell;
+    use std::cell::RefCell;     
     
-    let root = Box::leak(Box::new(GlobalScope::default()));
-    let root_ptr = root as *mut GlobalScope;
+    // `ffi_println` logs the arguments into `log_print` and returns `Value::Nil`
+    fn ffi_println<'ctx>(
+        log_print: GcPointer<RefCell<Vec<Vec<Value<'ctx>>>>>,
+        args: Vec<Value<'ctx>>,
+    ) -> Result<Value<'ctx>, ErrList> {
+        log_print.borrow_mut().push(args.clone());
+        Ok(Value::Nil)
+    }
+
+    // `ffi_system` logs the arguments into `log_system` and returns a function handle to `ffi_println`
+    fn ffi_system<'ctx>(
+        log_system: GcPointer<RefCell<Vec<Vec<Value<'ctx>>>>>,
+        print_func: * const dyn Fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList>,
+        args: Vec<Value<'ctx>>,
+    ) -> Result<Value<'ctx>, ErrList> {
+        log_system.borrow_mut().push(args.clone());
+
+        
+
+        unsafe {Ok(Value::Func(FunctionHandle::StateFFI(&*print_func)))}
+    }
+
+    // Helper function to constrain the closure with a lifetime
+    fn constrain_lifetime<'ctx, F>(f: F) -> F
+    where
+        F: Fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> + 'ctx,
+    {
+        f
+    }
+
+
+    
+    let  root_ptr;
+    let  print_ptr;
+    let  system_ptr;
+
+    
 
     {    
         // Step 1: Create mutable buffers for logging (no static references)
+        
+        let root = Box::leak(Box::new(GlobalScope::default()));
+        root_ptr = root as *mut _;
+
+        
+        
         let log_print: GcPointer<RefCell<Vec<Vec<Value>>>> = GcPointer::new(RefCell::new(Vec::new()));
         let log_system: GcPointer<RefCell<Vec<Vec<Value>>>> = GcPointer::new(RefCell::new(Vec::new()));
-
-        // Step 2: Define the internal private functions for `ffi_println` and `ffi_system`
-
-        // `ffi_println` logs the arguments into `log_print` and returns `Value::Nil`
-        fn ffi_println<'ctx>(
-            log_print: GcPointer<RefCell<Vec<Vec<Value<'ctx>>>>>,
-            args: Vec<Value<'ctx>>,
-        ) -> Result<Value<'ctx>, ErrList> {
-            log_print.borrow_mut().push(args.clone());
-            Ok(Value::Nil)
-        }
-
-        // `ffi_system` logs the arguments into `log_system` and returns a function handle to `ffi_println`
-        fn ffi_system<'ctx>(
-            log_system: GcPointer<RefCell<Vec<Vec<Value<'ctx>>>>>,
-            log_print: GcPointer<RefCell<Vec<Vec<Value<'ctx>>>>>,
-            args: Vec<Value<'ctx>>,
-        ) -> Result<Value<'ctx>, ErrList> {
-            log_system.borrow_mut().push(args.clone());
-
-            // Box the `ffi_println` closure and return a mutable reference to it
-            let boxed_println: Box<dyn Fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList>> =
-                Box::new(move |a: Vec<Value<'ctx>>| -> Result<Value<'ctx>, ErrList> {
-                    ffi_println(log_print.clone(), a)
-                });
-
-            Ok(Value::Func(FunctionHandle::StateFFI(Box::leak(boxed_println))))
-        }
-
-        // Helper function to constrain the closure with a lifetime
-        fn constrain_lifetime<'ctx, F>(f: F) -> F
-        where
-            F: Fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> + 'ctx,
-        {
-            f
-        }
+        
 
 
         // Step 3: Initialize the scope (no leaking, just normal scoped variables)
@@ -862,14 +869,25 @@ fn test_system_state_ffi() {
         let log_system_clone = log_system.clone();
         let log_print_clone = log_print.clone();
 
-        // Add the `ffi_system` closure to the scope (returning a mutable reference instead of leaking)
-        let boxed_system = constrain_lifetime(move |args: Vec<Value<'_>>| -> Result<Value<'_>, ErrList> {
-            ffi_system(log_system_clone.clone(), log_print_clone.clone(), args)
-        });
+        // Box the `ffi_println` closure and return a mutable reference to it
+        let println_ref =
+            Box::leak(Box::new(constrain_lifetime(move |a: Vec<Value<'_>>| -> Result<Value<'_>, ErrList> {
+                ffi_println(log_print_clone.clone(), a)
+            })));
+        print_ptr = println_ref as *mut _; 
 
+        // Add the `ffi_system` closure to the scope (returning a mutable reference instead of leaking)
+        let system_ref = Box::leak(Box::new(constrain_lifetime(move |args: Vec<Value<'_>>| -> Result<Value<'_>, ErrList> {
+            ffi_system(
+                log_system_clone.clone(),
+                print_ptr,
+                 args)
+        })));
+
+        system_ptr = system_ref as *mut _;
         
         let mut scope = root.make_subscope();
-        scope.add(system_name, Value::Func(FunctionHandle::StateFFI(Box::leak(Box::new(boxed_system)))));
+        scope.add(system_name, Value::Func(FunctionHandle::StateFFI(system_ref)));
 
         // Step 4: Create the call structures
         // Inner call for accessing the `system` variable from the scope
@@ -904,7 +922,17 @@ fn test_system_state_ffi() {
     }
     //c style freeing
     unsafe {
+        {
+        _ = Box::from_raw(system_ptr);
+
+        }
+        {
+        _ = Box::from_raw(print_ptr);
+
+        }
+        {
         _ = Box::from_raw(root_ptr);
+        }
     }
 }
 
