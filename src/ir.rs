@@ -1,5 +1,4 @@
 #![allow(dead_code)]
-
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 
@@ -15,8 +14,6 @@ use crate::reporting::*;
 #[derive(Debug, PartialEq, Clone)]
 #[derive(Default)]
 pub struct GlobalScope<'ctx> {
-    //note that ctx can be thought of as 'static in the common case.
-    //this struct together with the FunctionHandle enum are the ONLY reason we need this 'ctx lifetime
     vars: HashMap<usize, (FuncSig, Block<'ctx>)>,
 }
 
@@ -292,7 +289,7 @@ pub enum LazyVal<'ctx>{
 }
 
 impl<'ctx> LazyVal<'ctx> {
-    pub fn eval<'parent>(&self,scope: &mut VarScope<'ctx, 'parent>) -> Result<ValueRet<'ctx     >,ErrList> 
+    pub fn eval<'parent>(&self,scope: &mut VarScope<'ctx, 'parent>) -> Result<ValueRet<'ctx>,ErrList> 
     where 'ctx: 'parent,
      {
         match self {
@@ -805,114 +802,139 @@ fn test_system_ffi_mock() {
         assert_eq!(log.borrow()[0], vec![Value::String(GcPointer::new("hello world".to_string()))]);
     });
 }
+
+
 #[test]
 fn test_system_state_ffi() {
-    use std::cell::RefCell;
-
-    // Initialize root for GlobalScope
-    let root = GlobalScope::default();
-
-    // Create log buffers
-    let log_print: GcPointer<RefCell<Vec<Vec<Value>>>> = GcPointer::new(RefCell::new(Vec::new()));
-    let log_system: GcPointer<RefCell<Vec<Vec<Value>>>> = GcPointer::new(RefCell::new(Vec::new()));
-
-    // Step 1: Define the `ffi_println` function
+    use std::cell::RefCell;     
+    
+    // `ffi_println` logs the arguments into `log_print` and returns `Value::Nil`
     fn ffi_println<'ctx>(
-        log_print: &RefCell<Vec<Vec<Value<'ctx>>>>,
+        log_print: GcPointer<RefCell<Vec<Vec<Value<'ctx>>>>>,
         args: Vec<Value<'ctx>>,
     ) -> Result<Value<'ctx>, ErrList> {
         log_print.borrow_mut().push(args.clone());
         Ok(Value::Nil)
     }
 
-    // Step 2: Define the `ffi_system` function, now taking references for `log_system` and a reference to the boxed `ffi_println`
+    // `ffi_system` logs the arguments into `log_system` and returns a function handle to `ffi_println`
     fn ffi_system<'ctx>(
-        log_system: &RefCell<Vec<Vec<Value<'ctx>>>>,
-        log_print_box: &'ctx Box<dyn Fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> + 'ctx>,
+        log_system: GcPointer<RefCell<Vec<Vec<Value<'ctx>>>>>,
+        print_func: * const dyn Fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList>,
         args: Vec<Value<'ctx>>,
     ) -> Result<Value<'ctx>, ErrList> {
         log_system.borrow_mut().push(args.clone());
-        // Now use the passed-in reference to the boxed `ffi_println`
-        Ok(Value::Func(FunctionHandle::StateFFI(log_print_box)))
+
+        
+
+        unsafe {Ok(Value::Func(FunctionHandle::StateFFI(&*print_func)))}
     }
 
-    // Helper function to box the `ffi_println` and return it
-    fn create_println_box<'ctx>(
-        log_print: &'ctx RefCell<Vec<Vec<Value<'ctx>>>>,
-    ) -> Box<dyn Fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> + 'ctx> {
-        Box::new(move |a: Vec<Value<'ctx>>| -> Result<Value<'ctx>, ErrList> {
-            ffi_println(log_print, a)
-        })
+    // Helper function to constrain the closure with a lifetime
+    fn constrain_lifetime<'ctx, F>(f: F) -> F
+    where
+        F: Fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> + 'ctx,
+    {
+        f
     }
 
-    // Helper function to box `ffi_system` and return it
-    fn create_system_box<'ctx>(
-        log_system: &'ctx RefCell<Vec<Vec<Value<'ctx>>>>,
-        log_print_box: &'ctx Box<dyn Fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> + 'ctx>,
-    ) -> Box<dyn Fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> + 'ctx> {
-        Box::new(move |args: Vec<Value<'ctx>>| -> Result<Value<'ctx>, ErrList> {
-            ffi_system(log_system, log_print_box, args)
-        })
+
+    
+    let  root_ptr;
+    let  print_ptr;
+    let  system_ptr;
+
+    
+
+    {    
+        // Step 1: Create mutable buffers for logging (no static references)
+        
+        let root = Box::leak(Box::new(GlobalScope::default()));
+        root_ptr = root as *mut _;
+
+        
+        
+        let log_print: GcPointer<RefCell<Vec<Vec<Value>>>> = GcPointer::new(RefCell::new(Vec::new()));
+        let log_system: GcPointer<RefCell<Vec<Vec<Value>>>> = GcPointer::new(RefCell::new(Vec::new()));
+        
+
+
+        // Step 3: Initialize the scope (no leaking, just normal scoped variables)
+        let mut string_table = StringTable::new();
+        let system_name = string_table.get_id("system");
+        let println_name = string_table.get_id(":println");
+
+
+        // Clone GcPointer before moving into the closure
+        let log_system_clone = log_system.clone();
+        let log_print_clone = log_print.clone();
+
+        // Box the `ffi_println` closure and return a mutable reference to it
+        let println_ref =
+            Box::leak(Box::new(constrain_lifetime(move |a: Vec<Value<'_>>| -> Result<Value<'_>, ErrList> {
+                ffi_println(log_print_clone.clone(), a)
+            })));
+        print_ptr = println_ref as *mut _; 
+
+        // Add the `ffi_system` closure to the scope (returning a mutable reference instead of leaking)
+        let system_ref = Box::leak(Box::new(constrain_lifetime(move |args: Vec<Value<'_>>| -> Result<Value<'_>, ErrList> {
+            ffi_system(
+                log_system_clone.clone(),
+                print_ptr,
+                 args)
+        })));
+
+        system_ptr = system_ref as *mut _;
+        
+        let mut scope = root.make_subscope();
+        scope.add(system_name, Value::Func(FunctionHandle::StateFFI(system_ref)));
+
+        // Step 4: Create the call structures
+        // Inner call for accessing the `system` variable from the scope
+        let system_call = Call {
+            called: Box::new(LazyVal::Ref(system_name)),
+            args: vec![LazyVal::Terminal(Value::Atom(println_name))],
+            debug_span: Span::new(0, 1),
+        };
+
+        // Outer call for `system(:println)("hello world")`
+        let outer_call = Call {
+            called: Box::new(LazyVal::FuncCall(system_call)),
+            args: vec![LazyVal::Terminal(Value::String(GcPointer::new(
+                "hello world".to_string(),
+            )))],
+            debug_span: Span::new(0, 1),
+        };
+
+        // Step 5: Evaluate the outer call
+        let ans = outer_call.eval(&mut scope).unwrap();
+        assert_eq!(ans, ValueRet::Local(Value::Nil));
+
+        // Step 6: Validate that the logs were updated correctly
+        assert_eq!(log_system.borrow().len(), 1);
+        assert_eq!(log_system.borrow()[0], vec![Value::Atom(println_name)]);
+
+        assert_eq!(log_print.borrow().len(), 1);
+        assert_eq!(
+            log_print.borrow()[0],
+            vec![Value::String(GcPointer::new("hello world".to_string()))]
+        );
     }
+    //c style freeing
+    unsafe {
+        {
+        _ = Box::from_raw(system_ptr);
 
-    // Helper function to add the boxed closure to the scope
-    fn add_function_to_scope<'ctx>(
-        scope: &mut VarScope<'ctx, '_>,
-        system_name: usize,
-        boxed_closure: &'ctx dyn Fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList>,
-    ) {
-        scope.add(system_name, Value::Func(FunctionHandle::StateFFI(boxed_closure)));
+        }
+        {
+        _ = Box::from_raw(print_ptr);
+
+        }
+        {
+        _ = Box::from_raw(root_ptr);
+        }
     }
-
-    // Step 3: Initialize string table and IDs
-    let mut string_table = StringTable::new();
-    let system_name = string_table.get_id("system");
-    let println_name = string_table.get_id(":println");
-
-    // Step 4: Create the boxed `ffi_println`
-    let boxed_println = create_println_box(&log_print);
-
-    // Step 5: Create the boxed `ffi_system` that takes a reference to the boxed `ffi_println`
-    let boxed_system = create_system_box(&log_system, &boxed_println);
-
-    // Step 6: Add boxed `ffi_system` to the scope
-    let mut scope = root.make_subscope();
-    add_function_to_scope(&mut scope, system_name, &boxed_system);
-
-    // Step 7: Create the call structures
-    // Inner call for accessing the `system` variable from the scope
-    let system_call = Call {
-        called: Box::new(LazyVal::Ref(system_name)),
-        args: vec![LazyVal::Terminal(Value::Atom(println_name))],
-        debug_span: Span::new(0, 1),
-    };
-
-    // Outer call for `system(:println)("hello world")`
-    let outer_call = Call {
-        called: Box::new(LazyVal::FuncCall(system_call)),
-        args: vec![LazyVal::Terminal(Value::String(GcPointer::new(
-            "hello world".to_string(),
-        )))],
-        debug_span: Span::new(0, 1),
-    };
-
-    // Step 8: Evaluate the outer call
-    let ans = outer_call.eval(&mut scope).unwrap();
-    assert_eq!(ans, ValueRet::Local(Value::Nil));
-
-    // Step 9: Validate that the logs were updated correctly
-    assert_eq!(log_system.borrow().len(), 1);
-    assert_eq!(log_system.borrow()[0], vec![Value::Atom(println_name)]);
-
-    assert_eq!(log_print.borrow().len(), 1);
-    assert_eq!(
-        log_print.borrow()[0],
-        vec![Value::String(GcPointer::new("hello world".to_string()))]
-    );
 }
-
-
-
 
 
 
