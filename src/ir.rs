@@ -458,6 +458,7 @@ impl<'ctx> GlobalFunc<'ctx> {
         }
         
         self.inner.eval(&mut scope).map(|x| x.into())
+             
     }
 }
 
@@ -476,7 +477,7 @@ impl<'ctx> Func<'ctx> {
             scope.add(*a,args[i].clone());
         }
         
-        self.inner.eval(&mut scope).map(move |x| x.into())
+        self.inner.eval(&mut scope).map(move |x| x.into()) 
     }
 }
 
@@ -705,7 +706,11 @@ impl<'ctx> Call<'ctx> {
                 }}
             };
         }
-        handle.eval(arg_values).map(move |v| v.into())
+        // handle.eval(arg_values).map(move |v| v.into())
+        match handle.eval(arg_values) {
+            Ok(x) => Ok(x.into()),
+            Err(err) => Err(Error::Stacked(InternalError{span:self.debug_span,err}).to_list())
+        }
     }
     pub fn add_to_closure(&self,scope: &VarScope<'ctx,'_>,closure : &mut ClosureScope<'ctx>) -> Result<(),ErrList> {
         let mut ans = self.called.add_to_closure(scope,closure);

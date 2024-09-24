@@ -18,7 +18,7 @@ pub enum Error {
     Missing(UndefinedName),
     UnreachableCase(UnreachableCase),
     NoneCallble(NoneCallble),
-    Stacked(Internal),
+    Stacked(InternalError),
     //UndocumentedError,
 }
 
@@ -83,7 +83,7 @@ pub struct UndefinedName {
 }
 
 #[derive(Debug,PartialEq)]
-pub struct Internal {
+pub struct InternalError {
     pub span : Span,
     pub err : ErrList
 }
@@ -253,8 +253,8 @@ fn emit_error(
         Error::NoneCallble(_none_call) => Diagnostic::error()
             .with_message("Attempted to call a non-callable object."),
 
-        Error::Stacked(Internal { span, err }) => {
-            let diagnostic = Diagnostic::error().with_message("Internal error(s) happened here").with_labels(vec![
+        Error::Stacked(InternalError { span, err }) => {
+            let diagnostic = Diagnostic::error().with_message("Function Call Errored").with_labels(vec![
                 Label::primary(file_id, span.start().to_usize()..span.end().to_usize())
                     ,
             ]);
@@ -338,7 +338,7 @@ fn test_err_list_reporting_with_stacking() {
     });
 
     // Add an internal error wrapped inside another error (stacked errors)
-    let internal_err = Error::Stacked(Internal {
+    let internal_err = Error::Stacked(InternalError {
         span: Span::new(ByteIndex(23), ByteIndex(27)),
         err: vec_to_list(vec![
             Error::Missing(UndefinedName { id: undef_id }),
