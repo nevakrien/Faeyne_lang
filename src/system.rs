@@ -17,6 +17,7 @@ pub const FUNC_ID: usize = 6;
 pub const UNDERSCORE_ID: usize = 7;
 pub const PRINTLN_ID: usize = 8;
 pub const TYPE_ATOM_ID: usize = 9;
+pub const MAIN_ID: usize = 10;
 
 pub fn preload_table(table: &mut StringTable) {
     assert_eq!(table.get_id(":nil"), NIL_ID);
@@ -29,6 +30,7 @@ pub fn preload_table(table: &mut StringTable) {
     assert_eq!(table.get_id("_"), UNDERSCORE_ID);
     assert_eq!(table.get_id(":println"), PRINTLN_ID);
     assert_eq!(table.get_id(":type"), TYPE_ATOM_ID);
+    assert_eq!(table.get_id("main"), MAIN_ID);
 }
 
 #[macro_export]
@@ -43,6 +45,7 @@ macro_rules! get_id {
     ("_") => { UNDERSCORE_ID };
     (":println") => { PRINTLN_ID };
     (":type") => { TYPE_ATOM_ID };
+    ("main") => { MAIN_ID };
     ($other:expr) => { // Fallback to the runtime version if it's not predefined
         $other
     };

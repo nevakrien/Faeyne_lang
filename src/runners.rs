@@ -1,3 +1,5 @@
+use crate::system::MAIN_ID;
+use crate::get_id;
 use crate::ast::StringTable;
 use crate::ir;
 use crate::ir::Value;
@@ -74,7 +76,7 @@ pub fn run_str(input_ref: &'static str) ->(Value<'static>,(FreeHandle<'static>,*
     let global = Box::leak(translate_program(result, table).unwrap());
     let global_raw = global as *mut ir::GlobalScope;
 
-    let ir::Value::Func(main_func) = global.get(table.get_id("main")).expect("We need a main function") else {unreachable!()};
+    let ir::Value::Func(main_func) = global.get(get_id!("main")).expect("We need a main function") else {unreachable!()};
 
     let (system,handle) = get_system(table);
 
