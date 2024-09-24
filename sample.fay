@@ -77,6 +77,13 @@ def err_in_lamda_def() {
     };
 }
 
+def err_compile_time_in_lamda_def() {
+    x=1;
+    f = fn () -> {
+        x+true
+    };
+    f()
+}
 
 def main(system){
     bug_main(system);
@@ -95,5 +102,10 @@ def main(system){
 
     valid_lambda() |> print();
     #err_in_lamda();
-    err_in_lamda_def();
+    #err_in_lamda_def();
+    #system(:read_file)('Cargo.toml') |>system(:println)();
+    system(:write_file)('junk','I made this in Fayenelang') |>system(:println)();
+    system(:delete_file)('junk') |>system(:println)();
+
+    err_compile_time_in_lamda_def();
 }
