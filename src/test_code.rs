@@ -143,14 +143,45 @@ fn test_type_checks() {
     safe_run_compare(input, Value::Atom(get_id!(":string")));
 }
 
+#[test]
+fn test_string_rev() {
+    let input = r#"
+        def rev(id,ag,source) {
+            match id>=0{
+                true => {
+                    ag=ag+source(id);
+                    rev(id-1,ag,source)
+                },
+                false => ag,
+            }
+        }
 
-// #[test]
-// fn test_atom_str() {
-//     let input = r#"
-//         def main(system) {
-//             system(:to_string)(:hi)
-//         }
-//     "#;
+        def reverse_string(s) {
+            #type check
+            match ''+s == s {
+                true => rev(s(:len) -1,'',s),
+                false => :err
+            }
+        }
 
-//     safe_run_compare(input, Value::String(GcPointer::new(":hi".to_string())));
-// }
+        def main(system) {
+            reverse_string('1234567')
+        }
+    "#;
+
+    safe_run_compare(input, Value::String(GcPointer::new("7654321".to_string())));
+}
+
+
+
+
+#[test]
+fn test_atom_str() {
+    let input = r#"
+        def main(system) {
+            system(:to_string)(:hi)
+        }
+    "#;
+
+    safe_run_compare(input, Value::String(GcPointer::new(":hi".to_string())));
+}

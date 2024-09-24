@@ -1,5 +1,5 @@
-use std::io::Write;
-use std::fs::{read_dir,remove_dir,create_dir,remove_file,OpenOptions};
+use std::io::{Write,Read};
+use std::fs::{read_dir,remove_dir,create_dir,remove_file,OpenOptions,File};
 
 use crate::reporting::*;
 use crate::ir::*;
@@ -27,21 +27,24 @@ pub const ATOM_ID: usize = 8;
 pub const FUNC_ID: usize = 9;
 pub const TYPE_ATOM_ID: usize = 10;
 
+pub const TO_STRING_ID: usize = 11;
+
 // Special IDs
-pub const UNDERSCORE_ID: usize = 11;
-pub const MAIN_ID: usize = 12;
+pub const UNDERSCORE_ID: usize = 12;
+pub const MAIN_ID: usize = 13;
 
 // Function IDs
-pub const PRINTLN_ID: usize = 13;
-pub const READ_FILE_ID: usize = 14;
-pub const WRITE_FILE_ID: usize = 15;
-pub const DELETE_FILE_ID: usize = 16;
+pub const PRINTLN_ID: usize = 14;
+pub const READ_FILE_ID: usize = 15;
+pub const WRITE_FILE_ID: usize = 16;
+pub const DELETE_FILE_ID: usize = 17;
 
-pub const READ_DIR_ID: usize = 17;
-pub const MAKE_DIR_ID: usize = 18;
-pub const DELETE_DIR_ID: usize = 19;
+pub const READ_DIR_ID: usize = 18;
+pub const MAKE_DIR_ID: usize = 19;
+pub const DELETE_DIR_ID: usize = 20;
 
-pub const STRING_OUT_OF_BOUNDS: usize = 20;
+pub const STRING_OUT_OF_BOUNDS: usize = 21;
+
 
 pub fn preload_table(table: &mut StringTable) {
     assert_eq!(table.get_id(":nil"), NIL_ID);
@@ -57,6 +60,7 @@ pub fn preload_table(table: &mut StringTable) {
     assert_eq!(table.get_id(":atom"), ATOM_ID);
     assert_eq!(table.get_id(":func"), FUNC_ID);
     assert_eq!(table.get_id(":type"), TYPE_ATOM_ID);
+    assert_eq!(table.get_id(":to_string"), TO_STRING_ID);
 
     assert_eq!(table.get_id("_"), UNDERSCORE_ID);
     assert_eq!(table.get_id("main"), MAIN_ID);
@@ -93,6 +97,7 @@ macro_rules! get_id {
     ("main") => { MAIN_ID };
 
     (":println") => { PRINTLN_ID };
+    (":to_string") => { TO_STRING_ID };
     (":read_file") => { READ_FILE_ID };
     (":write_file") => { WRITE_FILE_ID };
     (":delete_file") => { DELETE_FILE_ID };
@@ -140,6 +145,8 @@ impl<'ctx> FreeHandle<'ctx>{
 pub fn get_system<'ctx>(string_table: &'static StringTable<'ctx>) -> (Value<'ctx>,FreeHandle<'ctx>) {
     let mut handle = FreeHandle::new();
     let print_fn = {create_ffi_println(string_table,&mut handle)};
+    let to_string_fn = {create_ffi_to_string(string_table,&mut handle)};
+
     let file_read_fn = {create_ffi_file_read(string_table,&mut handle)};
     let file_write_fn = {create_ffi_file_write(string_table,&mut handle)};
     let file_delete_fn = {create_ffi_file_delete(string_table,&mut handle)};
@@ -166,6 +173,10 @@ pub fn get_system<'ctx>(string_table: &'static StringTable<'ctx>) -> (Value<'ctx
             get_id!(":println") => Ok(Value::Func(FunctionHandle::StateFFI(
                 print_fn,
             ))),
+            get_id!(":to_string") => Ok(Value::Func(FunctionHandle::StateFFI(
+                to_string_fn,
+            ))),
+            
             get_id!(":type") => Ok(Value::Func(FunctionHandle::FFI(
                 get_type_ffi,
             ))),
@@ -220,8 +231,26 @@ fn create_ffi_println<'ctx>(table: &'static StringTable<'ctx>,handle:&mut FreeHa
     handle.make_ref(Box::new(x))
 }
 
-use std::fs::{File};
-use std::io::{Read};
+fn create_ffi_to_string<'ctx>(table: &'static StringTable<'ctx>,handle:&mut FreeHandle<'ctx>) ->  &'static DynFFI<'ctx> {
+    let x  =  |args: Vec<Value<'ctx>>| -> Result<Value<'ctx>, ErrList> {
+        // Here we capture the string table reference and print using it
+        if args.len()!=1 {
+            return Err(Error::Sig(SigError {}).to_list());
+        }
+
+        match &args[0]{
+            Value::String(s) => Ok(Value::String(s.clone())),
+            _=> Ok(Value::String(GcPointer::new(to_string(&args[0],table))))
+        }
+        
+    };
+
+
+    handle.make_ref(Box::new(x))
+}
+
+
+
 
 #[allow(dead_code,unused_variables,unreachable_code)]
 fn create_ffi_file_read<'ctx>(

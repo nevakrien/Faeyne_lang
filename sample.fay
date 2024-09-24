@@ -96,12 +96,13 @@ def rev(id,ag,source) {
 }
 
 def reverse_string(s) {
-    #match s.type {
-    #    :string => {},
-    #    _=>{return :err;},
-    #};
+    #type check
+    match ''+s == s {
+        true => rev(s(:len) -1,'',s),
+        false => :err
+    }
 
-    rev(s(:len) -1,'',s)
+    
 }
 
 def main(system){
@@ -137,6 +138,7 @@ def main(system){
     system(:println)(s(:len));
 
     reverse_string(s)|>system(:println)();
+    reverse_string(:ok)|>system(:println)();
 
     #x = 1;
     #x();
