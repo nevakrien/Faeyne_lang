@@ -3,72 +3,84 @@ use crate::ir::*;
 use crate::basic_ops::*;
 use crate::ast::StringTable;
 
-//IMPORTANT first value is assumed to not be a var
-//if this is broken then Lamda match statments will break
-//we have it as the nil type so that we can do easy nil checks
+// IMPORTANT: The first value is assumed not to be a variable.
+// If this is broken, then Lambda match statements will break.
+// We use NIL_ID as the nil type so that we can perform easy nil checks.
 
+// Core IDs
 pub const NIL_ID: usize = 0;
-pub const BOOL_ID: usize = 1;
-pub const STRING_ID: usize = 2;
-pub const INT_ID: usize = 3;
-pub const FLOAT_ID: usize = 4;
-pub const ATOM_ID: usize = 5;
-pub const FUNC_ID: usize = 6;
-pub const UNDERSCORE_ID: usize = 7;
-pub const PRINTLN_ID: usize = 8;
+pub const ERR_ID: usize = 1;
+pub const OK_ID: usize = 2;
+
+// Type IDs
+pub const BOOL_ID: usize = 3;
+pub const STRING_ID: usize = 4;
+pub const INT_ID: usize = 5;
+pub const FLOAT_ID: usize = 6;
+pub const ATOM_ID: usize = 7;
+pub const FUNC_ID: usize = 8;
 pub const TYPE_ATOM_ID: usize = 9;
-pub const MAIN_ID: usize = 10;
-pub const ERR_ID: usize = 11;
-pub const READ_FILE_ID: usize = 12;
-pub const OK_ID: usize = 13;
+
+// Special IDs
+pub const UNDERSCORE_ID: usize = 10;
+pub const MAIN_ID: usize = 11;
+
+// Function IDs
+pub const PRINTLN_ID: usize = 12;
+pub const READ_FILE_ID: usize = 13;
 pub const WRITE_FILE_ID: usize = 14;
 pub const DELETE_FILE_ID: usize = 15;
 
-
-
 pub fn preload_table(table: &mut StringTable) {
     assert_eq!(table.get_id(":nil"), NIL_ID);
+    assert_eq!(table.get_id(":err"), ERR_ID);
+    assert_eq!(table.get_id(":ok"), OK_ID);
+
     assert_eq!(table.get_id(":bool"), BOOL_ID);
     assert_eq!(table.get_id(":string"), STRING_ID);
     assert_eq!(table.get_id(":int"), INT_ID);
     assert_eq!(table.get_id(":float"), FLOAT_ID);
     assert_eq!(table.get_id(":atom"), ATOM_ID);
     assert_eq!(table.get_id(":func"), FUNC_ID);
-    assert_eq!(table.get_id("_"), UNDERSCORE_ID);
-    assert_eq!(table.get_id(":println"), PRINTLN_ID);
     assert_eq!(table.get_id(":type"), TYPE_ATOM_ID);
+
+    assert_eq!(table.get_id("_"), UNDERSCORE_ID);
     assert_eq!(table.get_id("main"), MAIN_ID);
-    assert_eq!(table.get_id(":err"), ERR_ID);
+    
+    assert_eq!(table.get_id(":println"), PRINTLN_ID);
     assert_eq!(table.get_id(":read_file"), READ_FILE_ID);
-    assert_eq!(table.get_id(":ok"), OK_ID);
     assert_eq!(table.get_id(":write_file"), WRITE_FILE_ID);
     assert_eq!(table.get_id(":delete_file"), DELETE_FILE_ID);
-
-
 }
 
 #[macro_export]
 macro_rules! get_id {
     (":nil") => { NIL_ID };
+    (":err") => { ERR_ID };
+    (":ok") => { OK_ID };
+
     (":bool") => { BOOL_ID };
     (":string") => { STRING_ID };
     (":int") => { INT_ID };
     (":float") => { FLOAT_ID };
     (":atom") => { ATOM_ID };
     (":func") => { FUNC_ID };
-    ("_") => { UNDERSCORE_ID };
-    (":println") => { PRINTLN_ID };
     (":type") => { TYPE_ATOM_ID };
+
+    ("_") => { UNDERSCORE_ID };
     ("main") => { MAIN_ID };
-    (":err") => { ERR_ID };
-    (":ok") => { OK_ID };
+
+    (":println") => { PRINTLN_ID };
     (":read_file") => { READ_FILE_ID };
     (":write_file") => { WRITE_FILE_ID };
     (":delete_file") => { DELETE_FILE_ID };
+
     ($other:expr) => { // Fallback to the runtime version if it's not predefined
         $other
     };
 }
+
+
 
 
 

@@ -2,8 +2,8 @@
 
 use crate::runners::{safe_run, safe_run_compare};  // Assuming you have both safe_run and safe_run_compare
 use crate::ir::*;
-use crate::system::*;
 use crate::get_id;
+use crate::system::*;
 
 #[test]
 fn simple_parse_hello_world_function() {
