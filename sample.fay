@@ -52,13 +52,31 @@ def factorial(i) {
 
 def err_in_lamda() {
     f = fn (x) -> {
-        y+x+true
+        x+true
     };
 
     a = :a;
 
     f(a)
 }
+
+def valid_lambda() {
+    f = fn (x) -> {
+        x
+    };
+
+    a = :a;
+
+    f(a)
+}
+
+
+def err_in_lamda_def() {
+    f = fn (x) -> {
+        y+x+true
+    };
+}
+
 
 def main(system){
     bug_main(system);
@@ -73,6 +91,9 @@ def main(system){
     #a = :ok;
     #a()
     #dumby(:dumb)
-    
-    err_in_lamda()
+    print = system(:println);
+
+    valid_lambda() |> print();
+    #err_in_lamda();
+    err_in_lamda_def();
 }

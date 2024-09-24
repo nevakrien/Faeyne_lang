@@ -164,7 +164,7 @@ impl<'ctx> Translate<'ctx,ir::LazyFunc<'ctx>>  for Lambda {
     fn translate(self, table: &StringTable<'ctx>) -> ir::LazyFunc<'ctx> {
         let sig = ir::FuncSig { arg_ids: self.sig };
         let body = self.body.translate(table);
-        ir::LazyFunc::new(sig, body)
+        ir::LazyFunc::new(sig, body,self.debug_span)
     }
 }
 

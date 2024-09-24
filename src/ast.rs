@@ -49,6 +49,7 @@ impl Ret {
 pub struct Lambda {
     pub sig: Vec<usize>,
     pub body: FuncBlock,
+    pub debug_span: Span,
 }
 
 #[derive(Debug,PartialEq)]

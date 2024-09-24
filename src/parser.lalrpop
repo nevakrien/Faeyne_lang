@@ -368,13 +368,15 @@ pub FuncDec: FuncDec = {
 };
 
 pub Lambda: Lambda = {
-    "fn" <sig:ArgList> <body:FuncBlock> => Lambda {
+    <start:@L> "fn" <sig:ArgList> <body:FuncBlock> <end:@R>=> Lambda  {
         sig,
         body,
+        debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
     },
-    "fn" <sig:ArgList> "->" <body:FuncBlock> => Lambda {
+    <start:@L> "fn" <sig:ArgList> "->" <body:FuncBlock> <end:@R> => Lambda  {
         sig,
         body,
+        debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
     }
 };
 

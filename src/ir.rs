@@ -390,12 +390,13 @@ impl<'ctx> Statment<'ctx>{
 pub struct LazyFunc<'ctx>{
     sig:FuncSig,
     inner:Block<'ctx>,
+    debug_span:Span,
 }
 
 impl<'ctx> LazyFunc<'ctx> {
-    pub fn new(sig : FuncSig,inner : Block<'ctx>) -> Self {
+    pub fn new(sig : FuncSig,inner : Block<'ctx>,debug_span:Span) -> Self {
        LazyFunc{
-            sig,inner
+            sig,inner,debug_span
        }
     }
     pub fn eval(&self,scope: &VarScope<'ctx, '_>) -> Result<Func<'ctx>,ErrList> {
@@ -403,12 +404,15 @@ impl<'ctx> LazyFunc<'ctx> {
         
         closure.add_args(&self.sig);
 
-        self.inner.add_to_closure(scope,&mut closure)?;        
-        Ok(Func {
-            sig:self.sig.clone(),
-            inner: self.inner.clone(),
-            closure
-        })
+        match self.inner.add_to_closure(scope,&mut closure){
+            Ok(_) =>Ok(Func {
+                        sig:self.sig.clone(),
+                        inner: self.inner.clone(),
+                        closure
+                    }),
+            Err(err) => Err(Error::Stacked(InternalError{err,span:self.debug_span}).to_list())
+        }  
+        
     }
 
     pub fn add_to_closure(&self,scope: &VarScope<'ctx, '_>,closure : &mut ClosureScope<'ctx>) -> Result<(),ErrList> {
