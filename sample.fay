@@ -106,6 +106,8 @@ def main(system){
     #system(:read_file)('Cargo.toml') |>system(:println)();
     system(:write_file)('junk','I made this in Fayenelang') |>system(:println)();
     system(:delete_file)('junk') |>system(:println)();
+    system(:delete_file)(:ok) |>system(:println)();
+
 
     err_compile_time_in_lamda_def();
 }

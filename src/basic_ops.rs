@@ -67,6 +67,11 @@ pub fn to_string<'ctx>(value: &Value<'ctx>, table: &StringTable<'ctx>) -> String
     }
 }
 
+pub fn try_string<'a,'ctx>(x: &'a Value<'ctx>) -> Result<&'a str,ErrList> {
+    let Value::String(gc) = x else { return Err(Error::Sig(SigError {}).to_list()); };
+    Ok(&*gc)
+}
+
 fn nerfed_to_string<'ctx>(value: &Value<'ctx>) -> String {
     match value {
         Value::Atom(id) => format!("Atom<{}>", id),

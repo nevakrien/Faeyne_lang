@@ -188,7 +188,8 @@ fn create_ffi_file_read<'ctx>(
             return Err(Error::Sig(SigError {}).to_list());
         }
 
-        let file_name = to_string(&args[0], table);
+        let file_name = try_string(&args[0])?;
+
 
         #[cfg(test)]{
             panic!("tried to read file... this is not allowed in atomated testing");
@@ -223,8 +224,9 @@ fn create_ffi_file_write<'ctx>(
             return Err(Error::Sig(SigError {}).to_list());
         }
 
-        let file_name = to_string(&args[0], table);
-        let content = to_string(&args[1], table);
+        let file_name = try_string(&args[0])?;
+        let content = try_string(&args[0])?;
+
 
         #[cfg(test)] {
             panic!("tried to write to file... this is not allowed in automated testing");
@@ -257,7 +259,8 @@ fn create_ffi_file_delete<'ctx>(
             return Err(Error::Sig(SigError {}).to_list());
         }
 
-        let path = to_string(&args[0], table);
+        // let path = to_string(&args[0], table);
+        let path = try_string(&args[0])?;
 
         #[cfg(test)] {
             panic!("tried to delete a file or directory... this is not allowed in automated testing");
