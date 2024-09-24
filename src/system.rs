@@ -122,6 +122,12 @@ pub struct FreeHandle<'ctx> {
 }
 
 
+impl<'ctx> Default for FreeHandle<'ctx> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'ctx> FreeHandle<'ctx>{
     pub fn new() -> Self {
         FreeHandle{vars:Vec::new()}
@@ -269,7 +275,7 @@ fn create_ffi_file_read<'ctx>(
             panic!("tried to read file... this is not allowed in atomated testing");
         }
 
-        let mut file = match File::open(&file_name) {
+        let mut file = match File::open(file_name) {
             Ok(file) => file,
             Err(_e) => return Ok(Value::Atom(get_id!(":err"))),
         };
@@ -305,7 +311,7 @@ fn create_ffi_file_write<'ctx>(
             panic!("tried to write to file... this is not allowed in automated testing");
         }
 
-        let mut file = match OpenOptions::new().create(true).write(true).open(&file_name) {
+        let mut file = match OpenOptions::new().create(true).write(true).open(file_name) {
             Ok(file) => file,
             Err(_e) => return Ok(Value::Atom(get_id!(":err"))),
         };
@@ -340,7 +346,7 @@ fn create_ffi_file_delete<'ctx>(
         }
 
         // Try deleting as a file first
-        if let Err(_file_err) = remove_file(&path) {
+        if let Err(_file_err) = remove_file(path) {
             // // If it's not a file, try deleting as a directory
             // if let Err(_dir_err) = remove_dir_all(&path) {
             //     return Ok(Value::Atom(get_id!(":err")));
@@ -372,7 +378,7 @@ fn create_ffi_create_dir<'ctx>(
             panic!("tried to create a directory... this is not allowed in automated testing");
         }
 
-        match create_dir(&dir_name) {
+        match create_dir(dir_name) {
             Ok(_) => Ok(Value::Atom(get_id!(":ok"))),
             Err(_) => Ok(Value::Atom(get_id!(":err"))),
         }
@@ -399,7 +405,7 @@ fn create_ffi_remove_dir<'ctx>(
             panic!("tried to remove a directory... this is not allowed in automated testing");
         }
 
-        match remove_dir(&dir_name) {
+        match remove_dir(dir_name) {
             Ok(_) => Ok(Value::Atom(get_id!(":ok"))),
             Err(_) => Ok(Value::Atom(get_id!(":err"))),
         }
@@ -426,7 +432,7 @@ fn create_ffi_read_dir<'ctx>(
             panic!("tried to read directory... this is not allowed in automated testing");
         }
 
-        let paths = match read_dir(&dir_name) {
+        let paths = match read_dir(dir_name) {
             Ok(paths) => paths,
             Err(_) => return Ok(Value::Atom(get_id!(":err"))),
         };

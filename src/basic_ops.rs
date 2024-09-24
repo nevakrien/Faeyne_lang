@@ -7,7 +7,7 @@ use crate::get_id;
 
 use crate::system::*;
 
-pub fn get_type_ffi<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+pub fn get_type_ffi(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
     if args.len() != 1 {
         Err(Error::Sig(SigError {}).to_list())
     } else {
@@ -15,11 +15,11 @@ pub fn get_type_ffi<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList
     }
 }
 
-pub fn get_type<'ctx>(v: Value<'ctx>) -> Value<'ctx> {
+pub fn get_type(v: Value<'_>) -> Value<'_> {
     Value::Atom(get_type_id(v))
 }
 
-pub fn get_type_id<'ctx>(v: Value<'ctx>) -> usize {
+pub fn get_type_id(v: Value<'_>) -> usize {
     match v {
         Value::Nil => get_id!(":nil"),
         Value::Bool(_) => get_id!(":bool"),
@@ -31,7 +31,7 @@ pub fn get_type_id<'ctx>(v: Value<'ctx>) -> usize {
     }
 }
 
-pub fn to_bool<'ctx>(v: &Value<'ctx>) -> bool {
+pub fn to_bool(v: &Value<'_>) -> bool {
     match v {
         Value::Bool(b) => *b,
         Value::Int(i) => *i != 0,
@@ -68,17 +68,17 @@ pub fn to_string<'ctx>(value: &Value<'ctx>, table: &StringTable<'ctx>) -> String
     }
 }
 
-pub fn try_string<'a,'ctx>(x: &'a Value<'ctx>) -> Result<&'a str,ErrList> {
+pub fn try_string<'a>(x: &'a Value<'_>) -> Result<&'a str,ErrList> {
     let Value::String(gc) = x else { return Err(Error::Sig(SigError {}).to_list()); };
-    Ok(&*gc)
+    Ok(gc)
 }
 
-pub fn try_int<'a,'ctx>(x: &'a Value<'ctx>) -> Result<i64,ErrList> {
+pub fn try_int(x: &Value<'_>) -> Result<i64,ErrList> {
     let Value::Int(i) = x else { return Err(Error::Sig(SigError {}).to_list()); };
     Ok(*i)
 }
 
-pub fn nerfed_to_string<'ctx>(value: &Value<'ctx>) -> String {
+pub fn nerfed_to_string(value: &Value<'_>) -> String {
     match value {
         Value::Atom(id) => format!("Atom<{}>", id),
         Value::Int(x) => format!("{}", x),
@@ -88,7 +88,7 @@ pub fn nerfed_to_string<'ctx>(value: &Value<'ctx>) -> String {
     }
 }
 
-pub fn call_string<'ctx>(s:GcPointer<String>,args:Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+pub fn call_string(s:GcPointer<String>,args:Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
     if args.len() != 1 {
         return Err(Error::Sig(SigError {}).to_list());
     }
@@ -104,7 +104,7 @@ pub fn call_string<'ctx>(s:GcPointer<String>,args:Vec<Value<'ctx>>) -> Result<Va
 
 // Arithmetic Functions
 
-pub fn buildin_add<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+pub fn buildin_add(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
     if args.len() != 2 {
         return Err(Error::Sig(SigError {}).to_list());
     }
@@ -133,7 +133,7 @@ pub fn buildin_add<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList>
     }
 }
 
-pub fn buildin_sub<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+pub fn buildin_sub(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
     if args.len() != 2 {
         return Err(Error::Sig(SigError {}).to_list());
     }
@@ -149,7 +149,7 @@ pub fn buildin_sub<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList>
     }
 }
 
-pub fn buildin_mul<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+pub fn buildin_mul(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
     if args.len() != 2 {
         return Err(Error::Sig(SigError {}).to_list());
     }
@@ -165,7 +165,7 @@ pub fn buildin_mul<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList>
     }
 }
 
-pub fn buildin_div<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+pub fn buildin_div(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
     if args.len() != 2 {
         return Err(Error::Sig(SigError {}).to_list());
     }
@@ -189,7 +189,7 @@ pub fn buildin_div<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList>
     }
 }
 
-pub fn buildin_int_div<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+pub fn buildin_int_div(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
     if args.len() != 2 {
         return Err(Error::Sig(SigError {}).to_list());
     }
@@ -204,7 +204,7 @@ pub fn buildin_int_div<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrL
     }
 }
 
-pub fn buildin_modulo<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+pub fn buildin_modulo(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
     if args.len() != 2 {
         return Err(Error::Sig(SigError {}).to_list());
     }
@@ -219,7 +219,7 @@ pub fn buildin_modulo<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrLi
     }
 }
 
-pub fn buildin_pow<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+pub fn buildin_pow(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
     if args.len() != 2 {
         return Err(Error::Sig(SigError {}).to_list());
     }
@@ -243,21 +243,21 @@ pub fn buildin_pow<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList>
 
 // Comparison Functions
 
-pub fn buildin_equal<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+pub fn buildin_equal(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
     if args.len() != 2 {
         return Err(Error::Sig(SigError {}).to_list());
     }
     Ok(Value::Bool(is_equal(&args[0], &args[1])))
 }
 
-pub fn buildin_not_equal<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+pub fn buildin_not_equal(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
     if args.len() != 2 {
         return Err(Error::Sig(SigError {}).to_list());
     }
     Ok(Value::Bool(!is_equal(&args[0], &args[1])))
 }
 
-pub fn buildin_smaller<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+pub fn buildin_smaller(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
     if args.len() != 2 {
         return Err(Error::Sig(SigError {}).to_list());
     }
@@ -270,7 +270,7 @@ pub fn buildin_smaller<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrL
     }
 }
 
-pub fn buildin_bigger<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+pub fn buildin_bigger(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
     if args.len() != 2 {
         return Err(Error::Sig(SigError {}).to_list());
     }
@@ -283,7 +283,7 @@ pub fn buildin_bigger<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrLi
     }
 }
 
-pub fn buildin_smaller_eq<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+pub fn buildin_smaller_eq(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
     if args.len() != 2 {
         return Err(Error::Sig(SigError {}).to_list());
     }
@@ -296,7 +296,7 @@ pub fn buildin_smaller_eq<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, E
     }
 }
 
-pub fn buildin_bigger_eq<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+pub fn buildin_bigger_eq(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
     if args.len() != 2 {
         return Err(Error::Sig(SigError {}).to_list());
     }
@@ -311,7 +311,7 @@ pub fn buildin_bigger_eq<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, Er
 
 // Bitwise Operations
 
-pub fn buildin_and<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+pub fn buildin_and(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
     if args.len() != 2 {
         return Err(Error::Sig(SigError {}).to_list());
     }
@@ -322,7 +322,7 @@ pub fn buildin_and<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList>
     }
 }
 
-pub fn buildin_or<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+pub fn buildin_or(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
     if args.len() != 2 {
         return Err(Error::Sig(SigError {}).to_list());
     }
@@ -333,7 +333,7 @@ pub fn buildin_or<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> 
     }
 }
 
-pub fn buildin_xor<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+pub fn buildin_xor(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
     if args.len() != 2 {
         return Err(Error::Sig(SigError {}).to_list());
     }
@@ -346,7 +346,7 @@ pub fn buildin_xor<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList>
 
 // Logical Operations
 
-pub fn buildin_double_and<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+pub fn buildin_double_and(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
     if args.len() != 2 {
         return Err(Error::Sig(SigError {}).to_list());
     }
@@ -355,7 +355,7 @@ pub fn buildin_double_and<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, E
     Ok(Value::Bool(lhs_bool && rhs_bool))
 }
 
-pub fn buildin_double_or<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+pub fn buildin_double_or(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
     if args.len() != 2 {
         return Err(Error::Sig(SigError {}).to_list());
     }
@@ -364,7 +364,7 @@ pub fn buildin_double_or<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, Er
     Ok(Value::Bool(lhs_bool || rhs_bool))
 }
 
-pub fn buildin_double_xor<'ctx>(args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+pub fn buildin_double_xor(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
     if args.len() != 2 {
         return Err(Error::Sig(SigError {}).to_list());
     }

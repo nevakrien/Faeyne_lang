@@ -101,8 +101,6 @@ def reverse_string(s) {
         true => rev(s(:len) -1,'',s),
         false => :err
     }
-
-    
 }
 
 def main(system){

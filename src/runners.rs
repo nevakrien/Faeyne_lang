@@ -66,7 +66,7 @@ pub fn run_str(input_ref: &'static str) ->(Value<'static>,(FreeHandle<'static>,*
     let result = match parser.parse(input_ref, table, lexer) {
         Ok(r) =>  r,
         Err(e) => {
-            report_parse_error(e,input_ref,&table); 
+            report_parse_error(e,input_ref,table); 
             panic!();
         }
     };
@@ -76,7 +76,7 @@ pub fn run_str(input_ref: &'static str) ->(Value<'static>,(FreeHandle<'static>,*
     let global =  match translate_program(result, table){
         Ok(r) =>  Box::leak(r),
         Err(e) => {
-            report_err_list(&e,input_ref,&table); 
+            report_err_list(&e,input_ref,table); 
             panic!();
         }
     };
@@ -89,7 +89,7 @@ pub fn run_str(input_ref: &'static str) ->(Value<'static>,(FreeHandle<'static>,*
     let ans = match main_func.eval(vec![system]) {
         Ok(r) => r,
         Err(e) => {
-            report_err_list(&e,input_ref,&table); 
+            report_err_list(&e,input_ref,table); 
             panic!();
         }
     };
