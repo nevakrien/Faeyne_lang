@@ -73,7 +73,13 @@ pub fn run_str(input_ref: &'static str) ->(Value<'static>,(FreeHandle<'static>,*
 
 
 
-    let global = Box::leak(translate_program(result, table).unwrap());
+    let global =  match translate_program(result, table){
+        Ok(r) =>  Box::leak(r),
+        Err(e) => {
+            report_err_list(&e,input_ref,&table); 
+            panic!();
+        }
+    };
     let global_raw = global as *mut ir::GlobalScope;
 
     let ir::Value::Func(main_func) = global.get(get_id!("main")).expect("We need a main function") else {unreachable!()};

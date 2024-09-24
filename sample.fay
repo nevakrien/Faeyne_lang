@@ -48,6 +48,7 @@ def factorial(i) {
         false => :err
     }
 }
+#def factorial(i){}
 
 def main(system){
     bug_main(system);
@@ -59,6 +60,8 @@ def main(system){
     system(:println)("hello"+ "world");
     system(:println)(system(:type)("hi"));
 
-    a(x)
+    #a = :ok;
+    #a()
+    #dumby(:dumb)
 
 }

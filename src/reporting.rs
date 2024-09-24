@@ -194,7 +194,7 @@ pub fn report_err_list(err_list: &ErrList, input_ref: &str, table: &StringTable)
                 .with_message("Match error")
                 .with_labels(vec![
                     Label::primary(file_id, m_err.span.start().to_usize()..m_err.span.end().to_usize())
-                        .with_message("Issue with match expression"),
+                        .with_message("match error: could not find a case"),
                 ]),
 
             Error::Sig(_s_err) => Diagnostic::error()
@@ -211,13 +211,13 @@ pub fn report_err_list(err_list: &ErrList, input_ref: &str, table: &StringTable)
                 let sig_display = sig.display_with_table(table);
                 Diagnostic::error()
                     .with_message(format!(
-                        "Unreachable case error: The case '{}' with signature {} is unreachable.",
+                        "The function '{}' with signature {} is defined more than once.",
                         name_str, sig_display
                     ))
             },
 
             Error::NoneCallble(_none_call) => Diagnostic::error()
-                .with_message("NoneCallable error: Attempted to call a non-callable object."),
+                .with_message("Attempted to call a non-callable object."),
 
             // Placeholder for other potential error types
             // Error::UndocumentedError => todo!("Report Undocumented Error")
