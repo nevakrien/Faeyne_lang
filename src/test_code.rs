@@ -11,6 +11,27 @@ fn simple_parse_hello_world_function() {
 }
 
 #[test]
+fn lifetime_ub() {
+    let s = "def main(system) { system(:println)('hello world'); }".to_string();
+    
+    // Leak the string, extract its inner str, and get a mutable raw pointer to it
+    let raw_str: *mut str = Box::into_raw(s.into_boxed_str()) as *mut str;
+
+    //run and drop the static ref
+    {
+        let static_ref_str: &'static str = unsafe { &*raw_str };
+        safe_run(static_ref_str);
+    }
+    
+
+    // Clean up: Convert the raw pointer back into a boxed str and drop it
+    unsafe {
+        let _ = Box::from_raw(raw_str);
+    }
+}
+
+
+#[test]
 fn simple_string_arith() {
     safe_run("def main(system) { system(:println)('hello'+' world'); }");
 }
