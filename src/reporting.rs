@@ -17,12 +17,22 @@ pub enum Error {
     Sig(SigError),
     Missing(UndefinedName),
     UnreachableCase(UnreachableCase),
-    NoneCallble(NoneCallble)
+    NoneCallble(NoneCallble),
+    Stacked(Internal),
     //UndocumentedError,
 }
 
 
 pub type ErrList = LinkedList<Error>;
+
+pub fn vec_to_list(errors: Vec<Error>) -> ErrList {
+        let mut err_list = LinkedList::new();
+        for error in errors {
+            err_list.push_back(error);
+        }
+        err_list
+}
+
 impl Error {
     pub fn to_list(self) -> LinkedList<Self> {
         let mut l = LinkedList::new();
@@ -70,6 +80,12 @@ pub struct UnreachableCase {
 #[derive(Debug,PartialEq)]
 pub struct UndefinedName {
     pub id : usize,
+}
+
+#[derive(Debug,PartialEq)]
+pub struct Internal {
+    pub span : Span,
+    pub err : ErrList
 }
 
 pub trait DiagnosticDisplay {
@@ -137,6 +153,7 @@ pub fn report_parse_error(err: ParseError<usize, LexTag, ()>, input_ref: &str,_t
     // panic!("Parse error occurred");
 }
 
+
 #[test]
 fn test_subslice_span_and_diagnostic_reporting() {
     let source = "Hello, world!\nThis is a test.\nAnother line here.";
@@ -187,49 +204,80 @@ pub fn report_err_list(err_list: &ErrList, input_ref: &str, table: &StringTable)
     let mut buffer = Buffer::ansi();
     let mut files = SimpleFiles::new();
     let file_id = files.add("input", input_ref);
+    let config = term::Config::default();
 
+    // Emit each error directly
     for err in err_list {
-        let diagnostic = match err {
-            Error::Match(m_err) => Diagnostic::error()
-                .with_message("Match error")
-                .with_labels(vec![
-                    Label::primary(file_id, m_err.span.start().to_usize()..m_err.span.end().to_usize())
-                        .with_message("match error: could not find a case"),
-                ]),
-
-            Error::Sig(_s_err) => Diagnostic::error()
-                .with_message("Signature error: ___"),
-
-            Error::Missing(UndefinedName { id }) => Diagnostic::error()
-                .with_message(format!(
-                    "Undefined name error: {}",
-                    table.get_string(*id).unwrap_or("Unknown name")
-                )),
-
-            Error::UnreachableCase(UnreachableCase { name, sig }) => {
-                let name_str = table.get_string(*name).unwrap_or("Unknown name");
-                let sig_display = sig.display_with_table(table);
-                Diagnostic::error()
-                    .with_message(format!(
-                        "The function '{}' with signature {} is defined more than once.",
-                        name_str, sig_display
-                    ))
-            },
-
-            Error::NoneCallble(_none_call) => Diagnostic::error()
-                .with_message("Attempted to call a non-callable object."),
-
-            // Placeholder for other potential error types
-            // Error::UndocumentedError => todo!("Report Undocumented Error")
-        };
-
-        let config = term::Config::default();
-        term::emit(&mut buffer, &config, &files, &diagnostic).unwrap();
+        emit_error(err, file_id, &mut buffer, &config, &files, table);
     }
 
     // Print the full diagnostic report
     println!("{}", String::from_utf8(buffer.into_inner()).unwrap());
 }
+
+fn emit_error(
+    err: &Error,
+    file_id: usize,
+    buffer: &mut Buffer,
+    config: &term::Config,
+    files: &SimpleFiles<&str, &str>,
+    table: &StringTable,
+) {
+    let diagnostic = match err {
+        Error::Match(m_err) => Diagnostic::error()
+            .with_message("Match error")
+            .with_labels(vec![
+                Label::primary(file_id, m_err.span.start().to_usize()..m_err.span.end().to_usize())
+                    .with_message("match error: could not find a case"),
+            ]),
+
+        Error::Sig(_s_err) => Diagnostic::error()
+            .with_message("Signature error: ___"),
+
+        Error::Missing(UndefinedName { id }) => Diagnostic::error()
+            .with_message(format!(
+                "Undefined name error: {}",
+                table.get_string(*id).unwrap_or("Unknown name")
+            )),
+
+        Error::UnreachableCase(UnreachableCase { name, sig }) => {
+            let name_str = table.get_string(*name).unwrap_or("Unknown name");
+            let sig_display = sig.display_with_table(table);
+            Diagnostic::error()
+                .with_message(format!(
+                    "The function '{}' with signature {} is defined more than once.",
+                    name_str, sig_display
+                ))
+        },
+
+        Error::NoneCallble(_none_call) => Diagnostic::error()
+            .with_message("Attempted to call a non-callable object."),
+
+        Error::Stacked(Internal { span, err }) => {
+            let diagnostic = Diagnostic::error().with_message("Internal error(s) happened here").with_labels(vec![
+                Label::primary(file_id, span.start().to_usize()..span.end().to_usize())
+                    ,
+            ]);
+            term::emit(buffer, config, files, &diagnostic).unwrap();
+
+
+            // Emit each error inside `Error::Stacked` recursively
+            for e in err {
+                emit_error(e, file_id, buffer, config, files, table);
+            }
+
+            return;
+        },
+
+        // Placeholder for other potential error types
+        // Error::UndocumentedError => todo!("Report Undocumented Error")
+    };
+
+    // Emit the diagnostic for the current error
+    term::emit(buffer, config, files, &diagnostic).unwrap();
+}
+
+// fn add_error
 
 
 #[test]
@@ -263,3 +311,51 @@ fn test_err_list_reporting() {
     // Report the errors
     report_err_list(&err_list, source, &table);
 }
+
+
+#[test]
+fn test_err_list_reporting_with_stacking() {
+    
+    let mut table = StringTable::new();
+    let undef_id = table.get_id("baba");
+    let unreachable_name_id = table.get_id("foo");
+
+    let source = "fn main() { let x = 5; baba }";
+    let mut err_list = LinkedList::new();
+
+    // Example errors for testing
+    let match_err = Error::Match(MatchError {
+        span: Span::new(ByteIndex(3), ByteIndex(7)),
+    });
+
+    let sig_err = Error::Sig(SigError {});
+    let _undef_err = Error::Missing(UndefinedName { id: undef_id });
+
+    // Simulate unreachable case
+    let _unreachable_case_err = Error::UnreachableCase(UnreachableCase {
+        name: unreachable_name_id,
+        sig: FuncSig { arg_ids: vec![undef_id] },
+    });
+
+    // Add an internal error wrapped inside another error (stacked errors)
+    let internal_err = Error::Stacked(Internal {
+        span: Span::new(ByteIndex(23), ByteIndex(27)),
+        err: vec_to_list(vec![
+            Error::Missing(UndefinedName { id: undef_id }),
+            Error::UnreachableCase(UnreachableCase {
+                name: unreachable_name_id,
+                sig: FuncSig { arg_ids: vec![undef_id] },
+            }),
+        ]),
+    });
+
+    // Add errors to the list
+    err_list.push_back(match_err);
+    err_list.push_back(sig_err);
+    err_list.push_back(internal_err);
+
+    // Report the errors
+    report_err_list(&err_list, source, &table);
+}
+
+// You would need to implement `report_err_list` that iterates over `err_list` and calls `add_to_error` for each error, creating a complete diagnostic report.

@@ -738,13 +738,13 @@ pub enum Value<'ctx> {
 #[cfg(test)]
 use crate::ast::StringTable;
 
-// #[test]
-// fn test_system_ffi_mock_safe_no_leak(){
 
-//     test_system_ffi_mock_safe_no_leak_runer(&"system".to_string());
-// }
+
+
+
 // // if and when this code compiles withut issues we would know that our system setup can be safe
-// fn test_system_ffi_mock_safe_no_leak_runer<'x, 'ctx>(sys_str : &'x str) where 'ctx:'x  {
+// #[test]
+// fn test_system_ffi_mock_safe_no_leak_runer()  {
 //     //define FFI functions for this test with loging
 //     //with this testing buffer 
 //     use std::cell::RefCell;     
@@ -753,8 +753,8 @@ use crate::ast::StringTable;
 //     // use std::rc::Rc;
 
     
-//     let log_print : RefCell<Vec<Vec<Value<'ctx>>>>= RefCell::new(Vec::new()) ;
-//     let log_system :RefCell<Vec<Vec<Value<'ctx>>>> = RefCell::new(Vec::new());
+//     let log_print : RefCell<Vec<Vec<Value>>>= RefCell::new(Vec::new()) ;
+//     let log_system :RefCell<Vec<Vec<Value>>> = RefCell::new(Vec::new());
     
 
 
@@ -771,19 +771,19 @@ use crate::ast::StringTable;
 
 
 //     //initilize scope
-//     let mut string_table :StringTable<'ctx> = StringTable::new();
+//     let mut string_table  = StringTable::new();
 
 
-//     let system_name = string_table.get_id(sys_str);
+//     let sys_string = "system".to_string();
+//     let system_name = string_table.get_id(&sys_string);
 //     let println_name = string_table.get_id(":println");
 
-//     let root :GlobalScope<'ctx>=GlobalScope::default();
-//     let mut scope :VarScope<'ctx,'_> = root.make_subscope();
+    
 //     let print_fn =  |x| {ffi_println(x,&log_print)};
 //     let system_fn = |x| {ffi_system(x,&log_system,&print_fn)};
+//     let root =GlobalScope::default();
+//     let mut scope  = root.make_subscope();
 
-//     let dyn_sys :& DynFFI<'ctx> = &system_fn;
-    
 
 //     scope.add(system_name, Value::Func(FunctionHandle::StateFFI(&system_fn)));
 
