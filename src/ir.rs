@@ -44,7 +44,7 @@ impl<'ctx> GlobalScope<'ctx> {
         }
     }
 
-    pub fn make_subscope(&'ctx self) -> VarScope<'ctx, '_> {
+    pub fn make_subscope(&'ctx self) -> VarScope<'ctx, 'ctx> {
         VarScope {
             parent: Scopble::Global(self),
             vars: HashMap::new(),
@@ -665,7 +665,7 @@ impl<'ctx> fmt::Debug for FunctionHandle<'ctx> {
 }
 
 impl<'ctx> FunctionHandle<'ctx> {
-    pub fn eval(self, args: Vec<Value<'ctx>>) -> Result<Value, ErrList> {
+    pub fn eval(self, args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
         match self {
             FunctionHandle::FFI(f) => f(args),
             FunctionHandle::StateFFI(f) => f(args),

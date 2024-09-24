@@ -73,7 +73,8 @@ pub fn get_system<'ctx>(string_table: &'static StringTable<'ctx>) -> (Value<'ctx
     let print_fn = {create_ffi_println(string_table,&mut handle)};
 
     
-    let x = move |args: Vec<Value<'ctx>>| -> Result<Value<'ctx>, ErrList> {
+
+    let x =  |args: Vec<Value<'ctx>>| -> Result<Value<'ctx>, ErrList> {
         if args.len() != 1 {
             return Err(Error::Sig(SigError {}).to_list());
         }
@@ -96,7 +97,7 @@ pub fn get_system<'ctx>(string_table: &'static StringTable<'ctx>) -> (Value<'ctx
         }
     };
 
-    let mut b :Box<DynFFI<'ctx>>= Box::new(x);
+    let b :Box<DynFFI<'ctx>>= Box::new(x);
     let ptr = Box::into_raw(b);
     handle.vars.push(ptr);
     let leaked = unsafe{Box::leak(Box::from_raw(ptr))};
@@ -107,8 +108,8 @@ pub fn get_system<'ctx>(string_table: &'static StringTable<'ctx>) -> (Value<'ctx
     
 }
 
-fn create_ffi_println<'ctx>(table: &'static StringTable<'ctx>,handle:&mut FreeHandle<'ctx>) -> &'ctx DynFFI<'ctx> {
-    let x  = move |args: Vec<Value>| -> Result<Value, ErrList> {
+fn create_ffi_println<'ctx>(table: &'static StringTable<'ctx>,handle:&mut FreeHandle<'ctx>) ->  &'static DynFFI<'ctx> {
+    let x  =  |args: Vec<Value<'ctx>>| -> Result<Value<'ctx>, ErrList> {
         // Here we capture the string table reference and print using it
         if args.len()!=1 {
         	return Err(Error::Sig(SigError {}).to_list());
@@ -117,7 +118,7 @@ fn create_ffi_println<'ctx>(table: &'static StringTable<'ctx>,handle:&mut FreeHa
         println!("{}", to_string(&args[0],table));
         Ok(Value::Nil)
     };
-
+    
     let ptr = Box::into_raw(Box::new(x));
     handle.vars.push(ptr);
     unsafe{Box::leak(Box::from_raw(ptr))}

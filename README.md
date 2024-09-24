@@ -87,3 +87,11 @@ after a lot of fighting with it I got it to free everything while being ALMOST f
 This required a 4 hours refactor to add a lifetime followed by some fairly weird code to get lifetime anotations where they should be.
 It is likely I am missing a more elegent way to do it but as of now I have made it where the global scope is leaked and needs to be manualy turned into a box.
 
+I managed to drop it down into 2 static lifetimes in system that need to be fixed. they corespond to 2 closures that are being created.
+The issue is that the lifetime of the closure and the lifetime of the returned value are not directly linked...
+what we need is 1 struct containing all of the context that runs things using a &'ctx self
+
+we also potentially want to impl Fn EXPLICITLY which would mean that we need to have a similar trait thats used.
+that trait could be potentially very benifical as it can be used for debuging as well
+
+
