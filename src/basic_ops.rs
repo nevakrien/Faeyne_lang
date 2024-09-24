@@ -1,3 +1,4 @@
+use crate::ir::GcPointer;
 use crate::ast::StringTable;
 use crate::ast::BuildIn;
 use crate::ir::Value;
@@ -77,13 +78,27 @@ pub fn try_int<'a,'ctx>(x: &'a Value<'ctx>) -> Result<i64,ErrList> {
     Ok(*i)
 }
 
-fn nerfed_to_string<'ctx>(value: &Value<'ctx>) -> String {
+pub fn nerfed_to_string<'ctx>(value: &Value<'ctx>) -> String {
     match value {
         Value::Atom(id) => format!("Atom<{}>", id),
         Value::Int(x) => format!("{}", x),
         Value::Float(x) => format!("{}", x),
         Value::String(s) => s.to_string(),
         _ => format!("{:?}", value), // For other types
+    }
+}
+
+pub fn call_string<'ctx>(s:GcPointer<String>,args:Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+    if args.len() != 1 {
+        return Err(Error::Sig(SigError {}).to_list());
+    }
+    if let Value::Atom(get_id!(":len")) = args[0] {
+        return Ok(Value::Int(s.len() as i64));
+    }
+    let i = try_int(&args[0])?;
+    match s.chars().nth(i as usize) {
+        Some(c) => Ok(Value::String(GcPointer::new(c.to_string()))), 
+        None => Ok(Value::Atom(get_id!(":string_out_of_bounds"))),
     }
 }
 

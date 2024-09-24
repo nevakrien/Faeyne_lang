@@ -1,4 +1,6 @@
 #![allow(dead_code)]
+use crate::basic_ops::call_string;
+use crate::basic_ops::nerfed_to_string;
 use std::collections::HashSet;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
@@ -719,11 +721,12 @@ pub struct Call<'ctx>{
 
 impl<'ctx> Call<'ctx> {
     pub fn eval(&self,scope: &mut VarScope<'ctx, '_>) -> Result<ValueRet<'ctx>,ErrList> {
-        let handle = match self.called.eval(scope)? {
+        let handle_res = match self.called.eval(scope)? {
             ValueRet::Unwind(v) => {return Ok(ValueRet::Unwind(v));}
             ValueRet::Local(v) => match v {
-                Value::Func(f) => f,
-                _ => {return Err(Error::NoneCallble(NoneCallble{}).to_list());}
+                Value::Func(f) => Ok(f),
+                Value::String(s) => Err(s),
+                _ => {return Err(Error::NoneCallble(NoneCallble{span:self.debug_span,value:nerfed_to_string(&v)}).to_list());}
             }
         };
 
@@ -737,18 +740,23 @@ impl<'ctx> Call<'ctx> {
                 }}
             };
         }
-        // handle.eval(arg_values).map(move |v| v.into())
-        match handle.eval(arg_values) {
-            Ok(x) => Ok(x.into()),
-            Err(err) => Err(Error::Stacked(
-                InternalError{
-                    err,
-                    span:self.debug_span,
-                    message:"When calling Function".to_string()
-                }
-            ).to_list())
+        match handle_res{
+            Ok(handle) => match handle.eval(arg_values) {
+                Ok(x) => Ok(x.into()),
+                Err(err) => Err(Error::Stacked(
+                    InternalError{
+                        err,
+                        span:self.debug_span,
+                        message:"When calling Function".to_string()
+                    }
+                ).to_list())
+            },
+
+            Err(s) => call_string(s,arg_values).map(|x| x.into())
         }
+        
     }
+
     pub fn add_to_closure(&self,scope: &VarScope<'ctx,'_>,closure : &mut ClosureScope<'ctx>) -> Result<(),ErrList> {
         let mut ans = self.called.add_to_closure(scope,closure);
         for a in self.args.iter() {

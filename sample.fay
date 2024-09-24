@@ -85,6 +85,25 @@ def err_compile_time_in_lamda_def() {
     f()
 }
 
+def rev(id,ag,source) {
+    match id>=0{
+        true => {
+            ag=ag+source(id);
+            rev(id-1,ag,source)
+        },
+        false => ag,
+    }
+}
+
+def reverse_string(s) {
+    #match s.type {
+    #    :string => {},
+    #    _=>{return :err;},
+    #};
+
+    rev(s(:len) -1,'',s)
+}
+
 def main(system){
     bug_main(system);
     factorial(4)  |> system(:println)();
@@ -114,7 +133,13 @@ def main(system){
 
     system(:println)(cargo(0));
 
+    s = "hey there";
+    system(:println)(s(:len));
 
+    reverse_string(s)|>system(:println)();
 
-    err_compile_time_in_lamda_def();
+    #x = 1;
+    #x();
+
+    #err_compile_time_in_lamda_def();
 }

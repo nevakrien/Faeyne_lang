@@ -68,7 +68,8 @@ pub struct SigError {
 
 #[derive(Debug,PartialEq)]
 pub struct NoneCallble {
-    //placeholder
+    pub span: Span,
+    pub value: String,
 }
 
 #[derive(Debug,PartialEq)]
@@ -251,8 +252,13 @@ fn emit_error(
                 ))
         },
 
-        Error::NoneCallble(_none_call) => Diagnostic::error()
-            .with_message("Attempted to call a non-callable object."),
+        Error::NoneCallble(NoneCallble{span,value}) => Diagnostic::error()
+            .with_message("Attempted to call a None Callble object")
+        .with_labels(vec![
+                Label::primary(file_id, span.start().to_usize()..span.end().to_usize())
+                    .with_message(format!("this = {}",value)),
+            ]),
+            
 
         Error::Stacked(InternalError { span, err,message }) => {
             let diagnostic = Diagnostic::error().with_message(message).with_labels(vec![
