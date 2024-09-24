@@ -367,7 +367,7 @@ pub FuncDec: FuncDec = {
     }
 };
 
-Lambda: Lambda = {
+pub Lambda: Lambda = {
     "fn" <sig:ArgList> <body:FuncBlock> => Lambda {
         sig,
         body,

@@ -50,6 +50,16 @@ def factorial(i) {
 }
 #def factorial(i){}
 
+def err_in_lamda() {
+    f = fn (x) -> {
+        y+x+true
+    };
+
+    a = :a;
+
+    f(a)
+}
+
 def main(system){
     bug_main(system);
     factorial(4)  |> system(:println)();
@@ -62,6 +72,7 @@ def main(system){
 
     #a = :ok;
     #a()
-    dumby(:dumb)
-
+    #dumby(:dumb)
+    
+    err_in_lamda()
 }

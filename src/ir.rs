@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+use std::collections::HashSet;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 
@@ -140,7 +141,7 @@ where
             }
         }
 
-        ClosureScope { vars: all_vars }
+        ClosureScope { vars: all_vars ,allowed_escapes:HashSet::new()}
     }
 }
 
@@ -159,6 +160,7 @@ fn test_scope_lifetimes(){
 #[derive(Debug,PartialEq,Clone)]
 pub struct ClosureScope<'ctx> {
     vars : HashMap<usize,Value<'ctx>>,
+    allowed_escapes : HashSet<usize>,
 }
 
 impl<'ctx> Default for ClosureScope<'ctx> {
@@ -169,7 +171,7 @@ impl<'ctx> Default for ClosureScope<'ctx> {
 
 impl<'ctx> ClosureScope<'ctx> {
     pub fn new() -> Self {
-        ClosureScope{vars: HashMap::new()}
+        ClosureScope{vars: HashMap::new(),allowed_escapes:HashSet::new()}
     }
 
     pub fn get(&self,id:usize) -> Option<Value<'ctx>> {
@@ -181,10 +183,21 @@ impl<'ctx> ClosureScope<'ctx> {
             Entry::Occupied(_) => Ok(()), 
             Entry::Vacant(spot) => {
                 match outer_scope.get(id) {
-                    None => Err(Error::Missing(UndefinedName{id}).to_list()),
+                    // None => Err(Error::Missing(UndefinedName{id}).to_list()),
+                    // None => Ok(()),//for debuging
                     Some(v) => {spot.insert(v.clone()); Ok(())}
+                    None => if self.allowed_escapes.contains(&id) {Ok(())} 
+                        else {Err(Error::Missing(UndefinedName{id}).to_list())}
+
                 }
             }
+        }
+    }
+
+    pub fn add_args(&mut self,sig:&FuncSig){
+        for id in sig.arg_ids.iter() {
+            self.allowed_escapes.insert(*id);
+
         }
     }
 
@@ -387,7 +400,9 @@ impl<'ctx> LazyFunc<'ctx> {
     }
     pub fn eval(&self,scope: &VarScope<'ctx, '_>) -> Result<Func<'ctx>,ErrList> {
         let mut closure : ClosureScope<'ctx>= ClosureScope::new();
-    
+        
+        closure.add_args(&self.sig);
+
         self.inner.add_to_closure(scope,&mut closure)?;        
         Ok(Func {
             sig:self.sig.clone(),
@@ -494,6 +509,13 @@ impl FuncSig {
             Err(Error::Sig(SigError{}).to_list())
         }
    }
+
+   // pub fn add_to_closure<'ctx>(&self,scope: &VarScope<'ctx, '_>,closure : &mut ClosureScope<'ctx>) -> Result<(),ErrList> {
+   //      for i in self.arg_ids {
+   //          closure.add(LazyVal::Ref(*i))
+   //      }
+   //      Ok(())
+   //  }
 }
 
 #[derive(Debug,PartialEq,Clone)]

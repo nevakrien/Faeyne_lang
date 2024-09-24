@@ -39,7 +39,7 @@ fn simple_parse_blocky_function() {
     assert!(func_dec.body.ret.is_some(), "Expected return statment");
 }
 #[test]
-fn simple_parse_lambda_function() {
+fn main_simple_parse_lambda_function() {
     let input = "def main(system) { f = fn (x,y) -> {x}; fn (x) {} }";
     
     let lexer = Lexer::new(input);
@@ -53,7 +53,24 @@ fn simple_parse_lambda_function() {
     let func_dec = result.unwrap();
     
     assert_eq!(table.get_string(func_dec.sig.name), Some("main"));
+    assert_eq!(func_dec.sig.args.len(), 1);
     assert!(func_dec.body.body.len() == 1, "Expected one statement in function body");
+}
+
+#[test]
+fn simple_parse_lambda_function() {
+    let input = "fn (x,y) -> {x}";
+    
+    let lexer = Lexer::new(input);
+    let mut table = StringTable::new();
+    
+    let parser = parser::LambdaParser::new();  // Assuming you create this parser
+    let result = parser.parse(input, &mut table, lexer);
+    
+   
+    
+    let func_dec = result.unwrap();
+    assert_eq!(func_dec.sig.len(),2);
 }
 
 #[test]
