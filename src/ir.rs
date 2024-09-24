@@ -18,7 +18,7 @@ pub struct GlobalScope<'ctx> {
 }
 
 impl<'ctx> GlobalScope<'ctx> {
-    pub fn get(&'ctx self, id: usize) -> Option<Value<'ctx>> {
+    pub fn get<'x : 'ctx>(&'x self, id: usize) -> Option<Value<'x>>  {
         let (sig, inner) = self.vars.get(&id)?;
         Some(Value::Func(FunctionHandle::StaticDef(GcPointer::new(
             GlobalFunc {
@@ -44,7 +44,7 @@ impl<'ctx> GlobalScope<'ctx> {
         }
     }
 
-    pub fn make_subscope(&'ctx self) -> VarScope<'ctx, 'ctx> {
+    pub fn make_subscope<'a : 'ctx>(&'a self) -> VarScope<'a, 'a> {
         VarScope {
             parent: Scopble::Global(self),
             vars: HashMap::new(),
@@ -56,7 +56,7 @@ impl<'ctx> GlobalScope<'ctx> {
 pub enum Scopble<'ctx, 'parent>
 where
     'ctx: 'parent,
-{
+{   
     Global(&'ctx GlobalScope<'ctx>),
     SubScope(&'parent VarScope<'ctx, 'parent>),
     Static(&'parent ClosureScope<'ctx>),
@@ -96,7 +96,7 @@ impl<'ctx, 'parent> VarScope<'ctx, 'parent>
 where
     'ctx: 'parent,
 {
-    pub fn new(parent: Scopble<'ctx, 'parent>) -> Self {
+    pub fn new<'p:'parent>(parent: Scopble<'ctx, 'p>) -> Self {
         VarScope {
             parent,
             vars: HashMap::new(),
@@ -735,11 +735,90 @@ pub enum Value<'ctx> {
 // #[cfg(test)]
 // use std::cell::RefCell;
 
-// #[cfg(test)]
-// use crate::ast::StringTable;
+#[cfg(test)]
+use crate::ast::StringTable;
 
 // #[test]
-// fn test_system_ffi_mock() {
+// fn test_system_ffi_mock_safe_no_leak(){
+
+//     test_system_ffi_mock_safe_no_leak_runer(&"system".to_string());
+// }
+// // if and when this code compiles withut issues we would know that our system setup can be safe
+// fn test_system_ffi_mock_safe_no_leak_runer<'x, 'ctx>(sys_str : &'x str) where 'ctx:'x  {
+//     //define FFI functions for this test with loging
+//     //with this testing buffer 
+//     use std::cell::RefCell;     
+
+//     // use std::rc::Weak;
+//     // use std::rc::Rc;
+
+    
+//     let log_print : RefCell<Vec<Vec<Value<'ctx>>>>= RefCell::new(Vec::new()) ;
+//     let log_system :RefCell<Vec<Vec<Value<'ctx>>>> = RefCell::new(Vec::new());
+    
+
+
+
+//     fn ffi_println<'ctx>(args: Vec<Value<'ctx>>,log: &'ctx RefCell<Vec<Vec<Value<'ctx>>>>) -> Result<Value<'ctx>, ErrList> {
+//         log.borrow_mut().push(args.clone());
+//         Ok(Value::Nil)
+//     }
+
+//     fn ffi_system<'ctx>(args: Vec<Value<'ctx>>,log: &'ctx RefCell<Vec<Vec<Value<'ctx>>>>,ffi_println_closure: &'ctx DynFFI<'ctx>) -> Result<Value<'ctx>, ErrList> {
+//         log.borrow_mut().push(args.clone());
+//         Ok(Value::Func(FunctionHandle::StateFFI(ffi_println_closure)))
+//     }
+
+
+//     //initilize scope
+//     let mut string_table :StringTable<'ctx> = StringTable::new();
+
+
+//     let system_name = string_table.get_id(sys_str);
+//     let println_name = string_table.get_id(":println");
+
+//     let root :GlobalScope<'ctx>=GlobalScope::default();
+//     let mut scope :VarScope<'ctx,'_> = root.make_subscope();
+//     let print_fn =  |x| {ffi_println(x,&log_print)};
+//     let system_fn = |x| {ffi_system(x,&log_system,&print_fn)};
+
+//     let dyn_sys :& DynFFI<'ctx> = &system_fn;
+    
+
+//     scope.add(system_name, Value::Func(FunctionHandle::StateFFI(&system_fn)));
+
+//     // Inner call for accessing the `system` variable from the scope
+//     let system_call = Call {
+//         called: Box::new(LazyVal::Ref(system_name)),
+//         args: vec![LazyVal::Terminal(Value::Atom(println_name))],
+//         debug_span : Span::new(0,1),
+//     };
+
+//     // Outer call for `system(:println)("hello world")`
+//     let outer_call = Call {
+//         called: Box::new(LazyVal::FuncCall(system_call)),
+//         args: vec![LazyVal::Terminal(Value::String(GcPointer::new("hello world".to_string())))],
+//         debug_span : Span::new(0,1),
+//     };
+
+//     //asserts
+
+//     let ans = outer_call.eval(&mut scope).unwrap();
+//     assert_eq!(ans, ValueRet::Local(Value::Nil));
+
+
+//     assert_eq!(log_system.borrow().len(), 1);
+//     assert_eq!(log_system.borrow()[0], vec![Value::Atom(println_name)]);
+
+
+
+//     assert_eq!(log_print.borrow().len(), 1);
+//     assert_eq!(log_print.borrow()[0], vec![Value::String(GcPointer::new("hello world".to_string()))]);
+
+// }
+
+// #[test]
+// fn test_system_ffi_mock_leak() {
 //     //define FFI functions for this test with loging
 //     //with this testing buffer 
 //     thread_local! {
@@ -806,137 +885,137 @@ pub enum Value<'ctx> {
 // }
 
 
-// #[test]
-// fn test_system_state_ffi() {
-//     use std::cell::RefCell;     
+#[test]
+fn test_system_state_ffi() {
+    use std::cell::RefCell;     
     
-//     // `ffi_println` logs the arguments into `log_print` and returns `Value::Nil`
-//     fn ffi_println<'ctx>(
-//         log_print: GcPointer<RefCell<Vec<Vec<Value<'ctx>>>>>,
-//         args: Vec<Value<'ctx>>,
-//     ) -> Result<Value<'ctx>, ErrList> {
-//         log_print.borrow_mut().push(args.clone());
-//         Ok(Value::Nil)
-//     }
+    // `ffi_println` logs the arguments into `log_print` and returns `Value::Nil`
+    fn ffi_println<'ctx>(
+        log_print: GcPointer<RefCell<Vec<Vec<Value<'ctx>>>>>,
+        args: Vec<Value<'ctx>>,
+    ) -> Result<Value<'ctx>, ErrList> {
+        log_print.borrow_mut().push(args.clone());
+        Ok(Value::Nil)
+    }
 
-//     // `ffi_system` logs the arguments into `log_system` and returns a function handle to `ffi_println`
-//     fn ffi_system<'ctx>(
-//         log_system: GcPointer<RefCell<Vec<Vec<Value<'ctx>>>>>,
-//         print_func: * const DynFFI<'ctx>,
-//         args: Vec<Value<'ctx>>,
-//     ) -> Result<Value<'ctx>, ErrList> {
-//         log_system.borrow_mut().push(args.clone());
+    // `ffi_system` logs the arguments into `log_system` and returns a function handle to `ffi_println`
+    fn ffi_system<'ctx>(
+        log_system: GcPointer<RefCell<Vec<Vec<Value<'ctx>>>>>,
+        print_func: * const DynFFI<'ctx>,
+        args: Vec<Value<'ctx>>,
+    ) -> Result<Value<'ctx>, ErrList> {
+        log_system.borrow_mut().push(args.clone());
 
         
 
-//         unsafe {Ok(Value::Func(FunctionHandle::StateFFI(&*print_func)))}
-//     }
+        unsafe {Ok(Value::Func(FunctionHandle::StateFFI(&*print_func)))}
+    }
 
-//     // Helper function to constrain the closure with a lifetime
-//     fn constrain_lifetime<'ctx, F>(f: F) -> F
-//     where
-//         F: Fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> + 'ctx,
-//     {
-//         f
-//     }
+    // Helper function to constrain the closure with a lifetime
+    fn constrain_lifetime<'ctx, F>(f: F) -> F
+    where
+        F: Fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> + 'ctx,
+    {
+        f
+    }
 
 
-//     //we will use these for freeing later
-//     let  root_ptr;
-//     let  print_ptr;
-//     let  system_ptr;
+    //we will use these for freeing later
+    let  root_ptr;
+    let  print_ptr;
+    let  system_ptr;
 
     
 
-//     {    
-//         // Step 1: Create mutable buffers for logging (no static references)
+    {    
+        // Step 1: Create mutable buffers for logging (no static references)
         
-//         let root = Box::leak(Box::new(GlobalScope::default()));
-//         root_ptr = root as *mut _;
+        let root = Box::leak(Box::new(GlobalScope::default()));
+        root_ptr = root as *mut _;
 
         
         
-//         let log_print: GcPointer<RefCell<Vec<Vec<Value>>>> = GcPointer::new(RefCell::new(Vec::new()));
-//         let log_system: GcPointer<RefCell<Vec<Vec<Value>>>> = GcPointer::new(RefCell::new(Vec::new()));
+        let log_print: GcPointer<RefCell<Vec<Vec<Value>>>> = GcPointer::new(RefCell::new(Vec::new()));
+        let log_system: GcPointer<RefCell<Vec<Vec<Value>>>> = GcPointer::new(RefCell::new(Vec::new()));
         
 
 
-//         // Step 3: Initialize the scope (no leaking, just normal scoped variables)
-//         let mut string_table = StringTable::new();
-//         let system_name = string_table.get_id("system");
-//         let println_name = string_table.get_id(":println");
+        // Step 3: Initialize the scope (no leaking, just normal scoped variables)
+        let mut string_table = StringTable::new();
+        let system_name = string_table.get_id("system");
+        let println_name = string_table.get_id(":println");
 
 
-//         // Clone GcPointer before moving into the closure
-//         let log_system_clone = log_system.clone();
-//         let log_print_clone = log_print.clone();
+        // Clone GcPointer before moving into the closure
+        let log_system_clone = log_system.clone();
+        let log_print_clone = log_print.clone();
 
-//         // Box the `ffi_println` closure and return a mutable reference to it
-//         let println_ref =
-//             Box::leak(Box::new(constrain_lifetime(move |a: Vec<Value<'_>>| -> Result<Value<'_>, ErrList> {
-//                 ffi_println(log_print_clone.clone(), a)
-//             })));
-//         print_ptr = println_ref as *mut _; 
+        // Box the `ffi_println` closure and return a mutable reference to it
+        let println_ref =
+            Box::leak(Box::new(constrain_lifetime(move |a: Vec<Value<'_>>| -> Result<Value<'_>, ErrList> {
+                ffi_println(log_print_clone.clone(), a)
+            })));
+        print_ptr = println_ref as *mut _; 
 
-//         // Add the `ffi_system` closure to the scope (returning a mutable reference instead of leaking)
-//         let system_ref = Box::leak(Box::new(constrain_lifetime(move |args: Vec<Value<'_>>| -> Result<Value<'_>, ErrList> {
-//             ffi_system(
-//                 log_system_clone.clone(),
-//                 print_ptr,
-//                  args)
-//         })));
+        // Add the `ffi_system` closure to the scope (returning a mutable reference instead of leaking)
+        let system_ref = Box::leak(Box::new(constrain_lifetime(move |args: Vec<Value<'_>>| -> Result<Value<'_>, ErrList> {
+            ffi_system(
+                log_system_clone.clone(),
+                print_ptr,
+                 args)
+        })));
 
-//         system_ptr = system_ref as *mut _;
+        system_ptr = system_ref as *mut _;
         
-//         let mut scope = root.make_subscope();
-//         scope.add(system_name, Value::Func(FunctionHandle::StateFFI(system_ref)));
+        let mut scope = root.make_subscope();
+        scope.add(system_name, Value::Func(FunctionHandle::StateFFI(system_ref)));
 
-//         // Step 4: Create the call structures
-//         // Inner call for accessing the `system` variable from the scope
-//         let system_call = Call {
-//             called: Box::new(LazyVal::Ref(system_name)),
-//             args: vec![LazyVal::Terminal(Value::Atom(println_name))],
-//             debug_span: Span::new(0, 1),
-//         };
+        // Step 4: Create the call structures
+        // Inner call for accessing the `system` variable from the scope
+        let system_call = Call {
+            called: Box::new(LazyVal::Ref(system_name)),
+            args: vec![LazyVal::Terminal(Value::Atom(println_name))],
+            debug_span: Span::new(0, 1),
+        };
 
-//         // Outer call for `system(:println)("hello world")`
-//         let outer_call = Call {
-//             called: Box::new(LazyVal::FuncCall(system_call)),
-//             args: vec![LazyVal::Terminal(Value::String(GcPointer::new(
-//                 "hello world".to_string(),
-//             )))],
-//             debug_span: Span::new(0, 1),
-//         };
+        // Outer call for `system(:println)("hello world")`
+        let outer_call = Call {
+            called: Box::new(LazyVal::FuncCall(system_call)),
+            args: vec![LazyVal::Terminal(Value::String(GcPointer::new(
+                "hello world".to_string(),
+            )))],
+            debug_span: Span::new(0, 1),
+        };
 
-//         // Step 5: Evaluate the outer call
-//         let ans = outer_call.eval(&mut scope).unwrap();
-//         assert_eq!(ans, ValueRet::Local(Value::Nil));
+        // Step 5: Evaluate the outer call
+        let ans = outer_call.eval(&mut scope).unwrap();
+        assert_eq!(ans, ValueRet::Local(Value::Nil));
 
-//         // Step 6: Validate that the logs were updated correctly
-//         assert_eq!(log_system.borrow().len(), 1);
-//         assert_eq!(log_system.borrow()[0], vec![Value::Atom(println_name)]);
+        // Step 6: Validate that the logs were updated correctly
+        assert_eq!(log_system.borrow().len(), 1);
+        assert_eq!(log_system.borrow()[0], vec![Value::Atom(println_name)]);
 
-//         assert_eq!(log_print.borrow().len(), 1);
-//         assert_eq!(
-//             log_print.borrow()[0],
-//             vec![Value::String(GcPointer::new("hello world".to_string()))]
-//         );
-//     }
-//     //c style freeing
-//     unsafe {
-//         {
-//         _ = Box::from_raw(system_ptr);
+        assert_eq!(log_print.borrow().len(), 1);
+        assert_eq!(
+            log_print.borrow()[0],
+            vec![Value::String(GcPointer::new("hello world".to_string()))]
+        );
+    }
+    //c style freeing
+    unsafe {
+        {
+        _ = Box::from_raw(system_ptr);
 
-//         }
-//         {
-//         _ = Box::from_raw(print_ptr);
+        }
+        {
+        _ = Box::from_raw(print_ptr);
 
-//         }
-//         {
-//         _ = Box::from_raw(root_ptr);
-//         }
-//     }
-// }
+        }
+        {
+        _ = Box::from_raw(root_ptr);
+        }
+    }
+}
 
 
 
