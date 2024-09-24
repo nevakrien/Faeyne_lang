@@ -181,7 +181,7 @@ impl<'ctx> ClosureScope<'ctx> {
             Entry::Occupied(_) => Ok(()), 
             Entry::Vacant(spot) => {
                 match outer_scope.get(id) {
-                    None => Err(Error::Missing(UndefinedName{}).to_list()),
+                    None => Err(Error::Missing(UndefinedName{id}).to_list()),
                     Some(v) => {spot.insert(v.clone()); Ok(())}
                 }
             }
@@ -295,7 +295,7 @@ impl<'ctx> LazyVal<'ctx> {
         match self {
             LazyVal::Terminal(v) => Ok(v.clone().into()),
             LazyVal::Ref(id) => match scope.get(*id) {
-                None => Err(Error::Missing(UndefinedName{}).to_list()),
+                None => Err(Error::Missing(UndefinedName{id:*id}).to_list()),
                 Some(v) => Ok(v.clone().into()),
             },
             LazyVal::FuncCall(call) => call.eval(scope),

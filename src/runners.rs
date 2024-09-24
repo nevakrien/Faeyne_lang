@@ -9,7 +9,7 @@ use crate::system::{get_system,FreeHandle};
 use crate::lexer::Lexer;
 use crate::parser;
 
-use crate::reporting::report_parse_error;
+use crate::reporting::{report_parse_error,report_err_list};
 
 pub fn safe_run_compare(input: &'static str, expected: Value<'static>) {
     let (ans, junk) = run_str(input);
@@ -66,7 +66,7 @@ pub fn run_str(input_ref: &'static str) ->(Value<'static>,(FreeHandle<'static>,*
     let result = match parser.parse(input_ref, table, lexer) {
         Ok(r) =>  r,
         Err(e) => {
-            report_parse_error(e,input_ref); 
+            report_parse_error(e,input_ref,&table); 
             panic!();
         }
     };
@@ -80,7 +80,13 @@ pub fn run_str(input_ref: &'static str) ->(Value<'static>,(FreeHandle<'static>,*
 
     let (system,handle) = get_system(table);
 
-    let ans = main_func.eval(vec![system]).unwrap();
+    let ans = match main_func.eval(vec![system]) {
+        Ok(r) => r,
+        Err(e) => {
+            report_err_list(&e,input_ref,&table); 
+            panic!();
+        }
+    };
 
     (ans,(handle,global_raw, table_raw))
 }

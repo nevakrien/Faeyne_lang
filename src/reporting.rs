@@ -9,6 +9,7 @@ use lalrpop_util::ParseError;
 use crate::lexer::LexTag;
 
 use crate::ir::FuncSig;
+use crate::ast::StringTable;
 
 #[derive(Debug,PartialEq)]
 pub enum Error {
@@ -43,6 +44,7 @@ pub fn append_err_list(mut a: Result<(),ErrList>, b:Result<(),ErrList>) -> Resul
     }
 }
 
+
 #[derive(Debug,PartialEq)]
 pub struct MatchError {
     pub span: Span
@@ -67,8 +69,25 @@ pub struct UnreachableCase {
 
 #[derive(Debug,PartialEq)]
 pub struct UndefinedName {
-    //placeholder
+    pub id : usize,
 }
+
+pub trait DiagnosticDisplay {
+    fn display_with_table(&self, table: &StringTable) -> String;
+}
+
+
+impl DiagnosticDisplay for FuncSig {
+    fn display_with_table(&self, table: &StringTable) -> String {
+        let args_names: Vec<_>= self.arg_ids
+            .iter()
+            .map(|&id| table.get_string(id).unwrap_or("Unknown"))
+            .collect();
+
+        format!("[{}]", args_names.join(", "))
+    }
+}
+
 
 //subslice has to be a oart of source
 pub fn get_subslice_span<'a>(source: &'a str, subslice: &'a str) -> Span {
@@ -88,7 +107,7 @@ pub fn get_subslice_span<'a>(source: &'a str, subslice: &'a str) -> Span {
 }
 
 // Function to handle and report parsing errors
-pub fn report_parse_error(err: ParseError<usize, LexTag, ()>, input_ref: &str)  {
+pub fn report_parse_error(err: ParseError<usize, LexTag, ()>, input_ref: &str,_table: &StringTable)  {
     let mut buffer = Buffer::ansi();
     let mut files = SimpleFiles::new();
     let file_id = files.add("input", input_ref);
@@ -162,3 +181,85 @@ fn test_subslice_span_and_diagnostic_reporting() {
     assert_eq!(extracted_subslice, subslice, "The extracted subslice does not match the original subslice.");
 }
 
+
+
+pub fn report_err_list(err_list: &ErrList, input_ref: &str, table: &StringTable) {
+    let mut buffer = Buffer::ansi();
+    let mut files = SimpleFiles::new();
+    let file_id = files.add("input", input_ref);
+
+    for err in err_list {
+        let diagnostic = match err {
+            Error::Match(m_err) => Diagnostic::error()
+                .with_message("Match error")
+                .with_labels(vec![
+                    Label::primary(file_id, m_err.span.start().to_usize()..m_err.span.end().to_usize())
+                        .with_message("Issue with match expression"),
+                ]),
+
+            Error::Sig(_s_err) => Diagnostic::error()
+                .with_message("Signature error: ___"),
+
+            Error::Missing(UndefinedName { id }) => Diagnostic::error()
+                .with_message(format!(
+                    "Undefined name error: {}",
+                    table.get_string(*id).unwrap_or("Unknown name")
+                )),
+
+            Error::UnreachableCase(UnreachableCase { name, sig }) => {
+                let name_str = table.get_string(*name).unwrap_or("Unknown name");
+                let sig_display = sig.display_with_table(table);
+                Diagnostic::error()
+                    .with_message(format!(
+                        "Unreachable case error: The case '{}' with signature {} is unreachable.",
+                        name_str, sig_display
+                    ))
+            },
+
+            Error::NoneCallble(_none_call) => Diagnostic::error()
+                .with_message("NoneCallable error: Attempted to call a non-callable object."),
+
+            // Placeholder for other potential error types
+            // Error::UndocumentedError => todo!("Report Undocumented Error")
+        };
+
+        let config = term::Config::default();
+        term::emit(&mut buffer, &config, &files, &diagnostic).unwrap();
+    }
+
+    // Print the full diagnostic report
+    println!("{}", String::from_utf8(buffer.into_inner()).unwrap());
+}
+
+
+#[test]
+fn test_err_list_reporting() {
+    let mut table = StringTable::new();
+    let undef_id = table.get_id("baba");
+    let unreachable_name_id = table.get_id("foo");
+
+    let source = "fn main() { let x = 5; baba}";
+    let mut err_list = LinkedList::new();
+
+    // Example errors for testing
+    let match_err = Error::Match(MatchError {
+        span: Span::new(ByteIndex(3), ByteIndex(7)),
+    });
+
+    let sig_err = Error::Sig(SigError {});
+    let undef_err = Error::Missing(UndefinedName { id: undef_id });
+
+    // Simulate unreachable case
+    let unreachable_case_err = Error::UnreachableCase(UnreachableCase {
+        name: unreachable_name_id,
+        sig: FuncSig {arg_ids:vec![undef_id]}, // Assuming FuncSig has a default or placeholder
+    });
+
+    err_list.push_back(match_err);
+    err_list.push_back(sig_err);
+    err_list.push_back(undef_err);
+    err_list.push_back(unreachable_case_err);
+
+    // Report the errors
+    report_err_list(&err_list, source, &table);
+}
