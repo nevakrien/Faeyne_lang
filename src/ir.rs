@@ -410,7 +410,12 @@ impl<'ctx> LazyFunc<'ctx> {
                         inner: self.inner.clone(),
                         closure
                     }),
-            Err(err) => Err(Error::Stacked(InternalError{err,span:self.debug_span}).to_list())
+            Err(err) => Err(Error::Stacked(
+                InternalError{
+                    err,
+                    span:self.debug_span,
+                    message:"When defining Closure".to_string()
+                }).to_list())
         }  
         
     }
@@ -735,7 +740,13 @@ impl<'ctx> Call<'ctx> {
         // handle.eval(arg_values).map(move |v| v.into())
         match handle.eval(arg_values) {
             Ok(x) => Ok(x.into()),
-            Err(err) => Err(Error::Stacked(InternalError{span:self.debug_span,err}).to_list())
+            Err(err) => Err(Error::Stacked(
+                InternalError{
+                    err,
+                    span:self.debug_span,
+                    message:"When calling Function".to_string()
+                }
+            ).to_list())
         }
     }
     pub fn add_to_closure(&self,scope: &VarScope<'ctx,'_>,closure : &mut ClosureScope<'ctx>) -> Result<(),ErrList> {
