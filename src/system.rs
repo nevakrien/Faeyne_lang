@@ -1,3 +1,6 @@
+use std::io::Write;
+use std::fs::{read_dir,remove_dir,create_dir,remove_file,OpenOptions};
+
 use crate::reporting::*;
 use crate::ir::*;
 use crate::basic_ops::*;
@@ -27,9 +30,14 @@ pub const MAIN_ID: usize = 11;
 
 // Function IDs
 pub const PRINTLN_ID: usize = 12;
+
 pub const READ_FILE_ID: usize = 13;
 pub const WRITE_FILE_ID: usize = 14;
 pub const DELETE_FILE_ID: usize = 15;
+
+pub const READ_DIR_ID: usize = 16;
+pub const MAKE_DIR_ID: usize = 17;
+pub const DELETE_DIR_ID: usize = 18;
 
 pub fn preload_table(table: &mut StringTable) {
     assert_eq!(table.get_id(":nil"), NIL_ID);
@@ -51,6 +59,10 @@ pub fn preload_table(table: &mut StringTable) {
     assert_eq!(table.get_id(":read_file"), READ_FILE_ID);
     assert_eq!(table.get_id(":write_file"), WRITE_FILE_ID);
     assert_eq!(table.get_id(":delete_file"), DELETE_FILE_ID);
+
+    assert_eq!(table.get_id(":read_dir"), READ_DIR_ID);
+    assert_eq!(table.get_id(":write_dir"), MAKE_DIR_ID);
+    assert_eq!(table.get_id(":delete_dir"), DELETE_DIR_ID);
 }
 
 #[macro_export]
@@ -71,9 +83,14 @@ macro_rules! get_id {
     ("main") => { MAIN_ID };
 
     (":println") => { PRINTLN_ID };
+
     (":read_file") => { READ_FILE_ID };
     (":write_file") => { WRITE_FILE_ID };
     (":delete_file") => { DELETE_FILE_ID };
+
+    (":read_dir") => { READ_DIR_ID };
+    (":make_dir") => { MAKE_DIR_ID };
+    (":delete_dir") => { DELETE_DIR_ID };
 
     ($other:expr) => { // Fallback to the runtime version if it's not predefined
         $other
@@ -115,7 +132,10 @@ pub fn get_system<'ctx>(string_table: &'static StringTable<'ctx>) -> (Value<'ctx
     let file_read_fn = {create_ffi_file_read(string_table,&mut handle)};
     let file_write_fn = {create_ffi_file_write(string_table,&mut handle)};
     let file_delete_fn = {create_ffi_file_delete(string_table,&mut handle)};
-    
+
+    let ffi_create_dir_fn = {create_ffi_create_dir(string_table,&mut handle)};
+    let ffi_create_read_fn = {create_ffi_read_dir(string_table,&mut handle)};
+    let ffi_create_remove_fn = {create_ffi_remove_dir(string_table,&mut handle)};
 
     
 
@@ -138,6 +158,7 @@ pub fn get_system<'ctx>(string_table: &'static StringTable<'ctx>) -> (Value<'ctx
             get_id!(":type") => Ok(Value::Func(FunctionHandle::FFI(
                 get_type_ffi,
             ))),
+            
             get_id!(":read_file") => Ok(Value::Func(FunctionHandle::StateFFI(
                 file_read_fn,
             ))),
@@ -148,6 +169,19 @@ pub fn get_system<'ctx>(string_table: &'static StringTable<'ctx>) -> (Value<'ctx
 
             get_id!(":delete_file") => Ok(Value::Func(FunctionHandle::StateFFI(
                 file_delete_fn,
+            ))),
+
+
+            get_id!(":read_dir") => Ok(Value::Func(FunctionHandle::StateFFI(
+                ffi_create_read_fn,
+            ))),
+
+            get_id!(":make_dir") => Ok(Value::Func(FunctionHandle::StateFFI(
+                ffi_create_dir_fn,
+            ))),
+
+            get_id!(":delete_dir") => Ok(Value::Func(FunctionHandle::StateFFI(
+                ffi_create_remove_fn,
             ))),
 
             _ => Err(Error::Sig(SigError {}).to_list()),
@@ -168,7 +202,7 @@ fn create_ffi_println<'ctx>(table: &'static StringTable<'ctx>,handle:&mut FreeHa
         }
 
         println!("{}", to_string(&args[0],table));
-        Ok(Value::Nil)
+        Ok(args[0].clone())
     };
 
 
@@ -211,10 +245,9 @@ fn create_ffi_file_read<'ctx>(
     handle.make_ref(Box::new(x))
 }
 
-use std::fs::OpenOptions;
-use std::io::Write;
 
-#[allow(dead_code,unused_variables,unreachable_code)]
+
+#[allow(unused_variables,unreachable_code)]
 fn create_ffi_file_write<'ctx>(
     table: &'static StringTable<'ctx>,
     handle: &mut FreeHandle<'ctx>,
@@ -247,9 +280,9 @@ fn create_ffi_file_write<'ctx>(
     handle.make_ref(Box::new(x))
 }
 
-use std::fs::{remove_file, remove_dir_all};
 
-#[allow(dead_code,unused_variables,unreachable_code)]
+
+#[allow(unused_variables,unreachable_code)]
 fn create_ffi_file_delete<'ctx>(
     table: &'static StringTable<'ctx>,
     handle: &mut FreeHandle<'ctx>,
@@ -268,13 +301,113 @@ fn create_ffi_file_delete<'ctx>(
 
         // Try deleting as a file first
         if let Err(_file_err) = remove_file(&path) {
-            // If it's not a file, try deleting as a directory
-            if let Err(_dir_err) = remove_dir_all(&path) {
-                return Ok(Value::Atom(get_id!(":err")));
-            }
+            // // If it's not a file, try deleting as a directory
+            // if let Err(_dir_err) = remove_dir_all(&path) {
+            //     return Ok(Value::Atom(get_id!(":err")));
+            // }
+            return Ok(Value::Atom(get_id!(":err")));
         }
 
         Ok(Value::Atom(get_id!(":ok")))
+    };
+
+    handle.make_ref(Box::new(x))
+}
+
+
+
+#[allow(unused_variables,unreachable_code)]
+fn create_ffi_create_dir<'ctx>(
+    table: &'static StringTable<'ctx>,
+    handle: &mut FreeHandle<'ctx>,
+) -> &'static DynFFI<'ctx> {
+    let x = |args: Vec<Value<'ctx>>| -> Result<Value<'ctx>, ErrList> {
+        if args.len() != 1 {
+            return Err(Error::Sig(SigError {}).to_list());
+        }
+
+        let dir_name = try_string(&args[0])?;
+
+        #[cfg(test)] {
+            panic!("tried to create a directory... this is not allowed in automated testing");
+        }
+
+        match create_dir(&dir_name) {
+            Ok(_) => Ok(Value::Atom(get_id!(":ok"))),
+            Err(_) => Ok(Value::Atom(get_id!(":err"))),
+        }
+    };
+
+    handle.make_ref(Box::new(x))
+}
+
+
+
+#[allow(unused_variables,unreachable_code)]
+fn create_ffi_remove_dir<'ctx>(
+    table: &'static StringTable<'ctx>,
+    handle: &mut FreeHandle<'ctx>,
+) -> &'static DynFFI<'ctx> {
+    let x = |args: Vec<Value<'ctx>>| -> Result<Value<'ctx>, ErrList> {
+        if args.len() != 1 {
+            return Err(Error::Sig(SigError {}).to_list());
+        }
+
+        let dir_name = try_string(&args[0])?;
+
+        #[cfg(test)] {
+            panic!("tried to remove a directory... this is not allowed in automated testing");
+        }
+
+        match remove_dir(&dir_name) {
+            Ok(_) => Ok(Value::Atom(get_id!(":ok"))),
+            Err(_) => Ok(Value::Atom(get_id!(":err"))),
+        }
+    };
+
+    handle.make_ref(Box::new(x))
+}
+
+
+
+#[allow(unused_variables,unreachable_code)]
+fn create_ffi_read_dir<'ctx>(
+    table: &'static StringTable<'ctx>,
+    handle: &mut FreeHandle<'ctx>,
+) -> &'static DynFFI<'ctx> {
+    let x = |args: Vec<Value<'ctx>>| -> Result<Value<'ctx>, ErrList> {
+        if args.len() != 1 {
+            return Err(Error::Sig(SigError {}).to_list());
+        }
+
+        let dir_name = try_string(&args[0])?;
+
+        #[cfg(test)] {
+            panic!("tried to read directory... this is not allowed in automated testing");
+        }
+
+        let paths = match read_dir(&dir_name) {
+            Ok(paths) => paths,
+            Err(_) => return Ok(Value::Atom(get_id!(":err"))),
+        };
+
+        let mut entries = Vec::new();
+        for path in paths {
+            if let Ok(entry) = path {
+                entries.push(Value::String(GcPointer::new(entry.path().display().to_string())));
+            }
+        }
+        let list = move |args: Vec<Value<'ctx>>| -> Result<Value<'ctx>, ErrList> {
+            if args.len() != 1 {
+                return Err(Error::Sig(SigError {}).to_list());
+            }
+            match entries.get(try_int(&args[0])? as usize) {
+                None => Ok(Value::Nil),
+                Some(x) => Ok(x.clone()),
+            }
+        };
+
+        Ok(Value::Func(FunctionHandle::DataFFI(GcPointer::new(list))))
     };
 
     handle.make_ref(Box::new(x))

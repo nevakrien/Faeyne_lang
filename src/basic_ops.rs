@@ -72,6 +72,11 @@ pub fn try_string<'a,'ctx>(x: &'a Value<'ctx>) -> Result<&'a str,ErrList> {
     Ok(&*gc)
 }
 
+pub fn try_int<'a,'ctx>(x: &'a Value<'ctx>) -> Result<i64,ErrList> {
+    let Value::Int(i) = x else { return Err(Error::Sig(SigError {}).to_list()); };
+    Ok(*i)
+}
+
 fn nerfed_to_string<'ctx>(value: &Value<'ctx>) -> String {
     match value {
         Value::Atom(id) => format!("Atom<{}>", id),
