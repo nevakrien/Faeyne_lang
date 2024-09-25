@@ -124,6 +124,20 @@ def reverse_string(s) {
     }
 }
 
+def make_nested_lamda(n) {
+    _make_nested_lamda(n,fn (x) -> {x})
+}
+
+def _make_nested_lamda(n,f) {
+    match n {
+        0 => f,
+        _ => {
+            f2 = _make_nested_lamda(n-1,f); 
+            fn (x) -> {1+f2(x)}
+        }
+    }
+}
+
 def main(system){
     bug_main(system);
     factorial(4)  |> system(:println)();
@@ -163,6 +177,8 @@ def main(system){
     div_loop(100) |>system(:println)();
     div_loop(100);
     waste_more_time(1000);
+
+    make_nested_lamda(100)(1) |>system(:println)();
     #x = 1;
     #x();
 

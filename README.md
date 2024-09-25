@@ -81,6 +81,8 @@ x = 1 + "error message";
 will work and should give line information.
 
 # dev notes
+
+## lifetime nightmare
 the lifetime of the global scope is giving me trouble.
 after a lot of fighting with it I got it to free everything while being ALMOST fully safe.
 
@@ -94,4 +96,9 @@ what we need is 1 struct containing all of the context that runs things using a 
 we also potentially want to impl Fn EXPLICITLY which would mean that we need to have a similar trait thats used.
 that trait could be potentially very benifical as it can be used for debuging as well
 
+## optimizing
+starting to look at profiling and picking very low hanging fruit I found that global scope copying was a problem. after a short redsgin of how i do blocks there things worked out.
 
+when doing the string inversion run most of the cost was on the alocation of new string parts. This is good because it means the overhead from the languge itself is basically zero and everything is in the algorithem.
+
+I then wanted to test closures. making a very deeply nested closure and calling it seems to have a LOT of cost in the hash function(which is weird considering we are using ints)
