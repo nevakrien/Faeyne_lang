@@ -17,24 +17,23 @@ use crate::reporting::*;
 #[derive(Debug, PartialEq, Clone)]
 #[derive(Default)]
 pub struct GlobalScope<'ctx> {
-    vars: HashMap<usize, (FuncSig, Block<'ctx>)>,
+    vars: HashMap<usize, PreGlobalFunc<'ctx>>,
 }
 
 impl<'ctx> GlobalScope<'ctx> {
     pub fn get<'x : 'ctx>(&'x self, id: usize) -> Option<Value<'x>>  {
-        let (sig, inner) = self.vars.get(&id)?;
-        Some(Value::Func(FunctionHandle::StaticDef(GcPointer::new(
+        let pre = self.vars.get(&id)?;
+        Some(Value::Func(FunctionHandle::StaticDef(
             GlobalFunc {
-                sig: sig.clone(),
-                inner: inner.clone(),
-                global: self,
+                pre,
+                global:self
             },
-        ))))
+        )))
     }
 
     pub fn add(&mut self, id: usize, block: Block<'ctx>, sig: FuncSig) -> Result<(), ErrList> {
         if let std::collections::hash_map::Entry::Vacant(e) = self.vars.entry(id) {
-            e.insert((sig, block));
+            e.insert(PreGlobalFunc{ sig, inner:block});
             Ok(())
         } else {
             // TODO: Handle this case with more complex behavior when adding multiple catching patterns
@@ -468,25 +467,32 @@ impl<'ctx> LazyMatch<'ctx> {
     }
 }
 
+
 #[derive(Debug,PartialEq,Clone)]
 pub struct GlobalFunc<'ctx> {
-    sig:FuncSig,
+    pre:&'ctx PreGlobalFunc<'ctx>,
     global: &'ctx GlobalScope<'ctx>,
+}
+
+#[derive(Debug,PartialEq,Clone)]
+pub struct PreGlobalFunc<'ctx> {
+    sig:FuncSig,
     inner:Block<'ctx>,
 }
 
 impl<'ctx> GlobalFunc<'ctx> {
     pub fn eval(&self,args: Vec<Value<'ctx>>) -> Result<Value<'ctx>,ErrList> {
-        self.sig.matches(&args)?;
+        self.pre.sig.matches(&args)?;
         let mut scope = self.global.make_subscope();
-        for (i,a) in self.sig.arg_ids.iter().enumerate(){
+        for (i,a) in self.pre.sig.arg_ids.iter().enumerate(){
             scope.add(*a,args[i].clone());
         }
         
-        self.inner.eval(&mut scope).map(|x| x.into())
+        self.pre.inner.eval(&mut scope).map(|x| x.into())
              
     }
 }
+
 
 #[derive(Debug,PartialEq,Clone)]
 pub struct Func<'ctx> {
@@ -661,7 +667,7 @@ pub enum FunctionHandle<'ctx> {
     StateFFI(&'ctx DynFFI<'ctx>),
     DataFFI(GcPointer<DynFFI<'ctx>>),
     // MutFFI(Box<dyn FnMut(Vec<Value>) -> Result<Value, ErrList>>), // New FnMut variant
-    StaticDef(GcPointer<GlobalFunc<'ctx>>),
+    StaticDef(GlobalFunc<'ctx>),
     Lambda(GcPointer<Func<'ctx>>),
 }
 

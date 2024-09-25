@@ -95,6 +95,27 @@ def rev(id,ag,source) {
     }
 }
 
+def div_loop(x) {
+    match x > 0 {
+        true=>x/div_loop(x-1),
+        false => 1.0,
+    }
+}
+
+def waste_time(x) {
+    match x {
+        0 => nil,
+        _ => waste_time(x-1)
+    }
+}
+
+def waste_more_time(x) {
+    match x {
+        0 => nil,
+        _ => {waste_time(x);waste_more_time(x-1)}
+    }
+}
+
 def reverse_string(s) {
     #type check
     match ''+s == s {
@@ -138,6 +159,10 @@ def main(system){
     reverse_string(s)|>system(:println)();
     reverse_string(:ok)|>system(:println)();
 
+    factorial(12) |>system(:println)();
+    div_loop(100) |>system(:println)();
+    div_loop(100);
+    waste_more_time(1000);
     #x = 1;
     #x();
 

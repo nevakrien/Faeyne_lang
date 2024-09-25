@@ -1,0 +1,491 @@
+<?xml version="1.0" standalone="no"?><!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd"><svg version="1.1" width="1200" height="1158" onload="init(evt)" viewBox="0 0 1200 1158" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:fg="http://github.com/jonhoo/inferno"><!--Flame graph stack visualization. See https://github.com/brendangregg/FlameGraph for latest version, and http://www.brendangregg.com/flamegraphs.html for examples.--><!--NOTES: --><defs><linearGradient id="background" y1="0" y2="1" x1="0" x2="0"><stop stop-color="#eeeeee" offset="5%"/><stop stop-color="#eeeeb0" offset="95%"/></linearGradient></defs><style type="text/css">
+text { font-family:monospace; font-size:12px }
+#title { text-anchor:middle; font-size:17px; }
+#matched { text-anchor:end; }
+#search { text-anchor:end; opacity:0.1; cursor:pointer; }
+#search:hover, #search.show { opacity:1; }
+#subtitle { text-anchor:middle; font-color:rgb(160,160,160); }
+#unzoom { cursor:pointer; }
+#frames > *:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+.hide { display:none; }
+.parent { opacity:0.5; }
+</style><script type="text/ecmascript"><![CDATA[
+        var nametype = 'Function:';
+        var fontsize = 12;
+        var fontwidth = 0.59;
+        var xpad = 10;
+        var inverted = false;
+        var searchcolor = 'rgb(230,0,230)';
+        var fluiddrawing = true;
+        var truncate_text_right = false;
+    ]]><![CDATA["use strict";
+var details, searchbtn, unzoombtn, matchedtxt, svg, searching, frames, known_font_width;
+function init(evt) {
+    details = document.getElementById("details").firstChild;
+    searchbtn = document.getElementById("search");
+    unzoombtn = document.getElementById("unzoom");
+    matchedtxt = document.getElementById("matched");
+    svg = document.getElementsByTagName("svg")[0];
+    frames = document.getElementById("frames");
+    known_font_width = get_monospace_width(frames);
+    total_samples = parseInt(frames.attributes.total_samples.value);
+    searching = 0;
+
+    // Use GET parameters to restore a flamegraph's state.
+    var restore_state = function() {
+        var params = get_params();
+        if (params.x && params.y)
+            zoom(find_group(document.querySelector('[*|x="' + params.x + '"][y="' + params.y + '"]')));
+        if (params.s)
+            search(params.s);
+    };
+
+    if (fluiddrawing) {
+        // Make width dynamic so the SVG fits its parent's width.
+        svg.removeAttribute("width");
+        // Edge requires us to have a viewBox that gets updated with size changes.
+        var isEdge = /Edge\/\d./i.test(navigator.userAgent);
+        if (!isEdge) {
+            svg.removeAttribute("viewBox");
+        }
+        var update_for_width_change = function() {
+            if (isEdge) {
+                svg.attributes.viewBox.value = "0 0 " + svg.width.baseVal.value + " " + svg.height.baseVal.value;
+            }
+
+            // Keep consistent padding on left and right of frames container.
+            frames.attributes.width.value = svg.width.baseVal.value - xpad * 2;
+
+            // Text truncation needs to be adjusted for the current width.
+            update_text_for_elements(frames.children);
+
+            // Keep search elements at a fixed distance from right edge.
+            var svgWidth = svg.width.baseVal.value;
+            searchbtn.attributes.x.value = svgWidth - xpad;
+            matchedtxt.attributes.x.value = svgWidth - xpad;
+        };
+        window.addEventListener('resize', function() {
+            update_for_width_change();
+        });
+        // This needs to be done asynchronously for Safari to work.
+        setTimeout(function() {
+            unzoom();
+            update_for_width_change();
+            restore_state();
+        }, 0);
+    } else {
+        restore_state();
+    }
+}
+// event listeners
+window.addEventListener("click", function(e) {
+    var target = find_group(e.target);
+    if (target) {
+        if (target.nodeName == "a") {
+            if (e.ctrlKey === false) return;
+            e.preventDefault();
+        }
+        if (target.classList.contains("parent")) unzoom();
+        zoom(target);
+
+        // set parameters for zoom state
+        var el = target.querySelector("rect");
+        if (el && el.attributes && el.attributes.y && el.attributes["fg:x"]) {
+            var params = get_params()
+            params.x = el.attributes["fg:x"].value;
+            params.y = el.attributes.y.value;
+            history.replaceState(null, null, parse_params(params));
+        }
+    }
+    else if (e.target.id == "unzoom") {
+        unzoom();
+
+        // remove zoom state
+        var params = get_params();
+        if (params.x) delete params.x;
+        if (params.y) delete params.y;
+        history.replaceState(null, null, parse_params(params));
+    }
+    else if (e.target.id == "search") search_prompt();
+}, false)
+// mouse-over for info
+// show
+window.addEventListener("mouseover", function(e) {
+    var target = find_group(e.target);
+    if (target) details.nodeValue = nametype + " " + g_to_text(target);
+}, false)
+// clear
+window.addEventListener("mouseout", function(e) {
+    var target = find_group(e.target);
+    if (target) details.nodeValue = ' ';
+}, false)
+// ctrl-F for search
+window.addEventListener("keydown",function (e) {
+    if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+        e.preventDefault();
+        search_prompt();
+    }
+}, false)
+// functions
+function get_params() {
+    var params = {};
+    var paramsarr = window.location.search.substr(1).split('&');
+    for (var i = 0; i < paramsarr.length; ++i) {
+        var tmp = paramsarr[i].split("=");
+        if (!tmp[0] || !tmp[1]) continue;
+        params[tmp[0]]  = decodeURIComponent(tmp[1]);
+    }
+    return params;
+}
+function parse_params(params) {
+    var uri = "?";
+    for (var key in params) {
+        uri += key + '=' + encodeURIComponent(params[key]) + '&';
+    }
+    if (uri.slice(-1) == "&")
+        uri = uri.substring(0, uri.length - 1);
+    if (uri == '?')
+        uri = window.location.href.split('?')[0];
+    return uri;
+}
+function find_child(node, selector) {
+    var children = node.querySelectorAll(selector);
+    if (children.length) return children[0];
+    return;
+}
+function find_group(node) {
+    var parent = node.parentElement;
+    if (!parent) return;
+    if (parent.id == "frames") return node;
+    return find_group(parent);
+}
+function orig_save(e, attr, val) {
+    if (e.attributes["fg:orig_" + attr] != undefined) return;
+    if (e.attributes[attr] == undefined) return;
+    if (val == undefined) val = e.attributes[attr].value;
+    e.setAttribute("fg:orig_" + attr, val);
+}
+function orig_load(e, attr) {
+    if (e.attributes["fg:orig_"+attr] == undefined) return;
+    e.attributes[attr].value = e.attributes["fg:orig_" + attr].value;
+    e.removeAttribute("fg:orig_" + attr);
+}
+function g_to_text(e) {
+    var text = find_child(e, "title").firstChild.nodeValue;
+    return (text)
+}
+function g_to_func(e) {
+    var func = g_to_text(e);
+    // if there's any manipulation we want to do to the function
+    // name before it's searched, do it here before returning.
+    return (func);
+}
+function get_monospace_width(frames) {
+    // Given the id="frames" element, return the width of text characters if
+    // this is a monospace font, otherwise return 0.
+    text = find_child(frames.children[0], "text");
+    originalContent = text.textContent;
+    text.textContent = "!";
+    bangWidth = text.getComputedTextLength();
+    text.textContent = "W";
+    wWidth = text.getComputedTextLength();
+    text.textContent = originalContent;
+    if (bangWidth === wWidth) {
+        return bangWidth;
+    } else {
+        return 0;
+    }
+}
+function update_text_for_elements(elements) {
+    // In order to render quickly in the browser, you want to do one pass of
+    // reading attributes, and one pass of mutating attributes. See
+    // https://web.dev/avoid-large-complex-layouts-and-layout-thrashing/ for details.
+
+    // Fall back to inefficient calculation, if we're variable-width font.
+    // TODO This should be optimized somehow too.
+    if (known_font_width === 0) {
+        for (var i = 0; i < elements.length; i++) {
+            update_text(elements[i]);
+        }
+        return;
+    }
+
+    var textElemNewAttributes = [];
+    for (var i = 0; i < elements.length; i++) {
+        var e = elements[i];
+        var r = find_child(e, "rect");
+        var t = find_child(e, "text");
+        var w = parseFloat(r.attributes.width.value) * frames.attributes.width.value / 100 - 3;
+        var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+        var newX = format_percent((parseFloat(r.attributes.x.value) + (100 * 3 / frames.attributes.width.value)));
+
+        // Smaller than this size won't fit anything
+        if (w < 2 * known_font_width) {
+            textElemNewAttributes.push([newX, ""]);
+            continue;
+        }
+
+        // Fit in full text width
+        if (txt.length * known_font_width < w) {
+            textElemNewAttributes.push([newX, txt]);
+            continue;
+        }
+
+        var substringLength = Math.floor(w / known_font_width) - 2;
+        if (truncate_text_right) {
+            // Truncate the right side of the text.
+            textElemNewAttributes.push([newX, txt.substring(0, substringLength) + ".."]);
+            continue;
+        } else {
+            // Truncate the left side of the text.
+            textElemNewAttributes.push([newX, ".." + txt.substring(txt.length - substringLength, txt.length)]);
+            continue;
+        }
+    }
+
+    console.assert(textElemNewAttributes.length === elements.length, "Resize failed, please file a bug at https://github.com/jonhoo/inferno/");
+
+    // Now that we know new textContent, set it all in one go so we don't refresh a bazillion times.
+    for (var i = 0; i < elements.length; i++) {
+        var e = elements[i];
+        var values = textElemNewAttributes[i];
+        var t = find_child(e, "text");
+        t.attributes.x.value = values[0];
+        t.textContent = values[1];
+    }
+}
+
+function update_text(e) {
+    var r = find_child(e, "rect");
+    var t = find_child(e, "text");
+    var w = parseFloat(r.attributes.width.value) * frames.attributes.width.value / 100 - 3;
+    var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+    t.attributes.x.value = format_percent((parseFloat(r.attributes.x.value) + (100 * 3 / frames.attributes.width.value)));
+
+    // Smaller than this size won't fit anything
+    if (w < 2 * fontsize * fontwidth) {
+        t.textContent = "";
+        return;
+    }
+    t.textContent = txt;
+    // Fit in full text width
+    if (t.getComputedTextLength() < w)
+        return;
+    if (truncate_text_right) {
+        // Truncate the right side of the text.
+        for (var x = txt.length - 2; x > 0; x--) {
+            if (t.getSubStringLength(0, x + 2) <= w) {
+                t.textContent = txt.substring(0, x) + "..";
+                return;
+            }
+        }
+    } else {
+        // Truncate the left side of the text.
+        for (var x = 2; x < txt.length; x++) {
+            if (t.getSubStringLength(x - 2, txt.length) <= w) {
+                t.textContent = ".." + txt.substring(x, txt.length);
+                return;
+            }
+        }
+    }
+    t.textContent = "";
+}
+// zoom
+function zoom_reset(e) {
+    if (e.tagName == "rect") {
+        e.attributes.x.value = format_percent(100 * parseInt(e.attributes["fg:x"].value) / total_samples);
+        e.attributes.width.value = format_percent(100 * parseInt(e.attributes["fg:w"].value) / total_samples);
+    }
+    if (e.childNodes == undefined) return;
+    for(var i = 0, c = e.childNodes; i < c.length; i++) {
+        zoom_reset(c[i]);
+    }
+}
+function zoom_child(e, x, zoomed_width_samples) {
+    if (e.tagName == "text") {
+        var parent_x = parseFloat(find_child(e.parentNode, "rect[x]").attributes.x.value);
+        e.attributes.x.value = format_percent(parent_x + (100 * 3 / frames.attributes.width.value));
+    } else if (e.tagName == "rect") {
+        e.attributes.x.value = format_percent(100 * (parseInt(e.attributes["fg:x"].value) - x) / zoomed_width_samples);
+        e.attributes.width.value = format_percent(100 * parseInt(e.attributes["fg:w"].value) / zoomed_width_samples);
+    }
+    if (e.childNodes == undefined) return;
+    for(var i = 0, c = e.childNodes; i < c.length; i++) {
+        zoom_child(c[i], x, zoomed_width_samples);
+    }
+}
+function zoom_parent(e) {
+    if (e.attributes) {
+        if (e.attributes.x != undefined) {
+            e.attributes.x.value = "0.0%";
+        }
+        if (e.attributes.width != undefined) {
+            e.attributes.width.value = "100.0%";
+        }
+    }
+    if (e.childNodes == undefined) return;
+    for(var i = 0, c = e.childNodes; i < c.length; i++) {
+        zoom_parent(c[i]);
+    }
+}
+function zoom(node) {
+    var attr = find_child(node, "rect").attributes;
+    var width = parseInt(attr["fg:w"].value);
+    var xmin = parseInt(attr["fg:x"].value);
+    var xmax = xmin + width;
+    var ymin = parseFloat(attr.y.value);
+    unzoombtn.classList.remove("hide");
+    var el = frames.children;
+    var to_update_text = [];
+    for (var i = 0; i < el.length; i++) {
+        var e = el[i];
+        var a = find_child(e, "rect").attributes;
+        var ex = parseInt(a["fg:x"].value);
+        var ew = parseInt(a["fg:w"].value);
+        // Is it an ancestor
+        if (!inverted) {
+            var upstack = parseFloat(a.y.value) > ymin;
+        } else {
+            var upstack = parseFloat(a.y.value) < ymin;
+        }
+        if (upstack) {
+            // Direct ancestor
+            if (ex <= xmin && (ex+ew) >= xmax) {
+                e.classList.add("parent");
+                zoom_parent(e);
+                to_update_text.push(e);
+            }
+            // not in current path
+            else
+                e.classList.add("hide");
+        }
+        // Children maybe
+        else {
+            // no common path
+            if (ex < xmin || ex >= xmax) {
+                e.classList.add("hide");
+            }
+            else {
+                zoom_child(e, xmin, width);
+                to_update_text.push(e);
+            }
+        }
+    }
+    update_text_for_elements(to_update_text);
+}
+function unzoom() {
+    unzoombtn.classList.add("hide");
+    var el = frames.children;
+    for(var i = 0; i < el.length; i++) {
+        el[i].classList.remove("parent");
+        el[i].classList.remove("hide");
+        zoom_reset(el[i]);
+    }
+    update_text_for_elements(el);
+}
+// search
+function reset_search() {
+    var el = document.querySelectorAll("#frames rect");
+    for (var i = 0; i < el.length; i++) {
+        orig_load(el[i], "fill")
+    }
+    var params = get_params();
+    delete params.s;
+    history.replaceState(null, null, parse_params(params));
+}
+function search_prompt() {
+    if (!searching) {
+        var term = prompt("Enter a search term (regexp " +
+            "allowed, eg: ^ext4_)", "");
+        if (term != null) {
+            search(term)
+        }
+    } else {
+        reset_search();
+        searching = 0;
+        searchbtn.classList.remove("show");
+        searchbtn.firstChild.nodeValue = "Search"
+        matchedtxt.classList.add("hide");
+        matchedtxt.firstChild.nodeValue = ""
+    }
+}
+function search(term) {
+    var re = new RegExp(term);
+    var el = frames.children;
+    var matches = new Object();
+    var maxwidth = 0;
+    for (var i = 0; i < el.length; i++) {
+        var e = el[i];
+        // Skip over frames which are either not visible, or below the zoomed-to frame
+        if (e.classList.contains("hide") || e.classList.contains("parent")) {
+            continue;
+        }
+        var func = g_to_func(e);
+        var rect = find_child(e, "rect");
+        if (func == null || rect == null)
+            continue;
+        // Save max width. Only works as we have a root frame
+        var w = parseInt(rect.attributes["fg:w"].value);
+        if (w > maxwidth)
+            maxwidth = w;
+        if (func.match(re)) {
+            // highlight
+            var x = parseInt(rect.attributes["fg:x"].value);
+            orig_save(rect, "fill");
+            rect.attributes.fill.value = searchcolor;
+            // remember matches
+            if (matches[x] == undefined) {
+                matches[x] = w;
+            } else {
+                if (w > matches[x]) {
+                    // overwrite with parent
+                    matches[x] = w;
+                }
+            }
+            searching = 1;
+        }
+    }
+    if (!searching)
+        return;
+    var params = get_params();
+    params.s = term;
+    history.replaceState(null, null, parse_params(params));
+
+    searchbtn.classList.add("show");
+    searchbtn.firstChild.nodeValue = "Reset Search";
+    // calculate percent matched, excluding vertical overlap
+    var count = 0;
+    var lastx = -1;
+    var lastw = 0;
+    var keys = Array();
+    for (k in matches) {
+        if (matches.hasOwnProperty(k))
+            keys.push(k);
+    }
+    // sort the matched frames by their x location
+    // ascending, then width descending
+    keys.sort(function(a, b){
+        return a - b;
+    });
+    // Step through frames saving only the biggest bottom-up frames
+    // thanks to the sort order. This relies on the tree property
+    // where children are always smaller than their parents.
+    for (var k in keys) {
+        var x = parseInt(keys[k]);
+        var w = matches[keys[k]];
+        if (x >= lastx + lastw) {
+            count += w;
+            lastx = x;
+            lastw = w;
+        }
+    }
+    // display matched percent
+    matchedtxt.classList.remove("hide");
+    var pct = 100 * count / maxwidth;
+    if (pct != 100) pct = pct.toFixed(1);
+    matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+}
+function format_percent(n) {
+    return n.toFixed(4) + "%";
+}
+]]></script><rect x="0" y="0" width="100%" height="1158" fill="url(#background)"/><text id="title" fill="rgb(0,0,0)" x="50.0000%" y="24.00">Flame Graph</text><text id="details" fill="rgb(0,0,0)" x="10" y="1141.00"> </text><text id="unzoom" class="hide" fill="rgb(0,0,0)" x="10" y="24.00">Reset Zoom</text><text id="search" fill="rgb(0,0,0)" x="1190" y="24.00">Search</text><text id="matched" fill="rgb(0,0,0)" x="1190" y="1141.00"> </text><svg id="frames" x="10" width="1180" total_samples="80261907"><g><title>__rdl_dealloc (13,780,622 samples, 17.17%)</title><rect x="0.0000%" y="1061" width="17.1696%" height="15" fill="rgb(227,0,7)" fg:x="0" fg:w="13780622"/><text x="0.2500%" y="1071.50">__rdl_dealloc</text></g><g><title>[[heap]] (21,343,152 samples, 26.59%)</title><rect x="0.0000%" y="1077" width="26.5919%" height="15" fill="rgb(217,0,24)" fg:x="0" fg:w="21343152"/><text x="0.2500%" y="1087.50">[[heap]]</text></g><g><title>faeyne_lang::ir::GlobalFunc::eval (7,562,530 samples, 9.42%)</title><rect x="17.1696%" y="1061" width="9.4223%" height="15" fill="rgb(221,193,54)" fg:x="13780622" fg:w="7562530"/><text x="17.4196%" y="1071.50">faeyne_lang::..</text></g><g><title>faeyne_lang::ir::Block::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="1061" width="8.0238%" height="15" fill="rgb(248,212,6)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="1071.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="1045" width="8.0238%" height="15" fill="rgb(208,68,35)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="1055.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::Call::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="1029" width="8.0238%" height="15" fill="rgb(232,128,0)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="1039.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::FunctionHandle::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="1013" width="8.0238%" height="15" fill="rgb(207,160,47)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="1023.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::GlobalFunc::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="997" width="8.0238%" height="15" fill="rgb(228,23,34)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="1007.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::Block::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="981" width="8.0238%" height="15" fill="rgb(218,30,26)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="991.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="965" width="8.0238%" height="15" fill="rgb(220,122,19)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="975.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::MatchStatment::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="949" width="8.0238%" height="15" fill="rgb(250,228,42)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="959.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::Block::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="933" width="8.0238%" height="15" fill="rgb(240,193,28)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="943.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="917" width="8.0238%" height="15" fill="rgb(216,20,37)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="927.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::Call::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="901" width="8.0238%" height="15" fill="rgb(206,188,39)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="911.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::FunctionHandle::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="885" width="8.0238%" height="15" fill="rgb(217,207,13)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="895.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::GlobalFunc::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="869" width="8.0238%" height="15" fill="rgb(231,73,38)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="879.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::Block::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="853" width="8.0238%" height="15" fill="rgb(225,20,46)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="863.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="837" width="8.0238%" height="15" fill="rgb(210,31,41)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="847.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::MatchStatment::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="821" width="8.0238%" height="15" fill="rgb(221,200,47)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="831.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::Block::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="805" width="8.0238%" height="15" fill="rgb(226,26,5)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="815.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="789" width="8.0238%" height="15" fill="rgb(249,33,26)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="799.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::Call::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="773" width="8.0238%" height="15" fill="rgb(235,183,28)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="783.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::FunctionHandle::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="757" width="8.0238%" height="15" fill="rgb(221,5,38)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="767.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::GlobalFunc::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="741" width="8.0238%" height="15" fill="rgb(247,18,42)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="751.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::Block::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="725" width="8.0238%" height="15" fill="rgb(241,131,45)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="735.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="709" width="8.0238%" height="15" fill="rgb(249,31,29)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="719.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::MatchStatment::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="693" width="8.0238%" height="15" fill="rgb(225,111,53)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="703.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::Block::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="677" width="8.0238%" height="15" fill="rgb(238,160,17)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="687.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="661" width="8.0238%" height="15" fill="rgb(214,148,48)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="671.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::Call::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="645" width="8.0238%" height="15" fill="rgb(232,36,49)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="655.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::FunctionHandle::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="629" width="8.0238%" height="15" fill="rgb(209,103,24)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="639.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::GlobalFunc::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="613" width="8.0238%" height="15" fill="rgb(229,88,8)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="623.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::Block::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="597" width="8.0238%" height="15" fill="rgb(213,181,19)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="607.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="581" width="8.0238%" height="15" fill="rgb(254,191,54)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="591.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::MatchStatment::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="565" width="8.0238%" height="15" fill="rgb(241,83,37)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="575.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::Block::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="549" width="8.0238%" height="15" fill="rgb(233,36,39)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="559.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="533" width="8.0238%" height="15" fill="rgb(226,3,54)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="543.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::Call::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="517" width="8.0238%" height="15" fill="rgb(245,192,40)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="527.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::FunctionHandle::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="501" width="8.0238%" height="15" fill="rgb(238,167,29)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="511.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::GlobalFunc::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="485" width="8.0238%" height="15" fill="rgb(232,182,51)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="495.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::Block::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="469" width="8.0238%" height="15" fill="rgb(231,60,39)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="479.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="453" width="8.0238%" height="15" fill="rgb(208,69,12)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="463.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::MatchStatment::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="437" width="8.0238%" height="15" fill="rgb(235,93,37)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="447.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::Block::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="421" width="8.0238%" height="15" fill="rgb(213,116,39)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="431.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="405" width="8.0238%" height="15" fill="rgb(222,207,29)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="415.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::Call::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="389" width="8.0238%" height="15" fill="rgb(206,96,30)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="399.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::FunctionHandle::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="373" width="8.0238%" height="15" fill="rgb(218,138,4)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="383.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::GlobalFunc::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="357" width="8.0238%" height="15" fill="rgb(250,191,14)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="367.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::Block::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="341" width="8.0238%" height="15" fill="rgb(239,60,40)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="351.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="325" width="8.0238%" height="15" fill="rgb(206,27,48)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="335.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::MatchStatment::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="309" width="8.0238%" height="15" fill="rgb(225,35,8)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="319.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::Block::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="293" width="8.0238%" height="15" fill="rgb(250,213,24)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="303.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="277" width="8.0238%" height="15" fill="rgb(247,123,22)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="287.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::Call::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="261" width="8.0238%" height="15" fill="rgb(231,138,38)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="271.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::FunctionHandle::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="245" width="8.0238%" height="15" fill="rgb(231,145,46)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="255.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::GlobalFunc::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="229" width="8.0238%" height="15" fill="rgb(251,118,11)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="239.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::Block::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="213" width="8.0238%" height="15" fill="rgb(217,147,25)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="223.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="197" width="8.0238%" height="15" fill="rgb(247,81,37)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="207.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::MatchStatment::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="181" width="8.0238%" height="15" fill="rgb(209,12,38)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="191.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::Block::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="165" width="8.0238%" height="15" fill="rgb(227,1,9)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="175.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="149" width="8.0238%" height="15" fill="rgb(248,47,43)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="159.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::Call::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="133" width="8.0238%" height="15" fill="rgb(221,10,30)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="143.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::FunctionHandle::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="117" width="8.0238%" height="15" fill="rgb(210,229,1)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="127.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::GlobalFunc::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="101" width="8.0238%" height="15" fill="rgb(222,148,37)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="111.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::Block::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="85" width="8.0238%" height="15" fill="rgb(234,67,33)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="95.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (6,440,016 samples, 8.02%)</title><rect x="26.5919%" y="69" width="8.0238%" height="15" fill="rgb(247,98,35)" fg:x="21343152" fg:w="6440016"/><text x="26.8419%" y="79.50">faeyne_lang..</text></g><g><title>faeyne_lang::ir::Call::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="1061" width="13.2737%" height="15" fill="rgb(247,138,52)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="1071.50">faeyne_lang::ir::Cal..</text></g><g><title>faeyne_lang::ir::FunctionHandle::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="1045" width="13.2737%" height="15" fill="rgb(213,79,30)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="1055.50">faeyne_lang::ir::Fun..</text></g><g><title>faeyne_lang::ir::GlobalFunc::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="1029" width="13.2737%" height="15" fill="rgb(246,177,23)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="1039.50">faeyne_lang::ir::Glo..</text></g><g><title>faeyne_lang::ir::Block::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="1013" width="13.2737%" height="15" fill="rgb(230,62,27)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="1023.50">faeyne_lang::ir::Blo..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="997" width="13.2737%" height="15" fill="rgb(216,154,8)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="1007.50">faeyne_lang::ir::Laz..</text></g><g><title>faeyne_lang::ir::MatchStatment::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="981" width="13.2737%" height="15" fill="rgb(244,35,45)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="991.50">faeyne_lang::ir::Mat..</text></g><g><title>faeyne_lang::ir::Block::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="965" width="13.2737%" height="15" fill="rgb(251,115,12)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="975.50">faeyne_lang::ir::Blo..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="949" width="13.2737%" height="15" fill="rgb(240,54,50)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="959.50">faeyne_lang::ir::Laz..</text></g><g><title>faeyne_lang::ir::Call::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="933" width="13.2737%" height="15" fill="rgb(233,84,52)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="943.50">faeyne_lang::ir::Cal..</text></g><g><title>faeyne_lang::ir::FunctionHandle::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="917" width="13.2737%" height="15" fill="rgb(207,117,47)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="927.50">faeyne_lang::ir::Fun..</text></g><g><title>faeyne_lang::ir::GlobalFunc::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="901" width="13.2737%" height="15" fill="rgb(249,43,39)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="911.50">faeyne_lang::ir::Glo..</text></g><g><title>faeyne_lang::ir::Block::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="885" width="13.2737%" height="15" fill="rgb(209,38,44)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="895.50">faeyne_lang::ir::Blo..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="869" width="13.2737%" height="15" fill="rgb(236,212,23)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="879.50">faeyne_lang::ir::Laz..</text></g><g><title>faeyne_lang::ir::MatchStatment::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="853" width="13.2737%" height="15" fill="rgb(242,79,21)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="863.50">faeyne_lang::ir::Mat..</text></g><g><title>faeyne_lang::ir::Block::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="837" width="13.2737%" height="15" fill="rgb(211,96,35)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="847.50">faeyne_lang::ir::Blo..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="821" width="13.2737%" height="15" fill="rgb(253,215,40)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="831.50">faeyne_lang::ir::Laz..</text></g><g><title>faeyne_lang::ir::Call::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="805" width="13.2737%" height="15" fill="rgb(211,81,21)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="815.50">faeyne_lang::ir::Cal..</text></g><g><title>faeyne_lang::ir::FunctionHandle::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="789" width="13.2737%" height="15" fill="rgb(208,190,38)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="799.50">faeyne_lang::ir::Fun..</text></g><g><title>faeyne_lang::ir::GlobalFunc::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="773" width="13.2737%" height="15" fill="rgb(235,213,38)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="783.50">faeyne_lang::ir::Glo..</text></g><g><title>faeyne_lang::ir::Block::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="757" width="13.2737%" height="15" fill="rgb(237,122,38)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="767.50">faeyne_lang::ir::Blo..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="741" width="13.2737%" height="15" fill="rgb(244,218,35)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="751.50">faeyne_lang::ir::Laz..</text></g><g><title>faeyne_lang::ir::MatchStatment::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="725" width="13.2737%" height="15" fill="rgb(240,68,47)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="735.50">faeyne_lang::ir::Mat..</text></g><g><title>faeyne_lang::ir::Block::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="709" width="13.2737%" height="15" fill="rgb(210,16,53)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="719.50">faeyne_lang::ir::Blo..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="693" width="13.2737%" height="15" fill="rgb(235,124,12)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="703.50">faeyne_lang::ir::Laz..</text></g><g><title>faeyne_lang::ir::Call::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="677" width="13.2737%" height="15" fill="rgb(224,169,11)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="687.50">faeyne_lang::ir::Cal..</text></g><g><title>faeyne_lang::ir::FunctionHandle::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="661" width="13.2737%" height="15" fill="rgb(250,166,2)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="671.50">faeyne_lang::ir::Fun..</text></g><g><title>faeyne_lang::ir::GlobalFunc::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="645" width="13.2737%" height="15" fill="rgb(242,216,29)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="655.50">faeyne_lang::ir::Glo..</text></g><g><title>faeyne_lang::ir::Block::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="629" width="13.2737%" height="15" fill="rgb(230,116,27)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="639.50">faeyne_lang::ir::Blo..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="613" width="13.2737%" height="15" fill="rgb(228,99,48)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="623.50">faeyne_lang::ir::Laz..</text></g><g><title>faeyne_lang::ir::MatchStatment::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="597" width="13.2737%" height="15" fill="rgb(253,11,6)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="607.50">faeyne_lang::ir::Mat..</text></g><g><title>faeyne_lang::ir::Block::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="581" width="13.2737%" height="15" fill="rgb(247,143,39)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="591.50">faeyne_lang::ir::Blo..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="565" width="13.2737%" height="15" fill="rgb(236,97,10)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="575.50">faeyne_lang::ir::Laz..</text></g><g><title>faeyne_lang::ir::Call::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="549" width="13.2737%" height="15" fill="rgb(233,208,19)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="559.50">faeyne_lang::ir::Cal..</text></g><g><title>faeyne_lang::ir::FunctionHandle::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="533" width="13.2737%" height="15" fill="rgb(216,164,2)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="543.50">faeyne_lang::ir::Fun..</text></g><g><title>faeyne_lang::ir::GlobalFunc::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="517" width="13.2737%" height="15" fill="rgb(220,129,5)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="527.50">faeyne_lang::ir::Glo..</text></g><g><title>faeyne_lang::ir::Block::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="501" width="13.2737%" height="15" fill="rgb(242,17,10)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="511.50">faeyne_lang::ir::Blo..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="485" width="13.2737%" height="15" fill="rgb(242,107,0)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="495.50">faeyne_lang::ir::Laz..</text></g><g><title>faeyne_lang::ir::MatchStatment::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="469" width="13.2737%" height="15" fill="rgb(251,28,31)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="479.50">faeyne_lang::ir::Mat..</text></g><g><title>faeyne_lang::ir::Block::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="453" width="13.2737%" height="15" fill="rgb(233,223,10)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="463.50">faeyne_lang::ir::Blo..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="437" width="13.2737%" height="15" fill="rgb(215,21,27)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="447.50">faeyne_lang::ir::Laz..</text></g><g><title>faeyne_lang::ir::Call::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="421" width="13.2737%" height="15" fill="rgb(232,23,21)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="431.50">faeyne_lang::ir::Cal..</text></g><g><title>faeyne_lang::ir::FunctionHandle::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="405" width="13.2737%" height="15" fill="rgb(244,5,23)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="415.50">faeyne_lang::ir::Fun..</text></g><g><title>faeyne_lang::ir::GlobalFunc::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="389" width="13.2737%" height="15" fill="rgb(226,81,46)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="399.50">faeyne_lang::ir::Glo..</text></g><g><title>faeyne_lang::ir::Block::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="373" width="13.2737%" height="15" fill="rgb(247,70,30)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="383.50">faeyne_lang::ir::Blo..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="357" width="13.2737%" height="15" fill="rgb(212,68,19)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="367.50">faeyne_lang::ir::Laz..</text></g><g><title>faeyne_lang::ir::MatchStatment::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="341" width="13.2737%" height="15" fill="rgb(240,187,13)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="351.50">faeyne_lang::ir::Mat..</text></g><g><title>faeyne_lang::ir::Block::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="325" width="13.2737%" height="15" fill="rgb(223,113,26)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="335.50">faeyne_lang::ir::Blo..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="309" width="13.2737%" height="15" fill="rgb(206,192,2)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="319.50">faeyne_lang::ir::Laz..</text></g><g><title>faeyne_lang::ir::Call::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="293" width="13.2737%" height="15" fill="rgb(241,108,4)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="303.50">faeyne_lang::ir::Cal..</text></g><g><title>faeyne_lang::ir::FunctionHandle::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="277" width="13.2737%" height="15" fill="rgb(247,173,49)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="287.50">faeyne_lang::ir::Fun..</text></g><g><title>faeyne_lang::ir::GlobalFunc::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="261" width="13.2737%" height="15" fill="rgb(224,114,35)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="271.50">faeyne_lang::ir::Glo..</text></g><g><title>faeyne_lang::ir::Block::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="245" width="13.2737%" height="15" fill="rgb(245,159,27)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="255.50">faeyne_lang::ir::Blo..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="229" width="13.2737%" height="15" fill="rgb(245,172,44)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="239.50">faeyne_lang::ir::Laz..</text></g><g><title>faeyne_lang::ir::MatchStatment::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="213" width="13.2737%" height="15" fill="rgb(236,23,11)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="223.50">faeyne_lang::ir::Mat..</text></g><g><title>faeyne_lang::ir::Block::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="197" width="13.2737%" height="15" fill="rgb(205,117,38)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="207.50">faeyne_lang::ir::Blo..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="181" width="13.2737%" height="15" fill="rgb(237,72,25)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="191.50">faeyne_lang::ir::Laz..</text></g><g><title>faeyne_lang::ir::Call::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="165" width="13.2737%" height="15" fill="rgb(244,70,9)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="175.50">faeyne_lang::ir::Cal..</text></g><g><title>faeyne_lang::ir::FunctionHandle::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="149" width="13.2737%" height="15" fill="rgb(217,125,39)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="159.50">faeyne_lang::ir::Fun..</text></g><g><title>faeyne_lang::ir::GlobalFunc::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="133" width="13.2737%" height="15" fill="rgb(235,36,10)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="143.50">faeyne_lang::ir::Glo..</text></g><g><title>faeyne_lang::ir::Block::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="117" width="13.2737%" height="15" fill="rgb(251,123,47)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="127.50">faeyne_lang::ir::Blo..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="101" width="13.2737%" height="15" fill="rgb(221,13,13)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="111.50">faeyne_lang::ir::Laz..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="85" width="13.2737%" height="15" fill="rgb(238,131,9)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="95.50">faeyne_lang::ir::Laz..</text></g><g><title>faeyne_lang::ir::VarScope::get (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="69" width="13.2737%" height="15" fill="rgb(211,50,8)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="79.50">faeyne_lang::ir::Var..</text></g><g><title>core::hash::BuildHasher::hash_one (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="53" width="13.2737%" height="15" fill="rgb(245,182,24)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="63.50">core::hash::BuildHas..</text></g><g><title>_ZN71_$LT$core..hash..sip..Hasher$LT$S$GT$$u20$as$u20$core..hash..Hasher$GT$5write17hd84ec8732dfbe11bE.llvm.13060555708505510842 (10,653,720 samples, 13.27%)</title><rect x="34.6156%" y="37" width="13.2737%" height="15" fill="rgb(242,14,37)" fg:x="27783168" fg:w="10653720"/><text x="34.8656%" y="47.50">_ZN71_$LT$core..hash..</text></g><g><title>[unknown] (25,652,996 samples, 31.96%)</title><rect x="26.5919%" y="1077" width="31.9616%" height="15" fill="rgb(246,228,12)" fg:x="21343152" fg:w="25652996"/><text x="26.8419%" y="1087.50">[unknown]</text></g><g><title>faeyne_lang::ir::LazyVal::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="1061" width="10.6642%" height="15" fill="rgb(213,55,15)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="1071.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::MatchStatment::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="1045" width="10.6642%" height="15" fill="rgb(209,9,3)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="1055.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::Block::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="1029" width="10.6642%" height="15" fill="rgb(230,59,30)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="1039.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="1013" width="10.6642%" height="15" fill="rgb(209,121,21)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="1023.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::Call::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="997" width="10.6642%" height="15" fill="rgb(220,109,13)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="1007.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::FunctionHandle::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="981" width="10.6642%" height="15" fill="rgb(232,18,1)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="991.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::GlobalFunc::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="965" width="10.6642%" height="15" fill="rgb(215,41,42)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="975.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::Block::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="949" width="10.6642%" height="15" fill="rgb(224,123,36)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="959.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="933" width="10.6642%" height="15" fill="rgb(240,125,3)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="943.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::MatchStatment::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="917" width="10.6642%" height="15" fill="rgb(205,98,50)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="927.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::Block::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="901" width="10.6642%" height="15" fill="rgb(205,185,37)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="911.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="885" width="10.6642%" height="15" fill="rgb(238,207,15)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="895.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::Call::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="869" width="10.6642%" height="15" fill="rgb(213,199,42)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="879.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::FunctionHandle::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="853" width="10.6642%" height="15" fill="rgb(235,201,11)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="863.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::GlobalFunc::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="837" width="10.6642%" height="15" fill="rgb(207,46,11)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="847.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::Block::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="821" width="10.6642%" height="15" fill="rgb(241,35,35)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="831.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="805" width="10.6642%" height="15" fill="rgb(243,32,47)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="815.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::MatchStatment::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="789" width="10.6642%" height="15" fill="rgb(247,202,23)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="799.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::Block::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="773" width="10.6642%" height="15" fill="rgb(219,102,11)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="783.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="757" width="10.6642%" height="15" fill="rgb(243,110,44)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="767.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::Call::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="741" width="10.6642%" height="15" fill="rgb(222,74,54)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="751.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::FunctionHandle::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="725" width="10.6642%" height="15" fill="rgb(216,99,12)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="735.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::GlobalFunc::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="709" width="10.6642%" height="15" fill="rgb(226,22,26)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="719.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::Block::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="693" width="10.6642%" height="15" fill="rgb(217,163,10)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="703.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="677" width="10.6642%" height="15" fill="rgb(213,25,53)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="687.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::MatchStatment::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="661" width="10.6642%" height="15" fill="rgb(252,105,26)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="671.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::Block::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="645" width="10.6642%" height="15" fill="rgb(220,39,43)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="655.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="629" width="10.6642%" height="15" fill="rgb(229,68,48)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="639.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::Call::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="613" width="10.6642%" height="15" fill="rgb(252,8,32)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="623.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::FunctionHandle::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="597" width="10.6642%" height="15" fill="rgb(223,20,43)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="607.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::GlobalFunc::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="581" width="10.6642%" height="15" fill="rgb(229,81,49)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="591.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::Block::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="565" width="10.6642%" height="15" fill="rgb(236,28,36)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="575.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="549" width="10.6642%" height="15" fill="rgb(249,185,26)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="559.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::MatchStatment::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="533" width="10.6642%" height="15" fill="rgb(249,174,33)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="543.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::Block::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="517" width="10.6642%" height="15" fill="rgb(233,201,37)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="527.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="501" width="10.6642%" height="15" fill="rgb(221,78,26)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="511.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::Call::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="485" width="10.6642%" height="15" fill="rgb(250,127,30)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="495.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::FunctionHandle::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="469" width="10.6642%" height="15" fill="rgb(230,49,44)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="479.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::GlobalFunc::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="453" width="10.6642%" height="15" fill="rgb(229,67,23)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="463.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::Block::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="437" width="10.6642%" height="15" fill="rgb(249,83,47)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="447.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="421" width="10.6642%" height="15" fill="rgb(215,43,3)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="431.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::MatchStatment::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="405" width="10.6642%" height="15" fill="rgb(238,154,13)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="415.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::Block::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="389" width="10.6642%" height="15" fill="rgb(219,56,2)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="399.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="373" width="10.6642%" height="15" fill="rgb(233,0,4)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="383.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::Call::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="357" width="10.6642%" height="15" fill="rgb(235,30,7)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="367.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::FunctionHandle::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="341" width="10.6642%" height="15" fill="rgb(250,79,13)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="351.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::GlobalFunc::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="325" width="10.6642%" height="15" fill="rgb(211,146,34)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="335.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::Block::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="309" width="10.6642%" height="15" fill="rgb(228,22,38)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="319.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="293" width="10.6642%" height="15" fill="rgb(235,168,5)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="303.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::MatchStatment::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="277" width="10.6642%" height="15" fill="rgb(221,155,16)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="287.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::Block::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="261" width="10.6642%" height="15" fill="rgb(215,215,53)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="271.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="245" width="10.6642%" height="15" fill="rgb(223,4,10)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="255.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::Call::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="229" width="10.6642%" height="15" fill="rgb(234,103,6)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="239.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::FunctionHandle::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="213" width="10.6642%" height="15" fill="rgb(227,97,0)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="223.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::GlobalFunc::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="197" width="10.6642%" height="15" fill="rgb(234,150,53)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="207.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::Block::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="181" width="10.6642%" height="15" fill="rgb(228,201,54)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="191.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="165" width="10.6642%" height="15" fill="rgb(222,22,37)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="175.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::MatchStatment::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="149" width="10.6642%" height="15" fill="rgb(237,53,32)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="159.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::Block::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="133" width="10.6642%" height="15" fill="rgb(233,25,53)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="143.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="117" width="10.6642%" height="15" fill="rgb(210,40,34)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="127.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::Call::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="101" width="10.6642%" height="15" fill="rgb(241,220,44)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="111.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::LazyVal::eval (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="85" width="10.6642%" height="15" fill="rgb(235,28,35)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="95.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::VarScope::get (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="69" width="10.6642%" height="15" fill="rgb(210,56,17)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="79.50">faeyne_lang::ir:..</text></g><g><title>faeyne_lang::ir::Scopble::get (8,559,260 samples, 10.66%)</title><rect x="47.8893%" y="53" width="10.6642%" height="15" fill="rgb(224,130,29)" fg:x="38436888" fg:w="8559260"/><text x="48.1393%" y="63.50">faeyne_lang::ir:..</text></g><g><title>asm_exc_page_fault (28,631,701 samples, 35.67%)</title><rect x="58.5535%" y="1077" width="35.6728%" height="15" fill="rgb(235,212,8)" fg:x="46996148" fg:w="28631701"/><text x="58.8035%" y="1087.50">asm_exc_page_fault</text></g><g><title>exc_page_fault (28,631,701 samples, 35.67%)</title><rect x="58.5535%" y="1061" width="35.6728%" height="15" fill="rgb(223,33,50)" fg:x="46996148" fg:w="28631701"/><text x="58.8035%" y="1071.50">exc_page_fault</text></g><g><title>do_user_addr_fault (28,631,701 samples, 35.67%)</title><rect x="58.5535%" y="1045" width="35.6728%" height="15" fill="rgb(219,149,13)" fg:x="46996148" fg:w="28631701"/><text x="58.8035%" y="1055.50">do_user_addr_fault</text></g><g><title>handle_mm_fault (28,631,701 samples, 35.67%)</title><rect x="58.5535%" y="1029" width="35.6728%" height="15" fill="rgb(250,156,29)" fg:x="46996148" fg:w="28631701"/><text x="58.8035%" y="1039.50">handle_mm_fault</text></g><g><title>__handle_mm_fault (28,631,701 samples, 35.67%)</title><rect x="58.5535%" y="1013" width="35.6728%" height="15" fill="rgb(216,193,19)" fg:x="46996148" fg:w="28631701"/><text x="58.8035%" y="1023.50">__handle_mm_fault</text></g><g><title>handle_pte_fault (28,631,701 samples, 35.67%)</title><rect x="58.5535%" y="997" width="35.6728%" height="15" fill="rgb(216,135,14)" fg:x="46996148" fg:w="28631701"/><text x="58.8035%" y="1007.50">handle_pte_fault</text></g><g><title>do_anonymous_page (28,631,701 samples, 35.67%)</title><rect x="58.5535%" y="981" width="35.6728%" height="15" fill="rgb(241,47,5)" fg:x="46996148" fg:w="28631701"/><text x="58.8035%" y="991.50">do_anonymous_page</text></g><g><title>alloc_anon_folio (28,631,701 samples, 35.67%)</title><rect x="58.5535%" y="965" width="35.6728%" height="15" fill="rgb(233,42,35)" fg:x="46996148" fg:w="28631701"/><text x="58.8035%" y="975.50">alloc_anon_folio</text></g><g><title>vma_alloc_folio (28,631,701 samples, 35.67%)</title><rect x="58.5535%" y="949" width="35.6728%" height="15" fill="rgb(231,13,6)" fg:x="46996148" fg:w="28631701"/><text x="58.8035%" y="959.50">vma_alloc_folio</text></g><g><title>alloc_pages_mpol (28,631,701 samples, 35.67%)</title><rect x="58.5535%" y="933" width="35.6728%" height="15" fill="rgb(207,181,40)" fg:x="46996148" fg:w="28631701"/><text x="58.8035%" y="943.50">alloc_pages_mpol</text></g><g><title>__alloc_pages (28,631,701 samples, 35.67%)</title><rect x="58.5535%" y="917" width="35.6728%" height="15" fill="rgb(254,173,49)" fg:x="46996148" fg:w="28631701"/><text x="58.8035%" y="927.50">__alloc_pages</text></g><g><title>get_page_from_freelist (28,631,701 samples, 35.67%)</title><rect x="58.5535%" y="901" width="35.6728%" height="15" fill="rgb(221,1,38)" fg:x="46996148" fg:w="28631701"/><text x="58.8035%" y="911.50">get_page_from_freelist</text></g><g><title>rmqueue (28,631,701 samples, 35.67%)</title><rect x="58.5535%" y="885" width="35.6728%" height="15" fill="rgb(206,124,46)" fg:x="46996148" fg:w="28631701"/><text x="58.8035%" y="895.50">rmqueue</text></g><g><title>faeyne_lang (80,184,351 samples, 99.90%)</title><rect x="0.0000%" y="1093" width="99.9034%" height="15" fill="rgb(249,21,11)" fg:x="0" fg:w="80184351"/><text x="0.2500%" y="1103.50">faeyne_lang</text></g><g><title>entry_SYSCALL_64_after_hwframe (4,556,502 samples, 5.68%)</title><rect x="94.2263%" y="1077" width="5.6770%" height="15" fill="rgb(222,201,40)" fg:x="75627849" fg:w="4556502"/><text x="94.4763%" y="1087.50">entry_S..</text></g><g><title>do_syscall_64 (4,556,502 samples, 5.68%)</title><rect x="94.2263%" y="1061" width="5.6770%" height="15" fill="rgb(235,61,29)" fg:x="75627849" fg:w="4556502"/><text x="94.4763%" y="1071.50">do_sysc..</text></g><g><title>x64_sys_call (4,556,502 samples, 5.68%)</title><rect x="94.2263%" y="1045" width="5.6770%" height="15" fill="rgb(219,207,3)" fg:x="75627849" fg:w="4556502"/><text x="94.4763%" y="1055.50">x64_sys..</text></g><g><title>__x64_sys_execve (4,556,502 samples, 5.68%)</title><rect x="94.2263%" y="1029" width="5.6770%" height="15" fill="rgb(222,56,46)" fg:x="75627849" fg:w="4556502"/><text x="94.4763%" y="1039.50">__x64_s..</text></g><g><title>do_execveat_common.isra.0 (4,556,502 samples, 5.68%)</title><rect x="94.2263%" y="1013" width="5.6770%" height="15" fill="rgb(239,76,54)" fg:x="75627849" fg:w="4556502"/><text x="94.4763%" y="1023.50">do_exec..</text></g><g><title>bprm_execve (4,556,502 samples, 5.68%)</title><rect x="94.2263%" y="997" width="5.6770%" height="15" fill="rgb(231,124,27)" fg:x="75627849" fg:w="4556502"/><text x="94.4763%" y="1007.50">bprm_ex..</text></g><g><title>bprm_execve.part.0 (4,556,502 samples, 5.68%)</title><rect x="94.2263%" y="981" width="5.6770%" height="15" fill="rgb(249,195,6)" fg:x="75627849" fg:w="4556502"/><text x="94.4763%" y="991.50">bprm_ex..</text></g><g><title>exec_binprm (4,556,502 samples, 5.68%)</title><rect x="94.2263%" y="965" width="5.6770%" height="15" fill="rgb(237,174,47)" fg:x="75627849" fg:w="4556502"/><text x="94.4763%" y="975.50">exec_bi..</text></g><g><title>search_binary_handler (4,556,502 samples, 5.68%)</title><rect x="94.2263%" y="949" width="5.6770%" height="15" fill="rgb(206,201,31)" fg:x="75627849" fg:w="4556502"/><text x="94.4763%" y="959.50">search_..</text></g><g><title>load_elf_binary (4,556,502 samples, 5.68%)</title><rect x="94.2263%" y="933" width="5.6770%" height="15" fill="rgb(231,57,52)" fg:x="75627849" fg:w="4556502"/><text x="94.4763%" y="943.50">load_el..</text></g><g><title>elf_load (4,556,502 samples, 5.68%)</title><rect x="94.2263%" y="917" width="5.6770%" height="15" fill="rgb(248,177,22)" fg:x="75627849" fg:w="4556502"/><text x="94.4763%" y="927.50">elf_load</text></g><g><title>vm_mmap (4,556,502 samples, 5.68%)</title><rect x="94.2263%" y="901" width="5.6770%" height="15" fill="rgb(215,211,37)" fg:x="75627849" fg:w="4556502"/><text x="94.4763%" y="911.50">vm_mmap</text></g><g><title>vm_mmap_pgoff (4,556,502 samples, 5.68%)</title><rect x="94.2263%" y="885" width="5.6770%" height="15" fill="rgb(241,128,51)" fg:x="75627849" fg:w="4556502"/><text x="94.4763%" y="895.50">vm_mmap..</text></g><g><title>do_mmap (4,556,502 samples, 5.68%)</title><rect x="94.2263%" y="869" width="5.6770%" height="15" fill="rgb(227,165,31)" fg:x="75627849" fg:w="4556502"/><text x="94.4763%" y="879.50">do_mmap</text></g><g><title>mmap_region (4,556,502 samples, 5.68%)</title><rect x="94.2263%" y="853" width="5.6770%" height="15" fill="rgb(228,167,24)" fg:x="75627849" fg:w="4556502"/><text x="94.4763%" y="863.50">mmap_re..</text></g><g><title>perf_event_mmap (4,556,502 samples, 5.68%)</title><rect x="94.2263%" y="837" width="5.6770%" height="15" fill="rgb(228,143,12)" fg:x="75627849" fg:w="4556502"/><text x="94.4763%" y="847.50">perf_ev..</text></g><g><title>perf_event_mmap_event (4,556,502 samples, 5.68%)</title><rect x="94.2263%" y="821" width="5.6770%" height="15" fill="rgb(249,149,8)" fg:x="75627849" fg:w="4556502"/><text x="94.4763%" y="831.50">perf_ev..</text></g><g><title>perf_iterate_sb (4,556,502 samples, 5.68%)</title><rect x="94.2263%" y="805" width="5.6770%" height="15" fill="rgb(243,35,44)" fg:x="75627849" fg:w="4556502"/><text x="94.4763%" y="815.50">perf_it..</text></g><g><title>perf_iterate_ctx (4,556,502 samples, 5.68%)</title><rect x="94.2263%" y="789" width="5.6770%" height="15" fill="rgb(246,89,9)" fg:x="75627849" fg:w="4556502"/><text x="94.4763%" y="799.50">perf_it..</text></g><g><title>perf_event_mmap_output (4,556,502 samples, 5.68%)</title><rect x="94.2263%" y="773" width="5.6770%" height="15" fill="rgb(233,213,13)" fg:x="75627849" fg:w="4556502"/><text x="94.4763%" y="783.50">perf_ev..</text></g><g><title>__perf_event_header__init_id (4,556,502 samples, 5.68%)</title><rect x="94.2263%" y="757" width="5.6770%" height="15" fill="rgb(233,141,41)" fg:x="75627849" fg:w="4556502"/><text x="94.4763%" y="767.50">__perf_..</text></g><g><title>all (80,261,907 samples, 100%)</title><rect x="0.0000%" y="1109" width="100.0000%" height="15" fill="rgb(239,167,4)" fg:x="0" fg:w="80261907"/><text x="0.2500%" y="1119.50"></text></g><g><title>perf-exec (77,556 samples, 0.10%)</title><rect x="99.9034%" y="1093" width="0.0966%" height="15" fill="rgb(209,217,16)" fg:x="80184351" fg:w="77556"/><text x="100.1534%" y="1103.50"></text></g><g><title>entry_SYSCALL_64_after_hwframe (77,556 samples, 0.10%)</title><rect x="99.9034%" y="1077" width="0.0966%" height="15" fill="rgb(219,88,35)" fg:x="80184351" fg:w="77556"/><text x="100.1534%" y="1087.50"></text></g><g><title>do_syscall_64 (77,556 samples, 0.10%)</title><rect x="99.9034%" y="1061" width="0.0966%" height="15" fill="rgb(220,193,23)" fg:x="80184351" fg:w="77556"/><text x="100.1534%" y="1071.50"></text></g><g><title>x64_sys_call (77,556 samples, 0.10%)</title><rect x="99.9034%" y="1045" width="0.0966%" height="15" fill="rgb(230,90,52)" fg:x="80184351" fg:w="77556"/><text x="100.1534%" y="1055.50"></text></g><g><title>__x64_sys_execve (77,556 samples, 0.10%)</title><rect x="99.9034%" y="1029" width="0.0966%" height="15" fill="rgb(252,106,19)" fg:x="80184351" fg:w="77556"/><text x="100.1534%" y="1039.50"></text></g><g><title>do_execveat_common.isra.0 (77,556 samples, 0.10%)</title><rect x="99.9034%" y="1013" width="0.0966%" height="15" fill="rgb(206,74,20)" fg:x="80184351" fg:w="77556"/><text x="100.1534%" y="1023.50"></text></g><g><title>bprm_execve (77,556 samples, 0.10%)</title><rect x="99.9034%" y="997" width="0.0966%" height="15" fill="rgb(230,138,44)" fg:x="80184351" fg:w="77556"/><text x="100.1534%" y="1007.50"></text></g><g><title>bprm_execve.part.0 (77,556 samples, 0.10%)</title><rect x="99.9034%" y="981" width="0.0966%" height="15" fill="rgb(235,182,43)" fg:x="80184351" fg:w="77556"/><text x="100.1534%" y="991.50"></text></g><g><title>exec_binprm (77,556 samples, 0.10%)</title><rect x="99.9034%" y="965" width="0.0966%" height="15" fill="rgb(242,16,51)" fg:x="80184351" fg:w="77556"/><text x="100.1534%" y="975.50"></text></g><g><title>search_binary_handler (77,556 samples, 0.10%)</title><rect x="99.9034%" y="949" width="0.0966%" height="15" fill="rgb(248,9,4)" fg:x="80184351" fg:w="77556"/><text x="100.1534%" y="959.50"></text></g><g><title>load_elf_binary (77,556 samples, 0.10%)</title><rect x="99.9034%" y="933" width="0.0966%" height="15" fill="rgb(210,31,22)" fg:x="80184351" fg:w="77556"/><text x="100.1534%" y="943.50"></text></g><g><title>begin_new_exec (77,556 samples, 0.10%)</title><rect x="99.9034%" y="917" width="0.0966%" height="15" fill="rgb(239,54,39)" fg:x="80184351" fg:w="77556"/><text x="100.1534%" y="927.50"></text></g><g><title>perf_event_exec (77,556 samples, 0.10%)</title><rect x="99.9034%" y="901" width="0.0966%" height="15" fill="rgb(230,99,41)" fg:x="80184351" fg:w="77556"/><text x="100.1534%" y="911.50"></text></g></svg></svg>
