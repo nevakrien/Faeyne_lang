@@ -212,77 +212,90 @@ impl<'ctx> ClosureScope<'ctx> {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum GenericRet<T> {
-    //holds the return value marks what to do with the call stack
-    //this is shared between match statments and functions
-    //HOWEVER only matchstatments may return the Unwind varient
-
-    Local(T),
-    Unwind(T),
+pub enum RetType{
+    Local,
+    Unwind
 }
 
+#[derive(Debug, PartialEq, Clone)]
+pub struct GenericRet<T> {
+    value: T,
+    ret: RetType,
+}
 
+impl<T :Clone + PartialEq> GenericRet<T> {
+    pub fn new(value: T, ret: RetType) -> Self {
+        GenericRet { value, ret }
+    }
 
-impl<T> GenericRet<T> {
+    pub fn new_local(value: T) -> Self {
+        GenericRet {
+            value,
+            ret: RetType::Local,
+        }
+    }
+
+    pub fn new_unwind(value: T) -> Self {
+        GenericRet {
+            value,
+            ret: RetType::Unwind,
+        }
+    }
+
     pub fn as_local(self) -> Self {
-        match self {
-            GenericRet::Local(v) => GenericRet::Local(v),
-            GenericRet::Unwind(v) => GenericRet::Local(v),
-        }
-    }
-    pub fn into(self) -> T {
-        match self {
-            GenericRet::Local(v) | GenericRet::Unwind(v) => v,
+        GenericRet {
+            value: self.value,
+            ret: RetType::Local,
         }
     }
 
-    pub fn map<U, F>(self, f: F) -> GenericRet<U>
+    pub fn into_inner(self) -> T {
+        self.value
+    }
+
+    pub fn map<U :Clone + PartialEq, F>(self, f: F) -> GenericRet<U>
     where
         F: FnOnce(T) -> U,
     {
-        match self {
-            GenericRet::Local(v) => GenericRet::Local(f(v)),
-            GenericRet::Unwind(v) => GenericRet::Unwind(f(v)),
+        GenericRet {
+            value: f(self.value),
+            ret: self.ret,
         }
     }
 }
 
-// Define the types for ScopeRet and ValueRet using the generic enum
+
+// // Define the types for ScopeRet and ValueRet using the generic enum
 
 pub type ScopeRet<'ctx> = GenericRet<LazyVal<'ctx>>;
 pub type ValueRet<'ctx> = GenericRet<Value<'ctx>>;
 
+
 impl<'ctx> ValueRet<'ctx> {
     fn to_unwind(self) -> Self {
-        let value : Value = self.into();
-        ValueRet::Unwind(value)
+        let value: Value = self.into_inner();
+        ValueRet::new(value, RetType::Unwind)
     }
 }
 
 impl<'ctx> From<Value<'ctx>> for ValueRet<'ctx> {
     fn from(value: Value<'ctx>) -> Self {
-        ValueRet::Local(value)
+        ValueRet::new_local(value)
     }
 }
 
 impl<'ctx> From<ValueRet<'ctx>> for Value<'ctx> {
     fn from(ret: ValueRet<'ctx>) -> Self {
-        match ret {
-            ValueRet::Local(v) => v,
-            ValueRet::Unwind(v) => v,
-        }
+        ret.into_inner()
     }
 }
+
 
 impl<'ctx> From<ScopeRet<'ctx>> for LazyVal<'ctx> {
     fn from(ret: ScopeRet<'ctx>) -> Self {
-        match ret {
-            ScopeRet::Local(v) => v,
-            ScopeRet::Unwind(v) => v,
-        }
+        ret.into_inner()
     }
 }
-
 
 pub type GcPointer<T> = Rc<T>;
 
@@ -305,42 +318,33 @@ pub enum LazyVal<'ctx>{
 }
 
 impl<'ctx> LazyVal<'ctx> {
-    pub fn eval<'parent>(&self,scope: &mut VarScope<'ctx, 'parent>) -> Result<ValueRet<'ctx>,ErrList> 
-    where 'ctx: 'parent,
-     {
+    pub fn eval<'parent>(
+        &self,
+        scope: &mut VarScope<'ctx, 'parent>
+    ) -> Result<ValueRet<'ctx>, ErrList>
+    where
+        'ctx: 'parent,
+    {
         match self {
-            LazyVal::Terminal(v) => Ok(v.clone().into()),
+            LazyVal::Terminal(v) => Ok(ValueRet::new_local(v.clone())),
             LazyVal::Ref(id) => match scope.get(*id) {
-                None => Err(Error::Missing(UndefinedName{id:*id}).to_list()),
-                Some(v) => Ok(v.clone().into()),
+                None => Err(Error::Missing(UndefinedName { id: *id }).to_list()),
+                Some(v) => Ok(ValueRet::new_local(v.clone())),
             },
             LazyVal::FuncCall(call) => call.eval(scope),
             LazyVal::Match { var, statment } => {
-
-                match var.eval(scope)? {    
-                    ValueRet::Unwind(v) => Ok(ValueRet::Unwind(v)),
-                    ValueRet::Local(v) => statment.eval(v, scope),
+                let ValueRet{value,ret} = var.eval(scope)?;
+                match ret {
+                    RetType::Unwind => Ok(ValueRet::new_unwind(value)),
+                    RetType::Local => statment.eval(value, scope),
                 }
             },
-            LazyVal::MakeFunc(lf) => lf.eval(scope).map(|f| 
-                ValueRet::Local(
-                    Value::Func(
-                        FunctionHandle::Lambda(
-                            GcPointer::new(f)
-                        ) 
-                    )
-                )
-            ),
-            LazyVal::MakeMatchFunc(x) => x.eval(scope).map(|f| 
-                ValueRet::Local(
-                    Value::Func(
-                        FunctionHandle::Lambda(
-                            GcPointer::new(f)
-                        ) 
-                    )
-                )
-            ),
-
+            LazyVal::MakeFunc(lf) => lf
+                .eval(scope)
+                .map(|f| ValueRet::new_local(Value::Func(FunctionHandle::Lambda(GcPointer::new(f))))),
+            LazyVal::MakeMatchFunc(x) => x
+                .eval(scope)
+                .map(|f| ValueRet::new_local(Value::Func(FunctionHandle::Lambda(GcPointer::new(f))))),
         }
     }
 
@@ -448,7 +452,7 @@ impl<'ctx> LazyMatch<'ctx> {
         // thus using it as an argument is totally safe
 
         let statment = Statment::Return(
-            ScopeRet::Local(
+            ScopeRet::new_local(
                 LazyVal::Match {
                     var: Box::new(LazyVal::Ref(0)),
                     statment: self.inner.clone()    
@@ -550,7 +554,7 @@ impl<'ctx> Block <'ctx>{
 
     pub fn new_simple(val :LazyVal<'ctx>) -> Self {
         Block {
-            code: vec![Statment::Return(GenericRet::Local(val))]
+            code: vec![Statment::Return(GenericRet::new_local(val))]
         }
     }
 
@@ -561,41 +565,42 @@ impl<'ctx> Block <'ctx>{
 
         for s in self.code.iter() {
             match s {
-                Statment::Return(a) => match a{
-                    GenericRet::Local(x) => {return x.eval(scope);},
-                    GenericRet::Unwind(x)=> {return x.eval(scope).map(|x| x.to_unwind());},
+                Statment::Return(a) => match a.ret{
+                    RetType::Local => {return a.value.eval(scope);},
+                    RetType::Unwind=> {return a.value.eval(scope).map(|x| x.to_unwind());},
                 },
                 Statment::Assign(id,a) =>{
-                    let ret = a.eval(scope)?;
+                    let ValueRet{value,ret} = a.eval(scope)?;
                     match ret{
-                        ValueRet::Local(x) => {scope.add(*id,x);},
-                        ValueRet::Unwind(_) => {return Ok(ret);}
+                        RetType::Local => {scope.add(*id,value);},
+                        RetType::Unwind => {return Ok(ValueRet::new_unwind(value));}
                     }
                     
                 },
                 Statment::Call(v) => {
-                    let ret = v.eval(scope)?;
+                    let ValueRet{value,ret} = v.eval(scope)?;
                     match ret {
-                        ValueRet::Local(_) => {},
-                        ValueRet::Unwind(_) => {return Ok(ret);}
+                        RetType::Local => {},
+                        RetType::Unwind => {return Ok(ValueRet::new_unwind(value));}
                     }
                 },
                 Statment::Match((val,statment)) => {
-                    let  r = val.eval(scope)?;
-                    let x = match r {
-                        ValueRet::Local(x) => x,
-                        ValueRet::Unwind(_) =>{return Ok(r);},
-                    };
-                    let ret = statment.eval(x,scope)?;
+                    let ValueRet{value:x,ret} = val.eval(scope)?;
                     match ret {
-                        ValueRet::Local(_) => {},
-                        ValueRet::Unwind(_) => {return Ok(ret);}
+                        RetType::Local => {},
+                        RetType::Unwind =>{return Ok(ValueRet::new_unwind(x));},
+                    };
+                    let ValueRet{value:y,ret} = statment.eval(x,scope)?;
+                    match ret {
+                        RetType::Local => {},
+                        
+                        RetType::Unwind => {return Ok(ValueRet::new_unwind(y));},
                     }
                 },
             }
         }
 
-        Ok(ValueRet::Local(Value::Nil))
+        Ok(ValueRet::new_local(Value::Nil))
     }
 
     pub fn add_to_closure(&self,scope: &VarScope<'ctx,'_>,closure : &mut ClosureScope<'ctx>) -> Result<(),ErrList>{
@@ -729,12 +734,13 @@ pub struct Call<'ctx>{
 
 impl<'ctx> Call<'ctx> {
     pub fn eval(&self,scope: &mut VarScope<'ctx, '_>) -> Result<ValueRet<'ctx>,ErrList> {
-        let handle_res = match self.called.eval(scope)? {
-            ValueRet::Unwind(v) => {return Ok(ValueRet::Unwind(v));}
-            ValueRet::Local(v) => match v {
+        let ValueRet{ret,value} =  self.called.eval(scope)?;
+        let handle_res = match ret {
+            RetType::Unwind => {return Ok(ValueRet::new_unwind(value));}
+            RetType::Local => match value {
                 Value::Func(f) => Ok(f),
                 Value::String(s) => Err(s),
-                _ => {return Err(Error::NoneCallble(NoneCallble{span:self.debug_span,value:nerfed_to_string(&v)}).to_list());}
+                _ => {return Err(Error::NoneCallble(NoneCallble{span:self.debug_span,value:nerfed_to_string(&value)}).to_list());}
             }
         };
 
@@ -742,9 +748,9 @@ impl<'ctx> Call<'ctx> {
         for a in self.args.iter() {
             match a.eval(scope) {
                 Err(e) => {return Err(e);},
-                Ok(x) => {match x {
-                    ValueRet::Local(v) => {arg_values.push(v);},
-                    ValueRet::Unwind(_) => {return Ok(x);},
+                Ok(ValueRet{value,ret}) => {match ret {
+                    RetType::Local => {arg_values.push(value);},
+                    RetType::Unwind => {return Ok(ValueRet::new_local(value));},
                 }}
             };
         }
@@ -1047,7 +1053,7 @@ fn test_system_state_ffi() {
 
         // Step 5: Evaluate the outer call
         let ans = outer_call.eval(&mut scope).unwrap();
-        assert_eq!(ans, ValueRet::Local(Value::Nil));
+        assert_eq!(ans, ValueRet::new_local(Value::Nil));
 
         // Step 6: Validate that the logs were updated correctly
         assert_eq!(log_system.borrow().len(), 1);

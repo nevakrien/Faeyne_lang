@@ -120,10 +120,10 @@ impl<'ctx> Translate<'ctx,ir::Block<'ctx>>  for FuncBlock {
 			ans.push(s.translate(table));
 		}
 		ans.push(ir::Statment::Return (match self.ret {
-			None => ir::GenericRet::Local(LazyVal::Terminal(ir::Value::Nil)),
+			None => ir::GenericRet::new_local(LazyVal::Terminal(ir::Value::Nil)),
 			Some(r) => match r {
-				Ret::Imp(x) => ScopeRet::Local(x.translate(table)),
-				Ret::Exp(x) => ScopeRet::Unwind(x.translate(table)),
+				Ret::Imp(x) => ScopeRet::new_local(x.translate(table)),
+				Ret::Exp(x) => ScopeRet::new_unwind(x.translate(table)),
 			},
 		}));
 

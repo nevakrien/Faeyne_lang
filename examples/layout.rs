@@ -55,7 +55,7 @@ fn main() {
     // let value = Value::Float(f64::from_bits(0xFFFFFFFFFFFFFFFF)); // A simple integer value.
     let value = Value::Int(69);
     let lazy_val = LazyVal::Terminal(value.clone()); // A LazyVal holding a terminal value.
-    let value_ret: ValueRet = GenericRet::Local(value.clone()); // A ValueRet holding the same value.
+    let value_ret: ValueRet = GenericRet::new_local(value.clone()); // A ValueRet holding the same value.
 
     // Use view_mem! macro to view the memory layout of each variable
     println!("### Inspecting Value ###");
