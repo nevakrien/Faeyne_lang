@@ -44,6 +44,7 @@ pub const MAKE_DIR_ID: usize = 19;
 pub const DELETE_DIR_ID: usize = 20;
 
 pub const STRING_OUT_OF_BOUNDS: usize = 21;
+pub const SELF_ID: usize = 22;
 
 
 pub fn preload_table(table: &mut StringTable) {
@@ -75,6 +76,7 @@ pub fn preload_table(table: &mut StringTable) {
     assert_eq!(table.get_id(":delete_dir"), DELETE_DIR_ID);
 
     assert_eq!(table.get_id(":string_out_of_bounds"), STRING_OUT_OF_BOUNDS);
+    assert_eq!(table.get_id("self"), SELF_ID);
 }
 
 #[macro_export]
@@ -107,6 +109,7 @@ macro_rules! get_id {
     (":delete_dir") => { DELETE_DIR_ID };
     
     (":string_out_of_bounds") => { STRING_OUT_OF_BOUNDS };
+    ("self") => { SELF_ID };
 
     ($other:expr) => { // Fallback to the runtime version if it's not predefined
         $other

@@ -141,6 +141,17 @@ NoPipeFuncCall: FunctionCall = {
         debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
     },
 
+    <start:@L> "self" <end_s:@R> "(" <args:CommaSepValue> ")" <end:@R> => FunctionCall {
+        name: FValue::SelfRef(Span::new(start as u32, end_s as u32)),
+        args,
+        debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
+    },
+    <start:@L> "self" "(" ")"  <end_s:@R> <end:@R> => FunctionCall {
+        name: FValue::SelfRef(Span::new(start as u32, end_s as u32)),
+        args: vec![],
+        debug_span: Span::new(start as u32, end as u32) // Capture span from start to end
+    },
+
     <start:@L> <x:Lambda> "(" <args:CommaSepValue> ")" <end:@R> => FunctionCall {
         name: FValue::Lambda(Box::new(x)),
         args,

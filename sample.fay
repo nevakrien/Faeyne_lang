@@ -132,6 +132,7 @@ def _make_nested_lamda(n,f) {
     match n {
         0 => f,
         _ => {
+            a = 1==1;
             f2 = _make_nested_lamda(n-1,f); 
             fn (x) -> {1+f2(x)}
         }
@@ -178,8 +179,20 @@ def main(system){
     div_loop(100);
     waste_more_time(1000);
 
-    x=self;
-    make_nested_lamda(100)(1) |>system(:println)();
+    #x=self;
+    f=make_nested_lamda(100);
+    f(1) |>system(:println)();
+
+    
+    f = fn(x,acc) {
+        match x {
+            0=> acc,
+            _ => {acc+x+self(x-1,acc)}
+        }
+    };
+
+    f(10,0) |>system(:println)();
+
     #x = 1;
     #x();
 

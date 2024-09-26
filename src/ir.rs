@@ -1,6 +1,8 @@
 #![allow(dead_code)]
 // use core::cell::RefCell;
 // use core::ptr::NonNull;
+use crate::system::SELF_ID;
+use crate::get_id;
 use std::rc;
 use core::cell::Cell;
 use crate::basic_ops::call_string;
@@ -132,28 +134,6 @@ where
             None => self.parent.get(id),
         }
     }
-
-    pub fn capture_entire_scope(&self) -> ClosureScope<'ctx> {
-        let mut all_vars = HashMap::new();
-        let mut current_scope = &Scopble::SubScope(self);
-
-        while let Scopble::SubScope(scope) = current_scope {
-            // Respect existing values
-            for (id, value) in &scope.vars {
-                all_vars.entry(*id).or_insert_with(|| value.clone());
-            }
-
-            current_scope = &scope.parent;
-        }
-
-        if let Scopble::Static(scope) = current_scope {
-            for (id, value) in &scope.vars {
-                all_vars.entry(*id).or_insert_with(|| value.clone());
-            }
-        }
-
-        ClosureScope { vars: all_vars ,allowed_escapes:HashSet::new(),self_ref:None.into()}
-    }
 }
 
 
@@ -228,11 +208,22 @@ impl<'ctx,'call> Default for ClosureScope<'ctx> {
 
 impl<'ctx,'call> ClosureScope<'ctx> {
     pub fn new() -> Self {
-        ClosureScope{vars: HashMap::new(),allowed_escapes:HashSet::new(),self_ref:None.into()}
+        let mut allowed_escapes = HashSet::new();
+        allowed_escapes.insert(get_id!("self"));
+        ClosureScope{vars: HashMap::new(),allowed_escapes,self_ref:None.into()}
     }
 
     pub fn get(&self,id:usize) -> Option<Value<'ctx>> {
-        self.vars.get(&id).cloned()
+        match self.vars.get(&id){
+            Some(x)=>Some(x.clone()),
+            None=> if id==get_id!("self"){
+                let ans = self.self_ref.replace(None).expect("closures allways hold ref to self");
+                self.self_ref.set(Some(ans.clone()));
+                Some(Value::Func(FunctionHandle::Lambda(ans)))
+            } else{
+                None
+            }
+        }
     }
 
     pub fn maybe_add(&mut self,id : usize ,outer_scope: &VarScope<'ctx,'_>) -> Result<(),ErrList> {

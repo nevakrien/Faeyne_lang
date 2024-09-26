@@ -51,6 +51,7 @@ pub fn is_equal<'ctx>(v1: &Value<'ctx>, v2: &Value<'ctx>) -> bool {
         (Value::Bool(a), Value::Bool(b)) => a == b,
         (Value::String(a), Value::String(b)) => a == b,
         (Value::Nil, Value::Nil) => true,
+        (Value::Func(f1),Value::Func(f2)) => f1==f2,
         _ => false, // Type mismatch or unsupported types
     }
 }

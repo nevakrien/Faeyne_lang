@@ -1,3 +1,5 @@
+use crate::system::SELF_ID;
+use crate::get_id;
 use crate::ast::*;
 use crate::ir;
 use codespan::Span;
@@ -33,7 +35,7 @@ impl<'ctx> AddToGlobalScope<'ctx> for GlobalScope<'ctx> {
         let func_sig = ir::FuncSig { arg_ids: func_dec.sig.args };
         
         // Translate the function body using table
-        let func_body = func_dec.body.translate(table)?;
+        let func_body = func_dec.body.translate(table,false)?;
         
         // Add function to global scope
         self.add(func_name_id, func_body, func_sig)?;
@@ -47,19 +49,19 @@ impl<'ctx> AddToGlobalScope<'ctx> for GlobalScope<'ctx> {
 
 
 pub trait Translate<'ctx, Output> {
-    fn translate(self, table: &StringTable<'ctx>) -> Result<Output,ErrList>;
+    fn translate(self, table: &StringTable<'ctx>,inside_lambda:bool) -> Result<Output,ErrList>;
 }
 
 
 impl<'ctx> Translate<'ctx,LazyVal<'ctx>> for FValue {
-	fn translate(self, table: &StringTable<'ctx>) -> Result<LazyVal<'ctx>, ErrList> {
+	fn translate(self, table: &StringTable<'ctx>,inside_lambda:bool) -> Result<LazyVal<'ctx>, ErrList> {
 		let val : Value = self.into();
-		val.translate(table)
+		val.translate(table,inside_lambda)
 	}
 }
 
 impl<'ctx> Translate<'ctx,LazyVal<'ctx>> for Value {
-	fn translate(self, table: &StringTable<'ctx>) -> Result<LazyVal<'ctx>, ErrList> {
+	fn translate(self, table: &StringTable<'ctx>,inside_lambda:bool) -> Result<LazyVal<'ctx>, ErrList> {
 		match self {
 			Value::Variable(id) => Ok(LazyVal::Ref(id)),
 			Value::Int(x) => Ok(LazyVal::Terminal(ir::Value::Int(x))),
@@ -68,7 +70,7 @@ impl<'ctx> Translate<'ctx,LazyVal<'ctx>> for Value {
 			Value::Atom(x) => Ok(LazyVal::Terminal(ir::Value::Atom(x))),
 			
 			Value::Nil => Ok(LazyVal::Terminal(ir::Value::Nil)),
-			Value::FuncCall(call) =>Ok(LazyVal::FuncCall(call.translate(table)?)),
+			Value::FuncCall(call) =>Ok(LazyVal::FuncCall(call.translate(table,inside_lambda)?)),
 
 
 			Value::String(x) => {
@@ -89,25 +91,29 @@ impl<'ctx> Translate<'ctx,LazyVal<'ctx>> for Value {
 				)
 			))),
 
-			Value::Lambda(f) => Ok(LazyVal::MakeFunc(f.translate(table)?)),
-			Value::MatchLambda(f) => Ok(LazyVal::MakeMatchFunc(f.translate(table)?)),
+			Value::Lambda(f) => Ok(LazyVal::MakeFunc(f.translate(table,true)?)),
+			Value::MatchLambda(f) => Ok(LazyVal::MakeMatchFunc(f.translate(table,true)?)),
 
 			Value::Match(m) => {
-				let (var_in,statment)= m.translate(table)?;
+				let (var_in,statment)= m.translate(table,inside_lambda)?;
 				let var = Box::new(var_in);
 				Ok(LazyVal::Match{var,statment})
 			},
-			Value::SelfRef(span) => Err(Error::IllegalSelfRef(IllegalSelfRef{span}).to_list()),
+			Value::SelfRef(span) => if inside_lambda {
+				Ok(LazyVal::Ref(get_id!("self")))
+			} else {
+				Err(Error::IllegalSelfRef(IllegalSelfRef{span}).to_list())
+			},
 		}
 	}
 }
 
 impl<'ctx> Translate<'ctx,ir::Call<'ctx>>  for FunctionCall {
-	fn translate(self, table: &StringTable<'ctx>) -> Result<ir::Call<'ctx>,ErrList> {
-		let called = Box::new(self.name.translate(table)?);
+	fn translate(self, table: &StringTable<'ctx>,inside_lambda:bool) -> Result<ir::Call<'ctx>,ErrList> {
+		let called = Box::new(self.name.translate(table,inside_lambda)?);
 		let mut args = Vec::with_capacity(self.args.len());
 		for x in  self.args.into_iter() {
-			args.push(x.translate(table)?);
+			args.push(x.translate(table,inside_lambda)?);
 		}
 		Ok(ir::Call{
 			called,
@@ -120,16 +126,16 @@ impl<'ctx> Translate<'ctx,ir::Call<'ctx>>  for FunctionCall {
 
 
 impl<'ctx> Translate<'ctx,ir::Block<'ctx>>  for FuncBlock {
-	fn translate(self, table: &StringTable<'ctx>) -> Result<ir::Block<'ctx>,ErrList> {
+	fn translate(self, table: &StringTable<'ctx>,inside_lambda:bool) -> Result<ir::Block<'ctx>,ErrList> {
 		let mut ans = Vec::with_capacity(self.body.len()+1);
 		for s in self.body.into_iter() {
-			ans.push(s.translate(table)?);
+			ans.push(s.translate(table,inside_lambda)?);
 		}
 		ans.push(ir::Statment::Return (match self.ret {
 			None => ir::GenericRet::new_local(LazyVal::Terminal(ir::Value::Nil)),
 			Some(r) => match r {
-				Ret::Imp(x) => ScopeRet::new_local(x.translate(table)?),
-				Ret::Exp(x) => ScopeRet::new_unwind(x.translate(table)?),
+				Ret::Imp(x) => ScopeRet::new_local(x.translate(table,inside_lambda)?),
+				Ret::Exp(x) => ScopeRet::new_unwind(x.translate(table,inside_lambda)?),
 			},
 		}));
 
@@ -138,13 +144,13 @@ impl<'ctx> Translate<'ctx,ir::Block<'ctx>>  for FuncBlock {
 }
 
 impl<'ctx> Translate<'ctx,ir::MatchStatment<'ctx>>  for (Vec<MatchArm>,Span) {
-	fn translate(self, table: &StringTable<'ctx>) -> Result<ir::MatchStatment<'ctx>,ErrList> {
+	fn translate(self, table: &StringTable<'ctx>,inside_lambda:bool) -> Result<ir::MatchStatment<'ctx>,ErrList> {
 		let mut conds = Vec::with_capacity(self.0.len());
 		let mut vals = Vec::with_capacity(self.0.len());
 
 		for a in self.0.into_iter() {
-			conds.push(a.pattern.translate(table)?);
-			vals.push(a.result.translate(table)?);
+			conds.push(a.pattern.translate(table,inside_lambda)?);
+			vals.push(a.result.translate(table,inside_lambda)?);
 		}
 
 		Ok(ir::MatchStatment::new(conds,vals,self.1))
@@ -152,42 +158,44 @@ impl<'ctx> Translate<'ctx,ir::MatchStatment<'ctx>>  for (Vec<MatchArm>,Span) {
 } 
 
 impl<'ctx> Translate<'ctx,(LazyVal<'ctx>,ir::MatchStatment<'ctx>) >  for MatchStatment {
-	fn translate(self, table: &StringTable<'ctx>) -> Result<(LazyVal<'ctx>, ir::MatchStatment<'ctx>), ErrList> {
-		let var = self.val.translate(table)?;
-		let statment = (self.arms,self.debug_span).translate(table)?;
+	fn translate(self, table: &StringTable<'ctx>,inside_lambda:bool) -> Result<(LazyVal<'ctx>, ir::MatchStatment<'ctx>), ErrList> {
+		let var = self.val.translate(table,inside_lambda)?;
+		let statment = (self.arms,self.debug_span).translate(table,inside_lambda)?;
 		Ok((var, statment))
 	}
 }
 
 impl<'ctx> Translate<'ctx,ir::LazyMatch<'ctx>>  for MatchLambda {
-    fn translate(self, table: &StringTable<'ctx>) -> Result<ir::LazyMatch<'ctx>, ErrList> {
-        let match_statement = (self.arms, self.debug_span).translate(table);
+    fn translate(self, table: &StringTable<'ctx>,inside_lambda:bool) -> Result<ir::LazyMatch<'ctx>, ErrList> {
+        assert_eq!(inside_lambda,true );
+        let match_statement = (self.arms, self.debug_span).translate(table,inside_lambda);
         Ok(ir::LazyMatch::new(match_statement?))
     }
 }
 
 impl<'ctx> Translate<'ctx,ir::LazyFunc<'ctx>>  for Lambda {
-    fn translate(self, table: &StringTable<'ctx>) -> Result<ir::LazyFunc<'ctx>, ErrList> {
+    fn translate(self, table: &StringTable<'ctx>,inside_lambda:bool) -> Result<ir::LazyFunc<'ctx>, ErrList> {
+        assert_eq!(inside_lambda,true );
         let sig = ir::FuncSig { arg_ids: self.sig };
-        let body = self.body.translate(table)?;
+        let body = self.body.translate(table,inside_lambda)?;
         Ok(ir::LazyFunc::new(sig, body,self.debug_span))
     }
 }
 
 impl<'ctx> Translate<'ctx,ir::Statment<'ctx>> for Statment {
-	fn translate(self, table: &StringTable<'ctx>) -> Result<ir::Statment<'ctx>, ErrList> {
+	fn translate(self, table: &StringTable<'ctx>,inside_lambda:bool) -> Result<ir::Statment<'ctx>, ErrList> {
 		match self {
-			Statment::Assign(id,x) => Ok(ir::Statment::Assign(id,x.translate(table)?)),
-			Statment::Call(f) => Ok(ir::Statment::Call(f.translate(table)?)),
-			Statment::Match(m) => Ok(ir::Statment::Match(m.translate(table)?)),
+			Statment::Assign(id,x) => Ok(ir::Statment::Assign(id,x.translate(table,inside_lambda)?)),
+			Statment::Call(f) => Ok(ir::Statment::Call(f.translate(table,inside_lambda)?)),
+			Statment::Match(m) => Ok(ir::Statment::Match(m.translate(table,inside_lambda)?)),
 		}
 	}
 }
 
 impl<'ctx> Translate<'ctx,ir::MatchCond<'ctx>> for MatchPattern {
-    fn translate(self, table: &StringTable<'ctx>) -> Result<ir::MatchCond<'ctx>, ErrList> {
+    fn translate(self, table: &StringTable<'ctx>,inside_lambda:bool) -> Result<ir::MatchCond<'ctx>, ErrList> {
         match self {
-            MatchPattern::Literal(lit) => {Ok(ir::MatchCond::Literal(lit.translate(table)?))},
+            MatchPattern::Literal(lit) => {Ok(ir::MatchCond::Literal(lit.translate(table,inside_lambda)?))},
             MatchPattern::Variable(_id) => todo!("not implemented"),//desgin decision
             MatchPattern::Wildcard => Ok(ir::MatchCond::Any),
         }
@@ -196,16 +204,16 @@ impl<'ctx> Translate<'ctx,ir::MatchCond<'ctx>> for MatchPattern {
 
 
 impl<'ctx> Translate<'ctx,ir::Block<'ctx>>  for MatchOut {
-    fn translate(self, table: &StringTable<'ctx>) -> Result<ir::Block<'ctx>, ErrList> {
+    fn translate(self, table: &StringTable<'ctx>,inside_lambda:bool) -> Result<ir::Block<'ctx>, ErrList> {
         match self {
-            MatchOut::Value(val) => Ok(ir::Block::new_simple(val.translate(table)?)),
-            MatchOut::Block(block) => block.translate(table),
+            MatchOut::Value(val) => Ok(ir::Block::new_simple(val.translate(table,inside_lambda)?)),
+            MatchOut::Block(block) => block.translate(table,inside_lambda),
         }
     }
 }
 
 impl<'ctx> Translate<'ctx,ir::Value<'ctx>>  for Literal {
-    fn translate(self, _table: &StringTable<'ctx>) -> Result<ir::Value<'ctx>, ErrList> {
+    fn translate(self, _table: &StringTable<'ctx>,_inside_lambda:bool) -> Result<ir::Value<'ctx>, ErrList> {
         match self {
             Literal::Int(i) => Ok(ir::Value::Int(i)),
             Literal::Float(f) => Ok(ir::Value::Float(f)),
