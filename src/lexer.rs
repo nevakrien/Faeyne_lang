@@ -27,6 +27,8 @@ pub enum LexTag {
     FuncDec,
     Lambda,
 
+    SelfRef,
+
     Return,
 
     Match, 
@@ -233,6 +235,7 @@ fn lex_word<'a>(input: &'a str) -> LexResult<'a> {
         "match" => LexTag::Match,
         "true" => LexTag::True,
         "false" => LexTag::False,
+        "self" => LexTag::SelfRef,
         _ => LexTag::Name
     };
     Ok((input, tag)) 

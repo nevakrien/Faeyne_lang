@@ -19,6 +19,7 @@ pub enum Error {
     UnreachableCase(UnreachableCase),
     NoneCallble(NoneCallble),
     Stacked(InternalError),
+    IllegalSelfRef(IllegalSelfRef),
     //UndocumentedError,
 }
 
@@ -89,6 +90,12 @@ pub struct InternalError {
     pub span : Span,
     pub err : ErrList
 }
+
+#[derive(Debug,PartialEq)]
+pub struct IllegalSelfRef {
+    pub span : Span,
+}
+
 
 pub trait DiagnosticDisplay {
     fn display_with_table(&self, table: &StringTable) -> String;
@@ -275,6 +282,12 @@ fn emit_error(
 
             return;
         },
+        Error::IllegalSelfRef(IllegalSelfRef{span}) => Diagnostic::error()
+            .with_message("Attempted to call a None Callble object")
+        .with_labels(vec![
+                Label::primary(file_id, span.start().to_usize()..span.end().to_usize())
+                    .with_message("this self ref creates a cycle"),
+            ]),
 
         // Placeholder for other potential error types
         // Error::UndocumentedError => todo!("Report Undocumented Error")

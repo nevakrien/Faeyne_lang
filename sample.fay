@@ -178,6 +178,7 @@ def main(system){
     div_loop(100);
     waste_more_time(1000);
 
+    x=self;
     make_nested_lamda(100)(1) |>system(:println)();
     #x = 1;
     #x();

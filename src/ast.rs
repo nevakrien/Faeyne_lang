@@ -61,6 +61,7 @@ pub struct FunctionCall {
 
 #[derive(Debug,PartialEq)]
 pub enum FValue {
+    SelfRef(Span),
     Name(usize),
     FuncCall(Box<FunctionCall>),
     Lambda(Box<Lambda>),
@@ -76,6 +77,7 @@ pub enum Value {
     Atom(usize),
     String(usize),
     Variable(usize),
+    SelfRef(Span),
     FuncCall(FunctionCall),
     Lambda(Box<Lambda>),
     MatchLambda(Box<MatchLambda>),
@@ -91,7 +93,8 @@ impl From<FValue> for Value {
             FValue::FuncCall(func_call) => Value::FuncCall(*func_call),
             FValue::Lambda(lam) => Value::Lambda(lam),
             FValue::MatchLambda(m) => Value::MatchLambda(m),
-            FValue::BuildIn(build_in) => Value::BuildIn(build_in)
+            FValue::BuildIn(build_in) => Value::BuildIn(build_in),
+            FValue::SelfRef(span) => Value::SelfRef(span),
         }
     }
 }

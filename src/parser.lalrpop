@@ -26,6 +26,7 @@ extern {
         "fn" => LexTag::Lambda,
         "return" => LexTag::Return,
         "match" => LexTag::Match,
+        "self" => LexTag::SelfRef,
 
         // Numbers
         "float" => LexTag::Float(<f64>),
@@ -244,6 +245,7 @@ PipableValue: Value = {
     #[precedence(level="1")] 
     // Simple names can be piped
     <a:Name> => Value::Variable(a),
+    <start:@L> "self" <end:@R> => Value::SelfRef(Span::new(start as u32, end as u32)),
     <l:Literal> => l.into(),
     <m:MatchStatment>  => Value::Match(m),
 };
@@ -258,6 +260,7 @@ pub Value: Value = {
 
     #[precedence(level="1")]
     <x:Name> => Value::Variable(x),
+    <start:@L> "self" <end:@R> => Value::SelfRef(Span::new(start as u32, end as u32)),
     <l:Literal> => l.into(),
     <m:MatchStatment>  => Value::Match(m),
 
