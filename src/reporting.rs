@@ -282,12 +282,18 @@ fn emit_error(
 
             return;
         },
-        Error::IllegalSelfRef(IllegalSelfRef{span}) => Diagnostic::error()
-            .with_message("Attempted to call a None Callble object")
-        .with_labels(vec![
-                Label::primary(file_id, span.start().to_usize()..span.end().to_usize())
-                    .with_message("this self ref creates a cycle"),
-            ]),
+        Error::IllegalSelfRef(IllegalSelfRef{span}) => {
+            let error = Diagnostic::error()
+                .with_message("Illegal use of Self")
+                .with_labels(vec![
+                        Label::primary(file_id, span.start().to_usize()..span.end().to_usize())
+                            .with_message("this self ref creates a cycle"),
+                    ]);
+            term::emit(buffer, config, files, &error).unwrap();
+            Diagnostic::help().with_message("try refering to the function by name (define it with def)")
+
+        }
+        ,
 
         // Placeholder for other potential error types
         // Error::UndocumentedError => todo!("Report Undocumented Error")
