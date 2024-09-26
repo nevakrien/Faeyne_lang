@@ -185,3 +185,104 @@ fn test_atom_str() {
 
     safe_run_compare(input, Value::String(GcPointer::new(":hi".to_string())));
 }
+
+#[test]
+fn test_recursive_lambda_string_accumulation() {
+    let input = r#"
+        def main(system) {
+            f = fn(x, acc) {
+                match x {
+                    0 => acc,
+                    _ => { acc + ''+x + self(x - 1, acc) }
+                }
+            };
+            result = f(5, "");
+            system(:println)(result);
+            result
+        }
+    "#;
+
+    safe_run_compare(input, Value::String(GcPointer::new("54321".to_string())));
+}
+
+#[test]
+fn test_lambda_returning_itself() {
+    let input = r#"
+        def main(system) {
+            f = fn() {
+                self
+            };
+            result = f();
+            result == f  # Check if the returned function is equal to the original lambda
+        }
+    "#;
+
+    safe_run_compare(input, Value::Bool(true));
+}
+
+#[test]
+fn test_mutual_recursive_lambdas() {
+    let s = r#"
+        
+        
+        def main(system) {
+            a = fn(x) {
+                match x {
+                    0 => self,
+                    _ => self(x - 1)
+                }
+            };
+            
+            b = fn(x) {
+                match x {
+                    0 => 3,
+                    _ => fn(x) {self(x - 1)|>a()}
+                }
+            };
+
+            a == b(10)
+        }
+    "#.to_string();
+    let raw_str: *mut str = Box::into_raw(s.into_boxed_str()) as *mut str;
+
+    // Run the code with a static reference and test for UB
+    {
+        let static_ref_str: &'static str = unsafe { &*raw_str };
+        safe_run(static_ref_str);
+    }
+
+    // Clean up: Convert the raw pointer back into a boxed str and drop it
+    unsafe {
+        let _ = Box::from_raw(raw_str);
+    }
+}
+
+#[test]
+fn recursive_lambda_complex_ownership_ub() {
+    let s = r#"
+        def main(system) {
+            f = fn(x, acc) {
+                match x {
+                    0 => acc,
+                    _ => { acc + ' ' + self(x - 1, acc) }
+                }
+            };
+            result = f(5, 'start');
+            system(:println)(result);
+        }
+    "#.to_string();
+    
+    // Leak the string, extract its inner str, and get a mutable raw pointer to it
+    let raw_str: *mut str = Box::into_raw(s.into_boxed_str()) as *mut str;
+
+    // Run the code with a static reference and test for UB
+    {
+        let static_ref_str: &'static str = unsafe { &*raw_str };
+        safe_run(static_ref_str);
+    }
+
+    // Clean up: Convert the raw pointer back into a boxed str and drop it
+    unsafe {
+        let _ = Box::from_raw(raw_str);
+    }
+}

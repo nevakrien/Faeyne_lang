@@ -198,3 +198,25 @@ def main(system){
 
     #err_compile_time_in_lamda_def();
 }
+
+def weird(system) {
+    a = fn(x) {
+        match x {
+            0 => self,
+            _ => self(x - 1)
+        }
+    };
+    
+    b = fn(x) {
+        match x {
+            0 => 3,
+            _ => fn(x) {self(x - 1)|>a()}
+        }
+    };
+    print = system(:println);
+
+    print("a \n\n");
+    a|> print();
+    print("b \n\n");
+    b(10)|> print();
+}
