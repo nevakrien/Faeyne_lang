@@ -1,4 +1,6 @@
 #![allow(dead_code)]
+use core::cell::Cell;
+use core::cell::RefCell;
 use crate::basic_ops::call_string;
 use crate::basic_ops::nerfed_to_string;
 use std::collections::HashSet;
@@ -25,18 +27,19 @@ pub struct GlobalScope<'ctx> {
 impl<'ctx> GlobalScope<'ctx> {
     pub fn get<'x : 'ctx>(&'x self, id: usize) -> Option<Value<'x>>  {
         let pre = self.vars.get(&id)?;
+        pre.global.set(Some(self));
         Some(Value::Func(FunctionHandle::StaticDef(
             GlobalFunc {
                 pre,
-                global:self
+                //global:self
             },
         )))
     }
 
-    pub fn add(&mut self, id: usize, block: Block<'ctx>, sig: FuncSig) -> Result<(), ErrList> {
+    pub fn add(&mut self, id: usize, block: Block<'ctx>, sig: FuncSig) -> Result<(), ErrList>{
         //horible attempt to just measure do not keep this mess
         if let std::collections::hash_map::Entry::Vacant(e) = self.vars.entry(id) {
-            e.insert(PreGlobalFunc{ sig, inner:block,});//global:self });
+            e.insert(PreGlobalFunc{ sig, inner:block,global:None.into()}.into());//,global:ptr });
             Ok(())
         } else {
             // TODO: Handle this case with more complex behavior when adding multiple catching patterns
@@ -48,6 +51,8 @@ impl<'ctx> GlobalScope<'ctx> {
             .to_list())
         }
     }
+
+
 
     pub fn make_subscope<'a : 'ctx>(&'a self) -> VarScope<'a, 'a> {
         VarScope {
@@ -480,7 +485,7 @@ impl<'ctx> LazyMatch<'ctx> {
 #[derive(Debug,PartialEq,Clone)]
 pub struct GlobalFunc<'ctx> {
     pre:&'ctx PreGlobalFunc<'ctx>,
-    global: &'ctx GlobalScope<'ctx>,
+    // global: &'ctx GlobalScope<'ctx>,
 }
 
 
@@ -488,13 +493,13 @@ pub struct GlobalFunc<'ctx> {
 pub struct PreGlobalFunc<'ctx> {
     sig:FuncSig,
     inner:Block<'ctx>,
-    // global: &'ctx GlobalScope<'ctx>,
+    global: Cell<Option<&'ctx GlobalScope<'ctx>>>,
 }
 
 impl<'ctx> GlobalFunc<'ctx> {
     pub fn eval(&self,args: Vec<Value<'ctx>>) -> Result<Value<'ctx>,ErrList> {
         self.pre.sig.matches(&args)?;
-        let mut scope = self.global.make_subscope();
+        let mut scope = self.pre.global.get().unwrap().make_subscope();
         for (i,a) in self.pre.sig.arg_ids.iter().enumerate(){
             scope.add(*a,args[i].clone());
         }
