@@ -1,4 +1,21 @@
 #![allow(unused)]
+use faeyne_lang::ir::GlobalScope;
+use codespan::Span;
+use faeyne_lang::ir::LazyFunc;
+use faeyne_lang::ir::FuncSig;
+use faeyne_lang::ir::Block;
+use faeyne_lang::ir::Statment;
+use faeyne_lang::ir::FuncSig as OtherFuncSig;
+use faeyne_lang::ir::Statment as OtherStatment;
+use faeyne_lang::reporting::ErrList;
+use faeyne_lang::ir::GcPointer;
+use faeyne_lang::ir::GlobalFunc;
+use crate::Value::Func;
+
+use faeyne_lang::ir::Func as OtherFunc;
+use faeyne_lang::ir::Value::Func as OtherOtherFunc;
+use faeyne_lang::ir::FunctionHandle;
+use faeyne_lang::basic_ops::buildin_add;
 use mem_viewer::_print_type_of;
 use faeyne_lang::ir::{ValueRet,Value,LazyVal};
 // use mem_viewer::*;   
@@ -48,22 +65,81 @@ macro_rules! view_mem {
 
 
 
-fn main() {
-    use faeyne_lang::ir::{Value, LazyVal, ValueRet, GenericRet};
+// fn main() {
+//     use faeyne_lang::ir::{Value, LazyVal, ValueRet, GenericRet};
     
-    // Let's initialize some values for inspection:
-    // let value = Value::Float(f64::from_bits(0xFFFFFFFFFFFFFFFF)); // A simple integer value.
-    let value = Value::Int(69);
-    let lazy_val = LazyVal::Terminal(value.clone()); // A LazyVal holding a terminal value.
-    let value_ret: ValueRet = GenericRet::new_local(value.clone()); // A ValueRet holding the same value.
+//     // Let's initialize some values for inspection:
+//     // let value = Value::Float(f64::from_bits(0xFFFFFFFFFFFFFFFF)); // A simple integer value.
+//     // let value = Value::Int(69);
+//     let handle = FunctionHandle::FFI(buildin_add);
+//     let value = Value::Func(handle.clone()) ;
+//     let lazy_val = LazyVal::Terminal(value.clone()); // A LazyVal holding a terminal value.
+//     let value_ret: ValueRet = GenericRet::new_local(value.clone()); // A ValueRet holding the same value.
 
-    // Use view_mem! macro to view the memory layout of each variable
-    println!("### Inspecting Value ###");
-    view_mem!(value);
+//     println!("### Inspecting Handle ###");
+//     view_mem!(handle);
 
-    println!("### Inspecting LazyVal ###");
-    view_mem!(lazy_val);
+//     // Use view_mem! macro to view the memory layout of each variable
+//     println!("### Inspecting Value ###");
+//     view_mem!(value);
 
-    println!("### Inspecting ValueRet ###");
-    view_mem!(value_ret);
+//     println!("### Inspecting LazyVal ###");
+//     view_mem!(lazy_val);
+
+//     println!("### Inspecting ValueRet ###");
+//     view_mem!(value_ret);
+// }
+
+fn main() {
+
+
+    let ffi_handle = FunctionHandle::FFI(buildin_add);
+    // view_mem!(ffi_handle);
+
+    let dyn_func = Box::leak(Box::new(|args: Vec<Value>| Ok(Value::Int(42))));
+    view_mem!(dyn_func);
+
+
+    let state_ffi_handle =  FunctionHandle::StateFFI(dyn_func);
+    // view_mem!(state_ffi_handle);
+
+    let gc_func = GcPointer::new(|args: Vec<Value>| Ok(Value::Int(42)));
+    // view_mem!(gc_func);
+    
+    let data_ffi_handle = FunctionHandle::DataFFI(gc_func);
+    // view_mem!(data_ffi_handle);
+
+
+    // Create a LazyFunc that modifies its own scope but should not modify the outer/global scope
+    let  sig = FuncSig { arg_ids: vec![2] };
+    let inner = Block::new(vec![
+            // Inside the function, we assign a new value to the same variable ID (1)
+            Statment::Assign(69, LazyVal::Terminal(Value::Int(200))),
+    ]);
+    let debug_span = Span::new(0,10);
+
+    let mut global_scope = Box::leak(Box::new(GlobalScope::default()));
+    global_scope.add(69, inner.clone(), sig.clone());
+
+    let lazy_func = LazyFunc{sig,inner,debug_span};
+    // view_mem!(lazy_func);
+
+    let func =lazy_func.eval(&global_scope.make_subscope()).unwrap();
+    // view_mem!(func);
+
+    let static_def_handle = global_scope.get(69).unwrap();
+    // view_mem!(static_def_handle);
+
+    let Value::Func(FunctionHandle::StaticDef(global_func)) = static_def_handle.clone() else {panic!()};
+    view_mem!(global_func);
+
+
+    view_mem!(static_def_handle);
+
+    let lambda_handle = FunctionHandle::Lambda(GcPointer::new(func));
+    view_mem!(lambda_handle);
+
+
+    // Memory layout inspection using view_mem! macro
+
 }

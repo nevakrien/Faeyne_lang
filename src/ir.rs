@@ -5,6 +5,7 @@ use std::collections::HashSet;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 
+
 use std::rc::Rc;
 use codespan::Span;
 
@@ -14,11 +15,12 @@ use std::ptr;
 pub use crate::basic_ops::{is_equal};
 use crate::reporting::*;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone , PartialEq)]
 #[derive(Default)]
 pub struct GlobalScope<'ctx> {
     vars: HashMap<usize, PreGlobalFunc<'ctx>>,
 }
+
 
 impl<'ctx> GlobalScope<'ctx> {
     pub fn get<'x : 'ctx>(&'x self, id: usize) -> Option<Value<'x>>  {
@@ -32,8 +34,9 @@ impl<'ctx> GlobalScope<'ctx> {
     }
 
     pub fn add(&mut self, id: usize, block: Block<'ctx>, sig: FuncSig) -> Result<(), ErrList> {
+        //horible attempt to just measure do not keep this mess
         if let std::collections::hash_map::Entry::Vacant(e) = self.vars.entry(id) {
-            e.insert(PreGlobalFunc{ sig, inner:block});
+            e.insert(PreGlobalFunc{ sig, inner:block,});//global:self });
             Ok(())
         } else {
             // TODO: Handle this case with more complex behavior when adding multiple catching patterns
@@ -329,7 +332,7 @@ impl<'ctx> LazyVal<'ctx> {
             LazyVal::Terminal(v) => Ok(ValueRet::new_local(v.clone())),
             LazyVal::Ref(id) => match scope.get(*id) {
                 None => Err(Error::Missing(UndefinedName { id: *id }).to_list()),
-                Some(v) => Ok(ValueRet::new_local(v.clone())),
+                Some(v) => Ok(ValueRet::new_local(v.clone())), //this line is slow seems like a cach miss
             },
             LazyVal::FuncCall(call) => call.eval(scope),
             LazyVal::Match { var, statment } => {
@@ -395,9 +398,9 @@ impl<'ctx> Statment<'ctx>{
 
 #[derive(Debug,PartialEq,Clone)]
 pub struct LazyFunc<'ctx>{
-    sig:FuncSig,
-    inner:Block<'ctx>,
-    debug_span:Span,
+    pub sig:FuncSig,
+    pub inner:Block<'ctx>,
+    pub debug_span:Span,
 }
 
 impl<'ctx> LazyFunc<'ctx> {
@@ -480,10 +483,12 @@ pub struct GlobalFunc<'ctx> {
     global: &'ctx GlobalScope<'ctx>,
 }
 
+
 #[derive(Debug,PartialEq,Clone)]
 pub struct PreGlobalFunc<'ctx> {
     sig:FuncSig,
     inner:Block<'ctx>,
+    // global: &'ctx GlobalScope<'ctx>,
 }
 
 impl<'ctx> GlobalFunc<'ctx> {
@@ -782,7 +787,8 @@ impl<'ctx> Call<'ctx> {
     }
 }
 
-
+// #[repr(align(16))]
+//seems that 
 #[derive(Debug,PartialEq,Clone)]
 pub enum Value<'ctx> {
 	Nil,
