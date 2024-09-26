@@ -74,11 +74,11 @@ impl<'ctx> Translate<'ctx,LazyVal<'ctx>> for Value {
 
 
 			Value::String(x) => {
-				let r = table.get_string(x).unwrap();
-				let s = r[1..r.len()-1].to_string();
+				// let r = table.get_string(x).unwrap();
+				// let s = r[1..r.len()-1].to_string();
 
 				Ok(LazyVal::Terminal(ir::Value::String(
-					GcPointer::new(s)
+					table.get_escaped_string(x)
 				)))
 			},
 			
@@ -213,12 +213,12 @@ impl<'ctx> Translate<'ctx,ir::Block<'ctx>>  for MatchOut {
 }
 
 impl<'ctx> Translate<'ctx,ir::Value<'ctx>>  for Literal {
-    fn translate(self, _table: &StringTable<'ctx>,_inside_lambda:bool) -> Result<ir::Value<'ctx>, ErrList> {
+    fn translate(self, table: &StringTable<'ctx>,_inside_lambda:bool) -> Result<ir::Value<'ctx>, ErrList> {
         match self {
             Literal::Int(i) => Ok(ir::Value::Int(i)),
             Literal::Float(f) => Ok(ir::Value::Float(f)),
             Literal::Atom(a) => Ok(ir::Value::Atom(a)),
-            Literal::String(s) => Ok(ir::Value::String(GcPointer::new(_table.get_string(s).unwrap().to_string()))),
+            Literal::String(id) => Ok(ir::Value::String(table.get_escaped_string(id))),
             Literal::Bool(b) => Ok(ir::Value::Bool(b)),
             Literal::Nil => Ok(ir::Value::Nil),
         }

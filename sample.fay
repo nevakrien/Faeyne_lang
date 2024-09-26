@@ -191,6 +191,7 @@ def main(system){
         }
     };
 
+    system(:println)('\n\nrecursive lambda');
     f(10,0) |>system(:println)();
 
     #x = 1;

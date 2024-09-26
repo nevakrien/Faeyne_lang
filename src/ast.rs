@@ -1,3 +1,5 @@
+use crate::ir::GcPointer;
+use unescape::unescape;
 use std::collections::HashMap;
 use codespan::Span;
 use crate::system::preload_table;
@@ -253,6 +255,11 @@ impl<'input> StringTable<'input> {
         self.vec.get(id).copied()
     }
 
+    // Returns the string corresponding to an ID, or an error if the ID is out of bounds.
+    pub fn get_escaped_string(&self, id: usize) -> GcPointer<String> {
+        self.vec.get(id).map(|r| GcPointer::new(unescape(&r[1..r.len()-1]).unwrap())).unwrap()
+    }
+
     pub fn compare_to(&self, id: usize,s: &str) -> bool {
         match self.get_string(id) {
             None => unreachable!("attempting to compare to a non existing entry"),
@@ -281,4 +288,17 @@ fn test_string_table() {
     // Ensure that inserting "hello" again returns the same ID
     let id_hello_again = table.get_id("hello");
     assert_eq!(id_hello_again, id_hello);
+}
+
+#[test]
+fn test_string_table_unescape() {
+    let input = "\"hello world\\n\"";
+    let mut table = StringTable::new();
+
+    let id = table.get_id(input);//&input[1..14]
+
+
+    // Check that we can retrieve "hello" by its ID
+    let retrieved_hello = GcPointer::unwrap_or_clone(table.get_escaped_string(id));
+    assert_eq!(retrieved_hello, "hello world\n");
 }
