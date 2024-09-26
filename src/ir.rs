@@ -1,4 +1,7 @@
 #![allow(dead_code)]
+// use core::cell::RefCell;
+// use core::ptr::NonNull;
+use std::rc;
 use core::cell::Cell;
 use crate::basic_ops::call_string;
 use crate::basic_ops::nerfed_to_string;
@@ -149,7 +152,7 @@ where
             }
         }
 
-        ClosureScope { vars: all_vars ,allowed_escapes:HashSet::new()}
+        ClosureScope { vars: all_vars ,allowed_escapes:HashSet::new(),self_ref:None.into()}
     }
 }
 
@@ -165,21 +168,67 @@ fn test_scope_lifetimes(){
 	let _d = &mut a;
 }
 
-#[derive(Debug,PartialEq,Clone)]
+
+// #[derive(Debug,PartialEq)]
 pub struct ClosureScope<'ctx> {
     vars : HashMap<usize,Value<'ctx>>,
     allowed_escapes : HashSet<usize>,
+    self_ref : Cell<Option<GcPointer< Func<'ctx>>>> 
 }
 
-impl<'ctx> Default for ClosureScope<'ctx> {
+
+// Manually implement Debug for ClosureScope
+impl<'ctx> fmt::Debug for ClosureScope<'ctx> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Attempt to upgrade the weak pointer for debug output, panic if upgrade fails
+        let strong_self_ref = self.self_ref.replace(None);//get_strong_ref(&self.self_ref);
+
+        let ans = f.debug_struct("ClosureScope")
+            .field("vars", &self.vars)
+            .field("allowed_escapes", &self.allowed_escapes)
+            .field("self_ref", &strong_self_ref)
+            .finish();
+
+        self.self_ref.set(strong_self_ref);
+        ans
+    }
+}
+
+// Manually implement PartialEq for ClosureScope
+impl<'ctx> PartialEq for ClosureScope<'ctx> {
+    fn eq(&self, other: &Self) -> bool {
+        // Compare vars and allowed_escapes first
+        if self.vars != other.vars || self.allowed_escapes != other.allowed_escapes {
+            return false;
+        }
+
+        // Compare the self_ref by upgrading both weak pointers, panic if upgrade fails
+        let self_ref = self.self_ref.replace(None);//get_strong_ref(&self.self_ref);
+        let other_ref = other.self_ref.replace(None);
+
+        // Compare the strong references
+        let ans = match (&self_ref,&other_ref){
+            (None,None) => true,
+            (None,Some(_)) | (Some(_),None)=> false,
+            (Some(a),Some(b)) => GcPointer::ptr_eq(a,b)
+           
+        };
+
+        self.self_ref.set(self_ref);
+        other.self_ref.set(other_ref);
+        ans
+    }
+}
+
+impl<'ctx,'call> Default for ClosureScope<'ctx> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<'ctx> ClosureScope<'ctx> {
+impl<'ctx,'call> ClosureScope<'ctx> {
     pub fn new() -> Self {
-        ClosureScope{vars: HashMap::new(),allowed_escapes:HashSet::new()}
+        ClosureScope{vars: HashMap::new(),allowed_escapes:HashSet::new(),self_ref:None.into()}
     }
 
     pub fn get(&self,id:usize) -> Option<Value<'ctx>> {
@@ -305,7 +354,22 @@ impl<'ctx> From<ScopeRet<'ctx>> for LazyVal<'ctx> {
 }
 
 pub type GcPointer<T> = Rc<T>;
+pub type WeakGcPointer<T> = rc::Weak<T>;
 
+pub fn get_strong_ref<'ctx>(
+    cell: &Cell<Option<WeakGcPointer<Func<'ctx>>>>
+) -> Option<GcPointer<Func<'ctx>>> {
+    // Swap out the current value with None temporarily
+    let old_value = cell.take();
+
+    // Attempt to upgrade the weak pointer to a strong reference
+    let strong_ref = old_value.as_ref().and_then(|weak| weak.upgrade());
+
+    // Put the old value back into the cell
+    cell.set(old_value);
+
+    strong_ref
+}
 
 #[derive(Debug,PartialEq,Clone)]
 pub enum LazyVal<'ctx>{
@@ -481,12 +545,15 @@ impl<'ctx> LazyMatch<'ctx> {
 }
 
 
-#[derive(Debug,PartialEq,Clone)]
+#[derive(Debug,Clone)]
 pub struct GlobalFunc<'ctx> {
     pre:&'ctx PreGlobalFunc<'ctx>,
     // global: &'ctx GlobalScope<'ctx>,
 }
 
+impl<'ctx> PartialEq for GlobalFunc<'ctx>{
+    fn eq(&self, other: &GlobalFunc<'ctx>) -> bool { std::ptr::eq(self.pre,other.pre) }
+}
 
 #[derive(Debug,PartialEq,Clone)]
 pub struct PreGlobalFunc<'ctx> {
@@ -509,22 +576,51 @@ impl<'ctx> GlobalFunc<'ctx> {
 }
 
 
-#[derive(Debug,PartialEq,Clone)]
+#[derive(Debug,PartialEq)]
 pub struct Func<'ctx> {
     sig:FuncSig,
     closure:ClosureScope<'ctx>,
     inner:Block<'ctx>,
 }
 
+// impl<'ctx> Clone for Func<'ctx>{
+//     fn clone(&self) -> Self {
+//         let closure = self.closure.clone();
+
+//         Func{
+//             sig:self.sig.clone(),
+//             closure,
+//             inner:self.inner.clone()
+//         }
+//     }
+// }
+
 impl<'ctx> Func<'ctx> {
-    pub fn eval(&self,args: Vec<Value<'ctx>>) -> Result<Value<'ctx>,ErrList> {
-        self.sig.matches(&args)?;
-        let mut scope = self.closure.make_subscope();
-        for (i,a) in self.sig.arg_ids.iter().enumerate(){
+    // pub fn eval(&self,args: Vec<Value<'ctx>>) -> Result<Value<'ctx>,ErrList> {
+    //     // self.closure.self_ref.set(Some(self.into()));
+    //     let _parent = get_strong_ref(&self.closure.self_ref);
+
+    //     self.sig.matches(&args)?;
+    //     let mut scope = self.closure.make_subscope();
+    //     for (i,a) in self.sig.arg_ids.iter().enumerate(){
+    //         scope.add(*a,args[i].clone());
+    //     }
+        
+    //     self.inner.eval(&mut scope).map(move |x| x.into()) 
+    // }
+
+    pub fn eval_gc(strong:GcPointer<Self>,args: Vec<Value<'ctx>>) -> Result<Value<'ctx>,ErrList> {
+        strong.sig.matches(&args)?;
+        let mut scope = strong.closure.make_subscope();
+        for (i,a) in strong.sig.arg_ids.iter().enumerate(){
             scope.add(*a,args[i].clone());
         }
         
-        self.inner.eval(&mut scope).map(move |x| x.into()) 
+        strong.closure.self_ref.set(Some(strong.clone()));
+        let ans = strong.inner.eval(&mut scope).map(move |x| x.into()); 
+        strong.closure.self_ref.set(None);
+        ans
+
     }
 }
 
@@ -728,7 +824,7 @@ impl<'ctx> FunctionHandle<'ctx> {
             FunctionHandle::DataFFI(f) => f(args),
             // FunctionHandle::MutFFI(mut f) => f(args),
             FunctionHandle::StaticDef(f) => f.eval(args),
-            FunctionHandle::Lambda(f) => f.eval(args),
+            FunctionHandle::Lambda(f) => Func::eval_gc(f,args),//f.eval(args),
         }
     }
 }

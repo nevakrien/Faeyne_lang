@@ -292,8 +292,7 @@ fn emit_error(
             term::emit(buffer, config, files, &error).unwrap();
             Diagnostic::help().with_message("try refering to the function by name (define it with def)")
 
-        }
-        ,
+        },
 
         // Placeholder for other potential error types
         // Error::UndocumentedError => todo!("Report Undocumented Error")
