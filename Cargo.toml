@@ -22,11 +22,5 @@ mem_viewer = "0.3.0"
 
 
 
-
-[[bin]]
-name = "layout"
-path = "examples/layout.rs"
-
-
 [profile.release]
 debug = true

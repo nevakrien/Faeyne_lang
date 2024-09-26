@@ -3,7 +3,7 @@ use crate::get_id;
 use crate::ast::*;
 use crate::ir;
 use codespan::Span;
-use crate::ir::{LazyVal,GcPointer,ScopeRet,GlobalScope};
+use crate::ir::{LazyVal,ScopeRet,GlobalScope};
 use crate::basic_ops::get_buildin_function;
 use crate::reporting::*;
 
