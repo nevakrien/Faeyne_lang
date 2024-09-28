@@ -86,7 +86,7 @@ pub fn run_str(input_ref: &'static str) ->(Value<'static>,(FreeHandle<'static>,*
 
     let (system,handle) = get_system(table);
 
-    let ans = match main_func.eval(vec![system]) {
+    let ans = match main_func.eval(vec![system],0) {
         Ok(r) => r,
         Err(e) => {
             report_err_list(&e,input_ref,table); 

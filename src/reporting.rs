@@ -20,6 +20,7 @@ pub enum Error {
     NoneCallble(NoneCallble),
     Stacked(InternalError),
     IllegalSelfRef(IllegalSelfRef),
+    Recursion(RecursionError)
     //UndocumentedError,
 }
 
@@ -55,6 +56,12 @@ pub fn append_err_list(mut a: Result<(),ErrList>, b:Result<(),ErrList>) -> Resul
     }
 }
 
+pub static MAX_RECURSION :usize=1000;
+
+#[derive(Debug,PartialEq)]
+pub struct RecursionError{
+    pub depth:usize
+}
 
 #[derive(Debug,PartialEq)]
 pub struct MatchError {
@@ -261,7 +268,7 @@ fn emit_error(
 
         Error::NoneCallble(NoneCallble{span,value}) => Diagnostic::error()
             .with_message("Attempted to call a None Callble object")
-        .with_labels(vec![
+            .with_labels(vec![
                 Label::primary(file_id, span.start().to_usize()..span.end().to_usize())
                     .with_message(format!("this = {}",value)),
             ]),
@@ -293,9 +300,12 @@ fn emit_error(
             Diagnostic::help().with_message("try refering to the function by name (define it with def)")
 
         },
+        Error::Recursion(RecursionError { depth }) => Diagnostic::error()
+            .with_message(format!("Recursion Depth of {} reached", depth))
+            .with_notes(vec![
+                "This is likely caused by an infinite loop".to_string(),
+            ]),
 
-        // Placeholder for other potential error types
-        // Error::UndocumentedError => todo!("Report Undocumented Error")
     };
 
     // Emit the diagnostic for the current error

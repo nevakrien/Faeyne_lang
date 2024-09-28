@@ -139,6 +139,34 @@ def _make_nested_lamda(n,f) {
     }
 }
 
+def run_loop(func,num_iters) {
+    0|> fn(n) -> {
+        match n<num_iters {
+            true => {
+                func(n);
+                self(n+1)
+            },
+            false =>{}
+        }
+    }()
+}
+
+def loopy_main(system) {
+    system(:println)('hello world');
+    print = system(:println);
+    0|> fn(n) -> {
+        match n<2 {
+            true => {
+                print('iteration number: '+n);
+                self(n+1)
+            },
+            false =>{}
+        }
+    }();
+
+    run_loop (fn(n) {print('iteration number: '+ n)},10); 
+}
+
 def main(system){
     bug_main(system);
     factorial(4)  |> system(:println)();

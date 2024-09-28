@@ -124,7 +124,7 @@ fn main() {
     let lazy_func = LazyFunc{sig,inner,debug_span};
     // view_mem!(lazy_func);
 
-    let func =lazy_func.eval(&global_scope.make_subscope()).unwrap();
+    let func =lazy_func.eval(&global_scope.make_subscope(1).unwrap()).unwrap();
     // view_mem!(func);
 
     let static_def_handle = global_scope.get(69).unwrap();

@@ -21,6 +21,11 @@ use std::ptr;
 pub use crate::basic_ops::{is_equal};
 use crate::reporting::*;
 
+// #[derive(Debug, Clone , PartialEq)]
+// pub struct Context {
+//     recursion_size:Cell<usize>,
+// }
+
 #[derive(Debug, Clone , PartialEq)]
 #[derive(Default)]
 pub struct GlobalScope<'ctx> {
@@ -58,11 +63,8 @@ impl<'ctx> GlobalScope<'ctx> {
 
 
 
-    pub fn make_subscope<'a : 'ctx>(&'a self) -> VarScope<'a, 'a> {
-        VarScope {
-            parent: Scopble::Global(self),
-            vars: HashMap::new(),
-        }
+    pub fn make_subscope<'a : 'ctx>(&'a self,depth:usize) -> Result<VarScope<'a, 'a>,ErrList> {
+        VarScope::new(Scopble::Global(self),depth) 
     }
 }
 
@@ -104,24 +106,35 @@ where
 {
     parent: Scopble<'ctx, 'parent>,
     vars: HashMap<usize, Value<'ctx>>,
+    depth:usize,
 }
 
 impl<'ctx, 'parent> VarScope<'ctx, 'parent>
 where
     'ctx: 'parent,
 {
-    pub fn new<'p:'parent>(parent: Scopble<'ctx, 'p>) -> Self {
-        VarScope {
+    pub fn new<'p:'parent>(parent: Scopble<'ctx, 'p>,depth:usize) -> Result<Self,ErrList> {
+        let depth = depth+1;
+        if depth >= MAX_RECURSION {
+            return Err(Error::Recursion(RecursionError{depth}).to_list());
+        } 
+        Ok(VarScope {
             parent,
             vars: HashMap::new(),
-        }
+            depth,
+        })
     }
 
-    pub fn make_subscope(&self) -> VarScope<'ctx, '_> {
-        VarScope {
+    pub fn make_subscope(&self) -> Result<VarScope<'ctx, '_>,ErrList> {
+        let depth = self.depth+1;
+        if depth >= MAX_RECURSION {
+            return Err(Error::Recursion(RecursionError{depth}).to_list());
+        } 
+        Ok(VarScope {
             parent: Scopble::SubScope(self),
             vars: HashMap::new(),
-        }
+            depth,
+        })
     }
 
     pub fn add(&mut self, id: usize, val: Value<'ctx>) {
@@ -140,8 +153,8 @@ where
 #[test]
 fn test_scope_lifetimes(){
     let r = ClosureScope::new();
-	let g = VarScope::new(Scopble::Static(&r));
-	let mut a = g.make_subscope();
+	let g = VarScope::new(Scopble::Static(&r),1).unwrap();
+	let mut a = g.make_subscope().unwrap();
 	{
 		let _c = a.make_subscope();
 	}
@@ -250,11 +263,8 @@ impl<'ctx,'call> ClosureScope<'ctx> {
     }
 
 
-    pub fn make_subscope(&self) -> VarScope<'ctx,'_> {
-        VarScope{
-            parent:Scopble::Static(self),
-            vars:HashMap::new(),
-        }
+    pub fn make_subscope(&self,depth:usize) -> Result<VarScope<'ctx,'_>,ErrList> {
+        VarScope::new(Scopble::Static(self),depth)
     }
 }
 
@@ -554,9 +564,9 @@ pub struct PreGlobalFunc<'ctx> {
 }
 
 impl<'ctx> GlobalFunc<'ctx> {
-    pub fn eval(&self,args: Vec<Value<'ctx>>) -> Result<Value<'ctx>,ErrList> {
+    pub fn eval(&self,args: Vec<Value<'ctx>>,depth:usize) -> Result<Value<'ctx>,ErrList> {
         self.pre.sig.matches(&args)?;
-        let mut scope = self.pre.global.get().unwrap().make_subscope();
+        let mut scope = self.pre.global.get().unwrap().make_subscope(depth)?;
         for (i,a) in self.pre.sig.arg_ids.iter().enumerate(){
             scope.add(*a,args[i].clone());
         }
@@ -600,9 +610,10 @@ impl<'ctx> Func<'ctx> {
     //     self.inner.eval(&mut scope).map(move |x| x.into()) 
     // }
 
-    pub fn eval_gc(strong:GcPointer<Self>,args: Vec<Value<'ctx>>) -> Result<Value<'ctx>,ErrList> {
+    pub fn eval_gc(strong:GcPointer<Self>,args: Vec<Value<'ctx>>,depth:usize) -> Result<Value<'ctx>,ErrList> {
         strong.sig.matches(&args)?;
-        let mut scope = strong.closure.make_subscope();
+        let mut scope = strong.closure.make_subscope(depth)?;
+        
         for (i,a) in strong.sig.arg_ids.iter().enumerate(){
             scope.add(*a,args[i].clone());
         }
@@ -808,14 +819,14 @@ impl<'ctx> fmt::Debug for FunctionHandle<'ctx> {
 }
 
 impl<'ctx> FunctionHandle<'ctx> {
-    pub fn eval(self, args: Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
+    pub fn eval(self, args: Vec<Value<'ctx>>,depth:usize) -> Result<Value<'ctx>, ErrList> {
         match self {
             FunctionHandle::FFI(f) => f(args),
             FunctionHandle::StateFFI(f) => f(args),
             FunctionHandle::DataFFI(f) => f(args),
             // FunctionHandle::MutFFI(mut f) => f(args),
-            FunctionHandle::StaticDef(f) => f.eval(args),
-            FunctionHandle::Lambda(f) => Func::eval_gc(f,args),//f.eval(args),
+            FunctionHandle::StaticDef(f) => f.eval(args,depth),
+            FunctionHandle::Lambda(f) => Func::eval_gc(f,args,depth),//f.eval(args),
         }
     }
 }
@@ -851,7 +862,7 @@ impl<'ctx> Call<'ctx> {
             };
         }
         match handle_res{
-            Ok(handle) => match handle.eval(arg_values) {
+            Ok(handle) => match handle.eval(arg_values,scope.depth+1) {
                 Ok(x) => Ok(x.into()),
                 Err(err) => Err(Error::Stacked(
                     InternalError{
@@ -902,148 +913,6 @@ use crate::ast::StringTable;
 
 
 
-
-// // if and when this code compiles withut issues we would know that our system setup can be safe
-// #[test]
-// fn test_system_ffi_mock_safe_no_leak_runer()  {
-//     //define FFI functions for this test with loging
-//     //with this testing buffer 
-//     use std::cell::RefCell;     
-
-//     // use std::rc::Weak;
-//     // use std::rc::Rc;
-
-    
-//     let log_print : RefCell<Vec<Vec<Value>>>= RefCell::new(Vec::new()) ;
-//     let log_system :RefCell<Vec<Vec<Value>>> = RefCell::new(Vec::new());
-    
-
-
-
-//     fn ffi_println<'ctx>(args: Vec<Value<'ctx>>,log: &'ctx RefCell<Vec<Vec<Value<'ctx>>>>) -> Result<Value<'ctx>, ErrList> {
-//         log.borrow_mut().push(args.clone());
-//         Ok(Value::Nil)
-//     }
-
-//     fn ffi_system<'ctx>(args: Vec<Value<'ctx>>,log: &'ctx RefCell<Vec<Vec<Value<'ctx>>>>,ffi_println_closure: &'ctx DynFFI<'ctx>) -> Result<Value<'ctx>, ErrList> {
-//         log.borrow_mut().push(args.clone());
-//         Ok(Value::Func(FunctionHandle::StateFFI(ffi_println_closure)))
-//     }
-
-
-//     //initilize scope
-//     let mut string_table  = StringTable::new();
-
-
-//     let sys_string = "system".to_string();
-//     let system_name = string_table.get_id(&sys_string);
-//     let println_name = string_table.get_id(":println");
-
-    
-//     let print_fn =  |x| {ffi_println(x,&log_print)};
-//     let system_fn = |x| {ffi_system(x,&log_system,&print_fn)};
-//     let root =GlobalScope::default();
-//     let mut scope  = root.make_subscope();
-
-
-//     scope.add(system_name, Value::Func(FunctionHandle::StateFFI(&system_fn)));
-
-//     // Inner call for accessing the `system` variable from the scope
-//     let system_call = Call {
-//         called: Box::new(LazyVal::Ref(system_name)),
-//         args: vec![LazyVal::Terminal(Value::Atom(println_name))],
-//         debug_span : Span::new(0,1),
-//     };
-
-//     // Outer call for `system(:println)("hello world")`
-//     let outer_call = Call {
-//         called: Box::new(LazyVal::FuncCall(system_call)),
-//         args: vec![LazyVal::Terminal(Value::String(GcPointer::new("hello world".to_string())))],
-//         debug_span : Span::new(0,1),
-//     };
-
-//     //asserts
-
-//     let ans = outer_call.eval(&mut scope).unwrap();
-//     assert_eq!(ans, ValueRet::Local(Value::Nil));
-
-
-//     assert_eq!(log_system.borrow().len(), 1);
-//     assert_eq!(log_system.borrow()[0], vec![Value::Atom(println_name)]);
-
-
-
-//     assert_eq!(log_print.borrow().len(), 1);
-//     assert_eq!(log_print.borrow()[0], vec![Value::String(GcPointer::new("hello world".to_string()))]);
-
-// }
-
-// #[test]
-// fn test_system_ffi_mock_leak() {
-//     //define FFI functions for this test with loging
-//     //with this testing buffer 
-//     thread_local! {
-//         static LOG_PRINT: RefCell<Vec<Vec<Value<'static>>>> = const { RefCell::new(Vec::new()) };
-//         static LOG_SYSTEM: RefCell<Vec<Vec<Value<'static>>>> = const { RefCell::new(Vec::new()) };
-//     }
-
-
-//     fn ffi_println(args: Vec<Value<'static>>) -> Result<Value<'static>, ErrList> {
-//         LOG_PRINT.with(|log| {
-//             log.borrow_mut().push(args.clone());
-//         });
-//         Ok(Value::Nil)
-//     }
-
-//     fn ffi_system(args: Vec<Value<'static>>) -> Result<Value<'static>, ErrList    > {
-//         LOG_SYSTEM.with(|log| {
-//             log.borrow_mut().push(args.clone());
-//         });
-
-//         Ok(Value::Func(FunctionHandle::FFI(ffi_println)))
-//     }
-
-//     //initilize scope
-
-//     let mut string_table = StringTable::new();
-//     let system_name = string_table.get_id("system");
-//     let println_name = string_table.get_id(":println");
-
-//     let root = Box::new(GlobalScope::default());
-//     let r = Scopble::Global(Box::leak(root));
-
-//     let mut scope = VarScope::new(r);
-//     scope.add(system_name, Value::Func(FunctionHandle::FFI(ffi_system)));
-
-//     // Inner call for accessing the `system` variable from the scope
-//     let system_call = Call {
-//         called: Box::new(LazyVal::Ref(system_name)),
-//         args: vec![LazyVal::Terminal(Value::Atom(println_name))],
-//         debug_span : Span::new(0,1),
-//     };
-
-//     // Outer call for `system(:println)("hello world")`
-//     let outer_call = Call {
-//         called: Box::new(LazyVal::FuncCall(system_call)),
-//         args: vec![LazyVal::Terminal(Value::String(GcPointer::new("hello world".to_string())))],
-//         debug_span : Span::new(0,1),
-//     };
-
-//     //asserts
-
-//     let ans = outer_call.eval(&mut scope).unwrap();
-//     assert_eq!(ans, ValueRet::Local(Value::Nil));
-
-//     LOG_SYSTEM.with(|log| {
-//         assert_eq!(log.borrow().len(), 1);
-//         assert_eq!(log.borrow()[0], vec![Value::Atom(println_name)]);
-//     });
-
-//     LOG_PRINT.with(|log| {
-//         assert_eq!(log.borrow().len(), 1);
-//         assert_eq!(log.borrow()[0], vec![Value::String(GcPointer::new("hello world".to_string()))]);
-//     });
-// }
 
 
 #[test]
@@ -1128,7 +997,7 @@ fn test_system_state_ffi() {
 
         system_ptr = system_ref as *mut _;
         
-        let mut scope = root.make_subscope();
+        let mut scope = root.make_subscope(0).unwrap();
         scope.add(system_name, Value::Func(FunctionHandle::StateFFI(system_ref)));
 
         // Step 4: Create the call structures
@@ -1180,453 +1049,4 @@ fn test_system_state_ffi() {
 
 
 
-
-
-// #[test]
-// fn test_varscope_add_and_get() {
-//     let global = Box::new(GlobalScope::default()); // Create the global scope using Default
-//     let global_ref = Box::leak(global);            // Create a static reference
-//     let r = Scopble::Global(global_ref);           // Use the global scope
-
-//     let mut scope = VarScope::new(r);
-//     let id = 1;
-//     let val = Value::Int(42);
-//     scope.add(id, val.clone());
-    
-//     // Check if the value can be retrieved
-//     assert_eq!(scope.get(id), Some(val));
-    
-//     // Check a non-existent value
-//     assert_eq!(scope.get(2), None);
-// }
-
-
-// #[test]
-// fn test_varscope_nested_scopes() {
-//     let root = Box::new(GlobalScope::default());
-//     let r = Scopble::Global(Box::leak(root));
-
-//     let mut global_scope = VarScope::new(r);
-//     let id = 1;
-//     let val = Value::Int(42);
-    
-//     global_scope.add(id, val.clone());
-    
-//     // Create a subscope and check if it can access the parent value
-//     let subscope = global_scope.make_subscope();
-//     assert_eq!(subscope.get(id), Some(val.clone()));
-    
-//     // Add a new value in the subscope and check it
-//     let sub_id = 2;
-//     let sub_val = Value::Bool(true);
-//     let mut mutable_subscope = subscope.make_subscope();
-//     mutable_subscope.add(sub_id, sub_val.clone());
-    
-//     assert_eq!(mutable_subscope.get(sub_id), Some(sub_val));
-//     assert_eq!(mutable_subscope.get(id), Some(val.clone())); // Should still be able to access parent's value
-// }
-
-// #[test]
-// fn test_function_handle_eval() {
-
-//     let func = Func {
-//         sig: FuncSig { arg_ids: vec![1, 2] },
-//         inner: Block::new_simple(LazyVal::Terminal(Value::Int(42))),
-//         closure: ClosureScope::new()
-//     };
-
-//     let handle = FunctionHandle::Lambda(Rc::new(func));
-    
-//     // Test valid evaluation with matching arguments
-//     let result = handle.clone().eval(vec![Value::Int(1), Value::Int(2)]).unwrap();
-//     assert_eq!(result, Value::Int(42));
-
-//     // Test invalid evaluation with incorrect number of arguments
-//     let err = handle.eval(vec![Value::Int(1)]).unwrap_err();
-//     assert_eq!(err, Error::Sig(SigError {}).to_list());
-// }
-
-// #[test]
-// fn test_match_statement() {
-//     let root = Box::new(GlobalScope::default());
-//     let r = Scopble::Global(Box::leak(root));
-
-//     let match_stmt = MatchStatment {
-//         arms: vec![
-//             MatchCond::Literal(Value::Int(1)),
-//             MatchCond::Literal(Value::Int(2)),
-//             MatchCond::Any
-//         ],
-//         vals: vec![
-//             Block::new_simple(LazyVal::Terminal(Value::String(Rc::new("One".to_string())))),
-//             Block::new_simple(LazyVal::Terminal(Value::String(Rc::new("Two".to_string())))),
-//             Block::new_simple(LazyVal::Terminal(Value::String(Rc::new("Default".to_string()))))
-//         ],
-//         debug_span: Span::new(0, 0),
-//     };
-    
-//     let mut scope = VarScope::new(r);
-    
-//     // Test matching on a specific value
-//     let result_one = match_stmt.eval(Value::Int(1), &mut scope).unwrap();
-//     assert_eq!(result_one, ValueRet::Local(Value::String(Rc::new("One".to_string()))));
-
-//     let result_two = match_stmt.eval(Value::Int(2), &mut scope).unwrap();
-//     assert_eq!(result_two, ValueRet::Local(Value::String(Rc::new("Two".to_string()))));
-
-//     // Test matching on a default case
-//     let result_default = match_stmt.eval(Value::Int(3), &mut scope).unwrap();
-//     assert_eq!(result_default, ValueRet::Local(Value::String(Rc::new("Default".to_string()))));
-// }
-
-// #[test]
-// fn test_lazyval_func_call() {
-//     let root = Box::new(GlobalScope::default());
-//     let r = Scopble::Global(Box::leak(root));
-
-//     let func = Func {
-//         sig: FuncSig { arg_ids: vec![1] },
-//         inner: Block::new_simple(LazyVal::Terminal(Value::Int(42))),
-//         closure: ClosureScope::new()
-//     };
-//     let handle = Value::Func(FunctionHandle::Lambda(Rc::new(func)));
-//     let mut scope = VarScope::new(r);
-
-//     // Create a function call LazyVal
-//     let call = Call {
-//         called: Box::new(LazyVal::Terminal(handle.clone())),
-//         args: vec![LazyVal::Terminal(Value::Int(5))],
-//         debug_span : Span::new(0,1),
-//     };
-
-//     let result = LazyVal::FuncCall(call).eval(&mut scope).unwrap();
-//     assert_eq!(result, ValueRet::Local(Value::Int(42)));
-// }
-
-// #[test]
-// fn test_match_statement_with_ref_and_func_call() {
-//     let root = Box::new(GlobalScope::default());
-//     let r = Scopble::Global(Box::leak(root));
-
-//     // Create a VarScope and add a referenced value
-//     let mut scope = VarScope::new(r);
-//     let ref_id = 10;
-//     let ref_value = Value::String(Rc::new("Referenced".to_string()));
-//     scope.add(ref_id, ref_value.clone());
-
-//     // Define a simple function that returns a specific value
-//     let func = Func {
-//         sig: FuncSig { arg_ids: vec![23] },
-//         inner: Block::new_simple(LazyVal::Terminal(Value::String(Rc::new("FunctionCall".to_string())))),
-//         closure: ClosureScope::new()
-//     };
-//     let handle = Value::Func(FunctionHandle::Lambda(Rc::new(func)));
-
-//     // Create the match statement
-//     let match_stmt = MatchStatment {
-//         arms: vec![
-//             MatchCond::Literal(Value::Int(1)),
-//             MatchCond::Literal(Value::Int(2)),
-//             MatchCond::Any
-//         ],
-//         vals: vec![
-//             Block::new_simple(LazyVal::Terminal(Value::String(Rc::new("One".to_string())))),    // Terminal value
-//             Block::new_simple(LazyVal::Ref(ref_id)),                                             // Reference to a value in scope
-//             Block::new_simple(LazyVal::FuncCall(Call {                                          // Function call returning "FunctionCall"
-//                 called: Box::new(LazyVal::Terminal(handle.clone())),                        // Call the function
-//                 args: vec![LazyVal::Terminal(Value::Float(6.9))],
-//                 debug_span : Span::new(0,1),
-//             }))
-//         ],
-//         debug_span: Span::new(0, 0),
-//     };
-
-//     // Test matching on a specific value (1)
-//     let result_one = match_stmt.eval(Value::Int(1), &mut scope).unwrap();
-//     assert_eq!(result_one, ValueRet::Local(Value::String(Rc::new("One".to_string()))));
-
-//     // Test matching on a specific value (2) which is a Ref
-//     let result_two = match_stmt.eval(Value::Int(2), &mut scope).unwrap();
-//     assert_eq!(result_two, ValueRet::Local(ref_value));  // Should match the referenced value
-
-//     // Test matching on a default case, which is a function call
-//     let result_default = match_stmt.eval(Value::Int(3), &mut scope).unwrap();
-//     assert_eq!(result_default, ValueRet::Local(Value::String(Rc::new("FunctionCall".to_string()))));
-// }
-
-// #[test]
-// fn test_closure_variable_isolation() {
-//     let root = Box::new(GlobalScope::default());
-//     let r = Scopble::Global(Box::leak(root));
-
-//     // Create a global scope and add a variable
-//     let mut global_scope = VarScope::new(r);
-//     let global_var_id = 1;
-//     let global_value = Value::Int(100);
-//     global_scope.add(global_var_id, global_value.clone());
-
-//     // Create a LazyFunc that modifies its own scope but should not modify the outer/global scope
-//     let lazy_func = LazyFunc {
-//         sig: FuncSig { arg_ids: vec![2] }, // Function signature with one argument
-//         inner: Block::new(vec![
-//             // Inside the function, we assign a new value to the same variable ID (1)
-//             Statment::Assign(global_var_id, LazyVal::Terminal(Value::Int(200))),
-//         ]),
-//     };
-
-//     // Evaluate the function and create a closure
-//     let func = lazy_func.eval(&global_scope).unwrap();
-//     let handle = FunctionHandle::Lambda(Rc::new(func));
-
-//     // Call the function, passing an argument (though it's not used)
-//     handle.clone().eval(vec![Value::Int(5)]).unwrap();
-
-//     // The global scope should still have the original value, as the closure should not modify it
-//     assert_eq!(global_scope.get(global_var_id), Some(global_value));
-
-//     // Modify the global scope directly to verify that inner scopes aren't affecting the global scope
-//     let modified_global_value = Value::Int(300);
-//     global_scope.add(global_var_id, modified_global_value.clone());
-
-//     // Now call the function again
-//     handle.eval(vec![Value::Int(5)]).unwrap();
-
-//     // Verify the function's internal scope is isolated and does not affect the outer scope
-//     assert_eq!(global_scope.get(global_var_id), Some(modified_global_value));
-// }
-// #[test]
-// fn test_closure_does_not_leak_into_global_scope() {
-//     let root = Box::new(GlobalScope::default());
-//     let r = Scopble::Global(Box::leak(root));
-
-//     // Create the global scope
-//     let mut global_scope = VarScope::new(r);
-//     let global_var_id = 1;
-//     let global_value = Value::Int(100);
-//     global_scope.add(global_var_id, global_value.clone());
-
-//     // Create a LazyFunc that modifies its own local scope and does not leak variables
-//     let lazy_func = LazyFunc {
-//         sig: FuncSig { arg_ids: vec![2] }, // Function signature with one argument
-//         inner: Block::new(vec![
-//             // Assign a value to a new variable ID (2) that should exist only within the function
-//             Statment::Assign(2, LazyVal::Terminal(Value::Int(500))),
-//         ]),
-//     };
-
-//     // Evaluate the function and create a closure
-//     let func = lazy_func.eval(&global_scope).unwrap();
-//     let handle = FunctionHandle::Lambda(Rc::new(func));
-
-//     // Call the function, passing an argument (though it's not used)
-//     handle.eval(vec![Value::Int(5)]).unwrap();
-
-//     // Verify that the new variable (ID 2) does not exist in the global scope
-//     assert_eq!(global_scope.get(2), None);
-
-//     // Ensure that the global variable (ID 1) has not been modified by the closure
-//     assert_eq!(global_scope.get(global_var_id), Some(global_value));
-// }
-
-
-
-// #[test]
-// fn test_closure_captures_variable_correctly() {
-//     let root = Box::new(GlobalScope::default());
-//     let r = Scopble::Global(Box::leak(root));
-
-//     // Step 1: Create the global scope and add a variable
-//     let mut global_scope = VarScope::new(r);
-//     let var_id = 6;
-//     let initial_value = Value::Int(42);  // Initial value for the variable at ID 6
-//     global_scope.add(var_id, initial_value.clone());
-
-//     // Step 2: Create a LazyFunc (closure) that captures the variable at ID 6 and returns its value
-//     let lazy_func = LazyFunc {
-//         sig: FuncSig { arg_ids: vec![] }, // No arguments needed
-//         inner: Block::new(vec![
-//             Statment::Return(ScopeRet::Local(LazyVal::Ref(var_id))), // Return the captured value
-//         ]),
-//     };
-
-//     // Evaluate the function to create the closure
-//     let func = lazy_func.eval(&global_scope).unwrap();
-//     let handle = FunctionHandle::Lambda(Rc::new(func));
-
-//     // Step 3: Change the value of the variable in the global scope
-//     let new_value = Value::Int(100);  // New value for the variable at ID 6
-//     global_scope.add(var_id, new_value.clone());
-
-//     // Step 4: Call the closure and check that it returns the old (captured) value, not the new one
-//     let result = handle.eval(vec![]).unwrap();
-    
-//     // The closure should return the old value (42) as it captured the original value
-//     assert_eq!(result, initial_value);
-
-//     // Confirm that the global scope has the new value (100)
-//     assert_eq!(global_scope.get(var_id), Some(new_value));
-// }
-
-// #[test]
-// fn test_match_fn_captures() {
-//     let root = Box::new(GlobalScope::default());
-//     let r = Scopble::Global(Box::leak(root));
-
-//     // Step 1: Create the global scope and add a variable to be captured
-//     let mut global_scope = VarScope::new(r);
-//     let capture_id = 5; // Using realistic return ID (5 or higher)
-//     let initial_value = Value::Int(42);  // Initial value to be captured
-//     global_scope.add(capture_id, initial_value.clone());
-
-//     // Step 2: Add another variable that will be returned as a reference in the match statement
-//     let return_id = 6; // Return ID >= 5 for realistic testing
-//     let return_value = Value::String(GcPointer::new("Captured Reference".to_string()));  // Captured value
-//     global_scope.add(return_id, return_value.clone());
-
-//     // Step 3: Define a MatchStatment for `match fn` that captures the value at `capture_id`
-//     let match_stmt = MatchStatment {
-//         arms: vec![
-//             MatchCond::Literal(Value::Int(1)),
-//             MatchCond::Literal(Value::Int(2)),
-//             MatchCond::Literal(Value::Int(42)),  // Match against the initial value at capture_id
-//         ],
-//         vals: vec![
-//             Block::new_simple(LazyVal::Ref(return_id)),  // Return reference to the captured value
-//             Block::new_simple(LazyVal::Terminal(Value::String(GcPointer::new("Two".to_string())))),
-//             Block::new_simple(LazyVal::Ref(return_id)),  // Return reference to captured value again
-//         ],
-//         debug_span: Span::new(0, 0),
-//     };
-
-//     // Step 4: Create the `match fn` as a normal value, no wrapping
-//     let lazy_match_fn = LazyVal::MakeMatchFunc(LazyMatch::new(match_stmt));
-
-//     // Step 5: Evaluate the `match fn` (this implicitly captures the variables)
-//     let handle = match lazy_match_fn.eval(&mut global_scope).unwrap() {
-//         ValueRet::Local(Value::Func(f)) => f,  // Ensure we get the function handle
-//         _ => panic!("Expected a function handle"),
-//     };
-
-//     // Step 6: Modify the variable in the global scope after the closure has been created
-//     let new_value = Value::Int(100);  // New value after modification
-//     global_scope.add(capture_id, new_value.clone());
-
-//     // Step 7: Call the closure with the captured value (42), which should return the old captured value
-//     let result = handle.eval(vec![initial_value]).unwrap();
-
-//     // Step 8: Check that the result is still the old captured value and not the modified one
-//     assert_eq!(result, return_value);
-
-//     // Confirm that the global scope holds the modified value, not the old one
-//     assert_eq!(global_scope.get(capture_id), Some(new_value));
-// }
-
-// #[test]
-// fn test_global_function_recursive_call() {
-//     // Initialize the string table and get IDs for `a`, `b`, and `x`
-//     let mut string_table = StringTable::new();
-//     let a_id = string_table.get_id("a");
-//     let b_id = string_table.get_id("b");
-//     let x_id = string_table.get_id("x");
-
-//     // Create the global scope and add functions before leaking it
-//     let mut global_scope = GlobalScope::default();
-
-//     // Define function `b`: call `a(0)`
-//     let b_sig = FuncSig { arg_ids: vec![x_id] }; // signature expects one argument (x)
-//     let b_block = Block::new(vec![
-//         Statment::Return(ScopeRet::Local(LazyVal::FuncCall(Call {
-//             called: Box::new(LazyVal::Ref(a_id)), // call function `a`
-//             args: vec![LazyVal::Terminal(Value::Int(0))], // with argument 0
-//             debug_span: Span::new(0, 1),
-//         }))),
-//     ]);
-
-//     // Add function `b` to global scope
-//     global_scope.add(b_id, b_block, b_sig).unwrap();
-
-//     // Define function `a`: match on the input `x`
-//     // If `x == 0`, return 10. Otherwise, call `b(0)`.
-//     let a_block = Block::new(vec![
-//         Statment::Return(ScopeRet::Local(LazyVal::Match {
-//             var: Box::new(LazyVal::Ref(x_id)), // `x` is passed as argument
-//             statment: MatchStatment::new(
-//                 vec![
-//                     MatchCond::Literal(Value::Int(0)), // match on x == 0
-//                     MatchCond::Any,                    // default match
-//                 ],
-//                 vec![
-//                     // If `x == 0`, return 10
-//                     Block::new(vec![Statment::Return(ScopeRet::Local(LazyVal::Terminal(Value::Int(10))))]),
-//                     // Else, call `b(0)`
-//                     Block::new(vec![Statment::Return(ScopeRet::Local(LazyVal::FuncCall(Call {
-//                         called: Box::new(LazyVal::Ref(b_id)), // call function `b`
-//                         args: vec![LazyVal::Terminal(Value::Int(0))], // with argument 0
-//                         debug_span: Span::new(0, 1),
-//                     })))]),
-//                 ],
-//                 Span::new(0, 1),
-//             ),
-//         })),
-//     ]);
-
-//     let a_sig = FuncSig { arg_ids: vec![x_id] }; // signature expects one argument (x)
-//     // Add function `a` to global scope
-//     global_scope.add(a_id, a_block, a_sig).unwrap();
-
-//     // Leak the global scope
-//     let global_scope = Box::leak(Box::new(global_scope));
-
-//     // Now, retrieve `a` from the global scope and call it with argument 1 (or any non-zero value)
-//     let a_func = global_scope.get(a_id).unwrap();
-//     let result = if let Value::Func(f) = a_func {
-//         f.eval(vec![Value::Int(1)]).unwrap() // call `a(1)`
-//     } else {
-//         panic!("Expected a function");
-//     };
-
-//     // Check that the result is 10 (via the recursive call through `b`)
-//     assert_eq!(result, Value::Int(10));
-// }
-
-// #[test]
-// fn test_refcell_mutability_in_ffi() {
-//     use std::cell::RefCell;
-//     use std::rc::Rc;
-
-//     // Step 1: Create an Rc<RefCell> to hold a mutable value
-//     let cell = Rc::new(RefCell::new(42)); // Initial value is 42
-//     let cell_clone = Rc::clone(&cell); // Clone Rc to move into the closure
-
-//     // Step 2: Define an FFI function that mutates the value inside the RefCell
-//     let ffi_mutate = move |_: Vec<Value>| -> Result<Value, ErrList> {
-//         // Mutate the value inside the RefCell by incrementing it
-//         *cell_clone.borrow_mut() += 1;
-//         Ok(Value::Nil) // Return Value::Nil after the mutation
-//     };
-
-//     // Step 3: Wrap the FFI function in a GcPointer and use DataFFI
-//     let ffi_handle = FunctionHandle::DataFFI(GcPointer::new(ffi_mutate));
-
-//     // Step 4: Initialize the global scope
-//     let mut string_table = StringTable::new();
-//     let ffi_id = string_table.get_id("ffi_mutate");
-
-//     let global_scope = Box::leak(Box::new(GlobalScope::default()));
-
-//     // Step 5: Use global_scope.make_subscope() to create a new subscope
-//     let mut scope = global_scope.make_subscope();
-
-//     // Step 6: Add the FFI function to the scope
-//     scope.add(ffi_id, Value::Func(ffi_handle));
-
-//     // Step 7: Retrieve the FFI function and call it
-//     let ffi_func = scope.get(ffi_id).unwrap();
-//     if let Value::Func(f) = ffi_func {
-//         f.eval(vec![]).unwrap(); // Call the FFI function (mutates the RefCell)
-//     }
-
-//     // Step 8: Check if the RefCell value was mutated
-//     assert_eq!(*cell.borrow(), 43); // The value should now be 43 (incremented by 1)
-// }
 
