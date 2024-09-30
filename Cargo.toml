@@ -8,6 +8,9 @@ default-run="faeyne_lang"
 
 
 [dependencies]
+ast = { path = "ast" }
+
+
 codespan = "0.11.1"
 codespan-reporting = "0.11.1"
 lalrpop-util = "0.21.0"
@@ -17,8 +20,8 @@ lalrpop-util = "0.21.0"
 #[dev-dependencies]
 mem_viewer = "0.3.0"
 
-ast = { path = "ast" }
 
 
 [profile.release]
 debug = true
+
