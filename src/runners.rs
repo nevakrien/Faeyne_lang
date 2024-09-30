@@ -1,13 +1,13 @@
-use crate::system::MAIN_ID;
-use crate::get_id;
-use crate::ast::StringTable;
+use ast::parser::ProgramParser;
+use ast::id::*;
+use ast::get_id;
+use ast::ast::StringTable;
 use crate::ir;
 use crate::ir::Value;
 
 use crate::translate::translate_program;
 use crate::system::{get_system,FreeHandle};
-use crate::lexer::Lexer;
-use crate::parser;
+use ast::lexer::Lexer;
 
 use crate::reporting::{report_parse_error,report_err_list};
 
@@ -62,7 +62,7 @@ pub fn run_str(input_ref: &'static str) ->(Value<'static>,(FreeHandle<'static>,*
     let table = Box::leak(Box::new(StringTable::new()));
     let table_raw = table as *mut StringTable;
 
-    let parser = parser::ProgramParser::new();
+    let parser = ProgramParser::new();
     let result = match parser.parse(input_ref, table, lexer) {
         Ok(r) =>  r,
         Err(e) => {

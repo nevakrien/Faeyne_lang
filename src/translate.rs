@@ -1,6 +1,6 @@
-use crate::system::SELF_ID;
-use crate::get_id;
-use crate::ast::*;
+use ast::get_id;
+use ast::ast::*;
+use ast::id::*;
 use crate::ir;
 use codespan::Span;
 use crate::ir::{LazyVal,ScopeRet,GlobalScope};
@@ -78,7 +78,7 @@ impl<'ctx> Translate<'ctx,LazyVal<'ctx>> for Value {
 				// let s = r[1..r.len()-1].to_string();
 
 				Ok(LazyVal::Terminal(ir::Value::String(
-					table.get_escaped_string(x)
+					table.get_escaped_string(x).into()
 				)))
 			},
 			
@@ -218,7 +218,7 @@ impl<'ctx> Translate<'ctx,ir::Value<'ctx>>  for Literal {
             Literal::Int(i) => Ok(ir::Value::Int(i)),
             Literal::Float(f) => Ok(ir::Value::Float(f)),
             Literal::Atom(a) => Ok(ir::Value::Atom(a)),
-            Literal::String(id) => Ok(ir::Value::String(table.get_escaped_string(id))),
+            Literal::String(id) => Ok(ir::Value::String(table.get_escaped_string(id).into())),
             Literal::Bool(b) => Ok(ir::Value::Bool(b)),
             Literal::Nil => Ok(ir::Value::Nil),
         }

@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 // use core::cell::RefCell;
 // use core::ptr::NonNull;
-use crate::system::SELF_ID;
-use crate::get_id;
+use ast::id::*;
+use ast::get_id;
 use std::rc;
 use core::cell::Cell;
 use crate::basic_ops::call_string;
@@ -908,7 +908,7 @@ pub enum Value<'ctx> {
 // use std::cell::RefCell;
 
 #[cfg(test)]
-use crate::ast::StringTable;
+use ast::ast::StringTable;
 
 
 

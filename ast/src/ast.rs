@@ -1,8 +1,8 @@
-use crate::ir::GcPointer;
 use unescape::unescape;
 use std::collections::HashMap;
 use codespan::Span;
-use crate::system::preload_table;
+use crate::id::*;
+// use crate::system::preload_table;
 //names are represented as a usize which is a key into our table names
 
 #[derive(Debug,PartialEq)]
@@ -212,6 +212,8 @@ pub struct StringTable<'input> {
     vec: Vec<&'input str>,
 }
 
+
+
 #[allow(clippy::new_without_default)]
 impl<'input> StringTable<'input> {
     pub fn new() -> Self {
@@ -256,8 +258,8 @@ impl<'input> StringTable<'input> {
     }
 
     // Returns the string corresponding to an ID, or an error if the ID is out of bounds.
-    pub fn get_escaped_string(&self, id: usize) -> GcPointer<String> {
-        self.vec.get(id).map(|r| GcPointer::new(unescape(&r[1..r.len()-1]).unwrap())).unwrap()
+    pub fn get_escaped_string(&self, id: usize) -> String {
+        self.vec.get(id).map(|r|unescape(&r[1..r.len()-1]).unwrap()).unwrap()
     }
 
     pub fn compare_to(&self, id: usize,s: &str) -> bool {
@@ -267,6 +269,8 @@ impl<'input> StringTable<'input> {
         }
     }
 }
+
+
 
 #[test]
 fn test_string_table() {
@@ -299,6 +303,6 @@ fn test_string_table_unescape() {
 
 
     // Check that we can retrieve "hello" by its ID
-    let retrieved_hello = GcPointer::unwrap_or_clone(table.get_escaped_string(id));
+    let retrieved_hello = table.get_escaped_string(id);
     assert_eq!(retrieved_hello, "hello world\n");
 }

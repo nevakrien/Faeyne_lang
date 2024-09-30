@@ -1,4 +1,8 @@
-use codespan::{ByteIndex, Span};
+use codespan::Span;
+
+#[cfg(test)]
+use codespan::ByteIndex;
+
 use std::collections::LinkedList;
 
 use codespan_reporting::diagnostic::{Diagnostic, Label};
@@ -6,10 +10,10 @@ use codespan_reporting::term::{self, termcolor::Buffer};
 use codespan_reporting::files::SimpleFiles;
 
 use lalrpop_util::ParseError;
-use crate::lexer::LexTag;
+use ast::lexer::LexTag;
 
 use crate::ir::FuncSig;
-use crate::ast::StringTable;
+use ast::ast::StringTable;
 
 #[derive(Debug,PartialEq)]
 pub enum Error {
@@ -120,24 +124,6 @@ impl DiagnosticDisplay for FuncSig {
     }
 }
 
-
-//subslice has to be a oart of source
-pub fn get_subslice_span<'a>(source: &'a str, subslice: &'a str) -> Span {
-    // Ensure both `source` and `subslice` have the same lifetime to imply they come from the same memory buffer
-    assert!(
-        source.as_ptr() <= subslice.as_ptr()
-            && subslice.as_ptr() <= unsafe { source.as_ptr().add(source.len()) },
-        "Subslice is not part of the source string"
-    );
-
-    // Use pointer arithmetic to calculate the start index of the subslice within the source
-    let start_index = subslice.as_ptr() as usize - source.as_ptr() as usize;
-    let end_index = start_index + subslice.len();
-
-    // Return a Span with the calculated start and end indices
-    Span::new(ByteIndex(start_index as u32), ByteIndex(end_index as u32))
-}
-
 // Function to handle and report parsing errors
 pub fn report_parse_error(err: ParseError<usize, LexTag, ()>, input_ref: &str,_table: &StringTable)  {
     let mut buffer = Buffer::ansi();
@@ -172,6 +158,9 @@ pub fn report_parse_error(err: ParseError<usize, LexTag, ()>, input_ref: &str,_t
 
 #[test]
 fn test_subslice_span_and_diagnostic_reporting() {
+    use ast::lexer::get_subslice_span;
+    
+
     let source = "Hello, world!\nThis is a test.\nAnother line here.";
     
     // Define a subslice (we'll pretend it's an error in the source code)

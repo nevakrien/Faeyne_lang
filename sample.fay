@@ -205,7 +205,7 @@ def main(system){
     factorial(12) |>system(:println)();
     div_loop(100) |>system(:println)();
     div_loop(100);
-    waste_more_time(1000);
+    waste_more_time(300);
 
     #x=self;
     f=make_nested_lamda(100);

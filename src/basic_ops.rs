@@ -1,11 +1,11 @@
 use crate::ir::GcPointer;
-use crate::ast::StringTable;
-use crate::ast::BuildIn;
+use ast::ast::StringTable;
+use ast::ast::BuildIn;
 use crate::ir::Value;
 use crate::reporting::*;
-use crate::get_id;
+use ast::get_id;
 
-use crate::system::*;
+use ast::id::*;
 
 pub fn get_type_ffi(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
     if args.len() != 1 {

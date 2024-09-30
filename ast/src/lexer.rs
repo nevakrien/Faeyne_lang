@@ -1,5 +1,6 @@
 #![allow(clippy::needless_lifetimes)]
-use crate::reporting::get_subslice_span;
+use codespan::ByteIndex;
+use codespan::Span;
 use nom::bytes::complete::{tag,is_not,take_till,take_while,take_while1};
 use nom::combinator::{opt, recognize};
 use nom::branch::alt;
@@ -7,6 +8,23 @@ use nom::multi::{fold_many0,many0_count};
 use nom::IResult;
 use nom::sequence::{preceded,pair,terminated};
 use nom::character::complete::{anychar,one_of,digit1};
+
+//subslice has to be a oart of source
+pub fn get_subslice_span<'a>(source: &'a str, subslice: &'a str) -> Span {
+    // Ensure both `source` and `subslice` have the same lifetime to imply they come from the same memory buffer
+    assert!(
+        source.as_ptr() <= subslice.as_ptr()
+            && subslice.as_ptr() <= unsafe { source.as_ptr().add(source.len()) },
+        "Subslice is not part of the source string"
+    );
+
+    // Use pointer arithmetic to calculate the start index of the subslice within the source
+    let start_index = subslice.as_ptr() as usize - source.as_ptr() as usize;
+    let end_index = start_index + subslice.len();
+
+    // Return a Span with the calculated start and end indices
+    Span::new(ByteIndex(start_index as u32), ByteIndex(end_index as u32))
+}
 
 
 #[derive(Debug, PartialEq, Clone)]
