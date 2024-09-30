@@ -48,7 +48,7 @@ impl<'ctx> GlobalScope<'ctx> {
     pub fn add(&mut self, id: usize, block: Block<'ctx>, sig: FuncSig) -> Result<(), ErrList>{
         //horible attempt to just measure do not keep this mess
         if let std::collections::hash_map::Entry::Vacant(e) = self.vars.entry(id) {
-            e.insert(PreGlobalFunc{ sig, inner:block,global:None.into()}.into());//,global:ptr });
+            e.insert(PreGlobalFunc{ sig, inner:block,global:None.into()});//,global:ptr });
             Ok(())
         } else {
             // TODO: Handle this case with more complex behavior when adding multiple catching patterns

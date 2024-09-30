@@ -67,6 +67,12 @@ pub struct Stack<const STACK_SIZE: usize> {
     data: AlignedData<STACK_SIZE>,
 }
 
+impl<const STACK_SIZE: usize> Default for Stack<STACK_SIZE> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<const STACK_SIZE: usize> Stack<STACK_SIZE> {
     pub fn new() -> Self {
         Self {

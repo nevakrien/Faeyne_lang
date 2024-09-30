@@ -167,7 +167,7 @@ impl<'ctx> Translate<'ctx,(LazyVal<'ctx>,ir::MatchStatment<'ctx>) >  for MatchSt
 
 impl<'ctx> Translate<'ctx,ir::LazyMatch<'ctx>>  for MatchLambda {
     fn translate(self, table: &StringTable<'ctx>,inside_lambda:bool) -> Result<ir::LazyMatch<'ctx>, ErrList> {
-        assert_eq!(inside_lambda,true );
+        assert!(inside_lambda );
         let match_statement = (self.arms, self.debug_span).translate(table,inside_lambda);
         Ok(ir::LazyMatch::new(match_statement?))
     }
@@ -175,7 +175,7 @@ impl<'ctx> Translate<'ctx,ir::LazyMatch<'ctx>>  for MatchLambda {
 
 impl<'ctx> Translate<'ctx,ir::LazyFunc<'ctx>>  for Lambda {
     fn translate(self, table: &StringTable<'ctx>,inside_lambda:bool) -> Result<ir::LazyFunc<'ctx>, ErrList> {
-        assert_eq!(inside_lambda,true );
+        assert!(inside_lambda );
         let sig = ir::FuncSig { arg_ids: self.sig };
         let body = self.body.translate(table,inside_lambda)?;
         Ok(ir::LazyFunc::new(sig, body,self.debug_span))
