@@ -21,6 +21,15 @@ lalrpop-util = "0.21.0"
 mem_viewer = "0.3.0"
 
 
+[dependencies.stacker]
+version = "0.1"
+optional = true
+
+[features]
+default = ["ConsistentStackSize"]
+ConsistentStackSize = ["stacker"]
+
+
 
 [profile.release]
 debug = true

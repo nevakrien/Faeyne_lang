@@ -206,9 +206,25 @@ def main(system){
     div_loop(100) |>system(:println)();
     div_loop(100);
     waste_more_time(300);
+    waste_more_time(300);
+    waste_more_time(300);
+    waste_more_time(300);
+    waste_more_time(300);
+    waste_more_time(300);
+    waste_more_time(300);
 
     #x=self;
     f=make_nested_lamda(100);
+    f(1) |>system(:println)();
+    f(1) |>system(:println)();
+    f(1) |>system(:println)();
+    f(1) |>system(:println)();
+    f(1) |>system(:println)();
+    f(1) |>system(:println)();
+    f(1) |>system(:println)();
+    f(1) |>system(:println)();
+    f(1) |>system(:println)();
+    f(1) |>system(:println)();
     f(1) |>system(:println)();
 
     

@@ -9,6 +9,8 @@ use crate::translate::translate_program;
 use crate::system::{get_system,FreeHandle};
 use ast::lexer::Lexer;
 
+
+
 use crate::reporting::{report_parse_error,report_err_list};
 
 pub fn safe_run_compare(input: &'static str, expected: Value<'static>) {
@@ -57,7 +59,27 @@ pub unsafe fn clean_str_run(junk: (FreeHandle<'static>,*mut ir::GlobalScope<'sta
     }
 }
 
-pub fn run_str(input_ref: &'static str) ->(Value<'static>,(FreeHandle<'static>,*mut ir::GlobalScope<'static>, *mut StringTable<'static>)) {
+pub fn run_str(
+    input_ref: &'static str
+) -> (Value<'static>, (FreeHandle<'static>, *mut ir::GlobalScope<'static>, *mut StringTable<'static>)) {
+
+    #[cfg(feature = "ConsistentStackSize")]
+    {   
+        use stacker;
+        // Grow the stack to 16 MB (or another desired size)
+        stacker::grow(16 * 1024 * 1024, || {
+            _run_str(input_ref)
+        })
+    }
+
+    #[cfg(not(feature = "ConsistentStackSize"))]
+    {
+        // Run without growing the stack
+        _run_str(input_ref)
+    }
+}
+
+fn _run_str(input_ref: &'static str) ->(Value<'static>,(FreeHandle<'static>,*mut ir::GlobalScope<'static>, *mut StringTable<'static>)) {
     let lexer = Lexer::new(input_ref);
     let table = Box::leak(Box::new(StringTable::new()));
     let table_raw = table as *mut StringTable;
