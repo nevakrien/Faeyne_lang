@@ -6,7 +6,7 @@ use std::time::Instant;
 
 fn main() {
     const STACK_SIZE: usize = 1_000_000;
-    let mut stack: Stack<STACK_SIZE> = Stack::new();
+    let mut stack: Stack = Stack::with_capacity(STACK_SIZE);
 
     let start = Instant::now();
 

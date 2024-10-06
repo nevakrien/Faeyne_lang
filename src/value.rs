@@ -1,5 +1,4 @@
 // Sketch for transitioning a tree walk interpreter to a bytecode interpreter with a focus on Value representation and stack integration
-
 use crate::stack::{Aligned, Stack};
 use ast::ast::StringTable;
 
@@ -46,19 +45,23 @@ pub enum InterpretedValue {
     Func(u32),
 }
 
-pub struct Context<'ctx>{
-    pub table:StringTable<'ctx>
+pub struct Context<'ctx,'code,const STACK_SIZE: usize>{
+    pub table: &'ctx StringTable<'code>,
+    pub stack: &'ctx mut Stack,
 }
 
 // Trait for specialized Stack operations for InterpretedValue
 pub trait ValueStack {
-    fn push_value(&mut self, value: &InterpretedValue) -> Result<(), ()>;
+    //note that push_grow is 2x slower than push. so going with 1 ensure capacity followed by many uncheck pushes is more performent
+    
     fn pop_value(&mut self) -> Result<InterpretedValue, ()>;
     fn pop_nil(&mut self) -> Result<(), ()>;
     fn pop_atom(&mut self) -> Result<u32, ()>;
     fn pop_string(&mut self) -> Result<u32, ()>;
     fn pop_int(&mut self) -> Result<i64, ()>;
     fn pop_float(&mut self) -> Result<f64, ()>;
+    
+    fn push_value(&mut self, value: &InterpretedValue) -> Result<(), ()>;    
     fn push_nil(&mut self) -> Result<(), ()>;
     fn push_bool(&mut self, val: bool) -> Result<(), ()>;
     fn push_atom(&mut self, id: u32) -> Result<(), ()>;
@@ -66,9 +69,18 @@ pub trait ValueStack {
     fn push_int(&mut self, val: i64) -> Result<(), ()>;
     fn push_float(&mut self, val: f64) -> Result<(), ()>;
     fn push_func(&mut self, id: u32) -> Result<(), ()>;
+
+    fn push_grow_value(&mut self, value: &InterpretedValue);    
+    fn push_grow_nil(&mut self);
+    fn push_grow_bool(&mut self, val: bool);
+    fn push_grow_atom(&mut self, id: u32);
+    fn push_grow_string(&mut self, id: u32);
+    fn push_grow_int(&mut self, val: i64);
+    fn push_grow_float(&mut self, val: f64);
+    fn push_grow_func(&mut self, id: u32);
 }
 
-impl<const STACK_SIZE: usize> ValueStack for Stack<STACK_SIZE> {
+impl ValueStack for Stack {
     fn push_value(&mut self, value: &InterpretedValue) -> Result<(), ()> {
         match value {
             InterpretedValue::Nil => self.push_nil(),
@@ -80,6 +92,19 @@ impl<const STACK_SIZE: usize> ValueStack for Stack<STACK_SIZE> {
             InterpretedValue::Func(id) => self.push_func(*id),
         }
     }
+
+    fn push_grow_value(&mut self, value: &InterpretedValue){
+        match value {
+            InterpretedValue::Nil => self.push_grow_nil(),
+            InterpretedValue::Bool(val) => self.push_grow_bool(*val),
+            InterpretedValue::Atom(id) => self.push_grow_atom(*id),
+            InterpretedValue::String(id) => self.push_grow_string(*id),
+            InterpretedValue::Int(val) => self.push_grow_int(*val),
+            InterpretedValue::Float(val) => self.push_grow_float(*val),
+            InterpretedValue::Func(id) => self.push_grow_func(*id),
+        }
+    }
+
 
     fn pop_value(&mut self) -> Result<InterpretedValue, ()> {
         unsafe {
@@ -190,6 +215,12 @@ impl<const STACK_SIZE: usize> ValueStack for Stack<STACK_SIZE> {
         self.push(&aligned)
     }
 
+    fn push_grow_nil(&mut self) {
+        let tag = ValueType::Nil as u64;
+        let aligned = Aligned::new(tag);
+        self.push_grow(&aligned)
+    }
+
     fn push_bool(&mut self, val: bool) -> Result<(), ()> {
         let tag = if val {
             ValueType::BoolTrue as u64
@@ -200,16 +231,38 @@ impl<const STACK_SIZE: usize> ValueStack for Stack<STACK_SIZE> {
         self.push(&aligned)
     }
 
+    fn push_grow_bool(&mut self, val: bool)  {
+        let tag = if val {
+            ValueType::BoolTrue as u64
+        } else {
+            ValueType::BoolFalse as u64
+        };
+        let aligned = Aligned::new(tag);
+        self.push_grow(&aligned)
+    }
+
     fn push_atom(&mut self, id: u32) -> Result<(), ()> {
         let packed_data = (id as u64) << 32 | ValueType::Atom as u64;
         let aligned = Aligned::new(packed_data);
         self.push(&aligned)
     }
 
+    fn push_grow_atom(&mut self, id: u32) {
+        let packed_data = (id as u64) << 32 | ValueType::Atom as u64;
+        let aligned = Aligned::new(packed_data);
+        self.push_grow(&aligned)
+    }
+
     fn push_string(&mut self, id: u32) -> Result<(), ()> {
         let packed_data = (id as u64) << 32 | ValueType::String as u64;
         let aligned = Aligned::new(packed_data);
         self.push(&aligned)
+    }
+
+    fn push_grow_string(&mut self, id: u32) {
+        let packed_data = (id as u64) << 32 | ValueType::String as u64;
+        let aligned = Aligned::new(packed_data);
+        self.push_grow(&aligned)
     }
 
     fn push_int(&mut self, val: i64) -> Result<(), ()> {
@@ -220,6 +273,14 @@ impl<const STACK_SIZE: usize> ValueStack for Stack<STACK_SIZE> {
         self.push(&aligned_tag)
     }
 
+    fn push_grow_int(&mut self, val: i64)  {
+        let tag = ValueType::Int as u64;
+        let aligned_data = Aligned::new(val as u64);
+        let aligned_tag = Aligned::new(tag);
+        self.push_grow(&aligned_data);
+        self.push_grow(&aligned_tag);
+    }
+
     fn push_float(&mut self, val: f64) -> Result<(), ()> {
         let tag = ValueType::Float as u64;
         let aligned_data = Aligned::new(val.to_bits() as u64);
@@ -228,17 +289,32 @@ impl<const STACK_SIZE: usize> ValueStack for Stack<STACK_SIZE> {
         self.push(&aligned_tag)
     }
 
+    fn push_grow_float(&mut self, val: f64) {
+        let tag = ValueType::Float as u64;
+        let aligned_data = Aligned::new(val.to_bits() as u64);
+        let aligned_tag = Aligned::new(tag);
+        self.push_grow(&aligned_data);
+        self.push_grow(&aligned_tag);
+    }
+
     fn push_func(&mut self, id: u32) -> Result<(), ()> {
         let packed_data = (id as u64) << 32 | ValueType::Func as u64;
         let aligned = Aligned::new(packed_data);
         self.push(&aligned)
     }
+
+    fn push_grow_func(&mut self, id: u32) {
+        let packed_data = (id as u64) << 32 | ValueType::Func as u64;
+        let aligned = Aligned::new(packed_data);
+        self.push_grow(&aligned);
+    }
 }
+
 
 
 #[test]
 fn test_value_stack() {
-    let mut stack: Stack<100> = Stack::new();
+    let mut stack: Stack = Stack::with_capacity(100);
 
     // Push multiple items onto the stack
     let value_nil = InterpretedValue::Nil;

@@ -1,16 +1,11 @@
-// Sketch for transitioning a tree walk interpreter to a bytecode interpreter with a focus on Value representation and stack integration
-
+use core::ptr;
 use core::mem;
 use std::mem::{MaybeUninit, size_of};
-
-// Aligned data to 16 bytes.
-#[repr(align(16))]
-struct AlignedData<const STACK_SIZE: usize> {
-    data: [MaybeUninit<u8>; STACK_SIZE], // Uninitialized u8 elements
-}
+use std::alloc::{alloc, dealloc, Layout};
+use std::ptr::NonNull;
 
 // Aligned to 8 bytes for any generic type.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Copy,Clone, Debug, PartialEq)]
 #[repr(align(8))]
 pub struct Aligned<T: Sized + Clone> {
     inner: T, // Private field
@@ -63,60 +58,97 @@ impl<T: Sized + Clone> Aligned<T> {
     }
 }
 
-// Stack that stores bytes.
-pub struct Stack<const STACK_SIZE: usize> {
+// Stack that stores bytes using a manually allocated aligned buffer.
+pub struct Stack {
     len: usize,
-    data: AlignedData<STACK_SIZE>,
+    capacity: usize, //this being dynamic adds a semi significant overhead. it makes push pop take 2x longer
+    data: NonNull<MaybeUninit<u8>>, // Pointer to aligned memory
 }
 
-impl<const STACK_SIZE: usize> Default for Stack<STACK_SIZE> {
-    fn default() -> Self {
-        Self::new()
+impl Stack {
+    pub fn with_capacity(capacity: usize) -> Self {
+        let layout = Layout::from_size_align(capacity, 16).expect("Invalid layout");
+        let data = unsafe { alloc(layout) as *mut MaybeUninit<u8> };
+        let data = NonNull::new(data).expect("Failed to allocate memory");
+        Self { len: 0, capacity, data }
     }
-}
 
-impl<const STACK_SIZE: usize> Stack<STACK_SIZE> {
-    pub fn new() -> Self {
-        Self {
-            len: 0,
-            data: AlignedData {
-                data: [const { MaybeUninit::uninit() }; STACK_SIZE],
-            },
+    pub fn get_capacity(&self) -> usize {
+        self.capacity
+    }
+
+    pub fn ensure_capacity(&mut self, additional: usize) {
+        let required_capacity = self.len + additional;
+        if required_capacity > self.capacity {
+            let new_capacity = self.capacity.max(1) * 2;
+            let new_capacity = new_capacity.max(required_capacity);
+            let layout = Layout::from_size_align(new_capacity, 16).expect("Invalid layout");
+            unsafe {
+                let new_data = alloc(layout) as *mut MaybeUninit<u8>;
+                let new_data = NonNull::new(new_data).expect("Failed to allocate memory");
+                ptr::copy_nonoverlapping(self.data.as_ptr(), new_data.as_ptr(), self.len);
+                dealloc(self.data.as_ptr() as *mut u8, Layout::from_size_align(self.capacity, 16).expect("Invalid layout"));
+                self.data = new_data;
+                self.capacity = new_capacity;
+            }
+        }
+    }
+
+    pub fn shrink_to_fit(&mut self) {
+        let size = self.len.max(1);
+        let layout = Layout::from_size_align(size, 16).expect("Invalid layout");
+        unsafe {
+            let new_data = alloc(layout) as *mut MaybeUninit<u8>;
+            let new_data = NonNull::new(new_data).expect("Failed to allocate memory");
+            ptr::copy_nonoverlapping(self.data.as_ptr(), new_data.as_ptr(), self.len);
+            dealloc(self.data.as_ptr() as *mut u8, Layout::from_size_align(self.capacity, 16).expect("Invalid layout"));
+            self.data = new_data;
+            self.capacity = size;
         }
     }
 
     // Push method takes a reference to Aligned<T> and converts it into an 8-byte slice.
-    pub fn push<T: Sized + Clone>(&mut self, aligned: &Aligned<T>) -> Result<(),()> {
+    pub fn push<T: Sized + Clone>(&mut self, aligned: &Aligned<T>) -> Result<(), ()> {
         let end = self.len + 8;
 
-        if end <= STACK_SIZE {
+        if end <= self.capacity {
             let bytes = aligned.as_u8_slice();
 
             // Write the bytes into the stack
-            for (i, d) in self.data.data[self.len..end].iter_mut().enumerate() {
-                d.write(bytes[i]);
+            unsafe {
+                for (i, byte) in bytes.iter().enumerate() {
+                    self.data.as_ptr().add(self.len + i).write(MaybeUninit::new(*byte));
+                }
             }
 
             self.len = end;
             Ok(())
-
         } else {
             Err(())
         }
     }
 
+    // Push with growth capability.
+    pub fn push_grow<T: Sized + Clone>(&mut self, aligned: &Aligned<T>) {
+        loop {
+            match self.push(aligned) {
+                Ok(_) => break,
+                Err(_) => self.ensure_capacity(8),
+            }
+        }
+    }
+
     // Pop method, which is unsafe because the caller needs to ensure they are reading the correct type.
     // SAFETY: The caller must ensure that the data being popped is correctly aligned and matches the expected type.
-    // Popping raw bytes or pushing raw data without care can lead to alignment issues, undefined behavior, or corrupted data.
     pub unsafe fn pop<T: Sized + Clone>(&mut self) -> Option<Aligned<T>> {
         if self.len >= 8 {
             self.len -= 8;
             let start = self.len;
 
-            let mut data: [MaybeUninit<u8>; 8] = [const { MaybeUninit::uninit() }; 8];
+            let mut data: [MaybeUninit<u8>; 8] = [MaybeUninit::uninit(); 8];
 
-            for (i, d) in data.iter_mut().enumerate() {
-                d.write(self.data.data[start + i].assume_init());
+            for i in 0..8 {
+                data[i] = self.data.as_ptr().add(start + i).read();
             }
 
             let bytes = mem::transmute::<_, [u8; 8]>(data);
@@ -132,24 +164,22 @@ impl<const STACK_SIZE: usize> Stack<STACK_SIZE> {
 
     // Unsafe push method to push a raw byte array of any size.
     // SAFETY: The caller must ensure that the alignment of the pushed data is correct.
-    pub unsafe fn push_raw(&mut self, bytes: &[u8]) -> Result<(),()> {
+    pub unsafe fn push_raw(&mut self, bytes: &[u8]) -> Result<(), ()> {
         let end = self.len + bytes.len();
 
-        if end <= STACK_SIZE {
-            for (i, d) in self.data.data[self.len..end].iter_mut().enumerate() {
-                d.write(*bytes.get(i).expect("Index out of bounds"));
+        if end <= self.capacity {
+            for (i, byte) in bytes.iter().enumerate() {
+                self.data.as_ptr().add(self.len + i).write(MaybeUninit::new(*byte));
             }
             self.len = end;
             Ok(())
-
         } else {
-             Err(())
+            Err(())
         }
     }
 
     // Unsafe pop method to pop a raw byte array of any size.
     // SAFETY: The caller must ensure that the alignment and size are correct when reading the data.
-    // Additionally, do not convert the popped raw data into any non-u8 type using transmute, as this may lead to undefined behavior.
     pub unsafe fn pop_raw(&mut self, size: usize) -> Option<Vec<u8>> {
         if self.len >= size {
             self.len -= size;
@@ -157,7 +187,7 @@ impl<const STACK_SIZE: usize> Stack<STACK_SIZE> {
 
             let mut bytes = Vec::with_capacity(size);
             for i in 0..size {
-                bytes.push(self.data.data[start + i].assume_init());
+                bytes.push(self.data.as_ptr().add(start + i).read().assume_init());
             }
 
             Some(bytes)
@@ -167,9 +197,18 @@ impl<const STACK_SIZE: usize> Stack<STACK_SIZE> {
     }
 }
 
+impl Drop for Stack {
+    fn drop(&mut self) {
+        let layout = Layout::from_size_align(self.capacity, 16).expect("Invalid layout");
+        unsafe {
+            dealloc(self.data.as_ptr() as *mut u8, layout);
+        }
+    }
+}
+
 #[test]
 fn test_stack() {
-    let mut stack: Stack<100> = Stack::new();
+    let mut stack = Stack::with_capacity(100);
 
     // Create an aligned value with i32 (which is 4 bytes)
     let aligned_value = Aligned::new(42i32);
@@ -210,6 +249,18 @@ fn test_stack() {
         assert_eq!(popped_raw_2, raw_data_2);
     }
 
-    // Pushing aligned data after pushing raw data would be unsafe due to potential alignment issues
-    // Therefore, we avoid doing so in this test to ensure proper safety practices are followed.
+    // Test push_grow to force resizing
+    for _ in 0..20 {
+        stack.push_grow(&aligned_value);
+    }
+
+    // Pop the value back (unsafe because we assume we know the type)
+    for _ in 0..20 {
+        let value: Option<Aligned<i32>> = unsafe { stack.pop() };
+        assert_eq!(value, Some(aligned_value));
+    }
+
+    // Test shrink_to_fit
+    stack.shrink_to_fit();
+    assert_eq!(stack.get_capacity(), stack.len.max(1));
 }
