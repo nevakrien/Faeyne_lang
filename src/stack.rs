@@ -99,7 +99,7 @@ impl<const STACK_SIZE: usize> Stack<STACK_SIZE> {
 
             self.len = end;
         } else {
-            panic!("Stack overflow");
+            panic!("INTERNAL Stack overflow");
         }
     }
 
@@ -139,7 +139,7 @@ impl<const STACK_SIZE: usize> Stack<STACK_SIZE> {
             }
             self.len = end;
         } else {
-            panic!("Stack overflow");
+            panic!("INTERNAL Stack overflow");
         }
     }
 
