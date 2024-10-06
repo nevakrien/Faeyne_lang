@@ -86,7 +86,7 @@ impl<const STACK_SIZE: usize> Stack<STACK_SIZE> {
     }
 
     // Push method takes a reference to Aligned<T> and converts it into an 8-byte slice.
-    pub fn push<T: Sized + Clone>(&mut self, aligned: &Aligned<T>) {
+    pub fn push<T: Sized + Clone>(&mut self, aligned: &Aligned<T>) -> Result<(),()> {
         let end = self.len + 8;
 
         if end <= STACK_SIZE {
@@ -98,8 +98,10 @@ impl<const STACK_SIZE: usize> Stack<STACK_SIZE> {
             }
 
             self.len = end;
+            Ok(())
+
         } else {
-            panic!("INTERNAL Stack overflow");
+            Err(())
         }
     }
 
@@ -130,7 +132,7 @@ impl<const STACK_SIZE: usize> Stack<STACK_SIZE> {
 
     // Unsafe push method to push a raw byte array of any size.
     // SAFETY: The caller must ensure that the alignment of the pushed data is correct.
-    pub unsafe fn push_raw(&mut self, bytes: &[u8]) {
+    pub unsafe fn push_raw(&mut self, bytes: &[u8]) -> Result<(),()> {
         let end = self.len + bytes.len();
 
         if end <= STACK_SIZE {
@@ -138,8 +140,10 @@ impl<const STACK_SIZE: usize> Stack<STACK_SIZE> {
                 d.write(*bytes.get(i).expect("Index out of bounds"));
             }
             self.len = end;
+            Ok(())
+
         } else {
-            panic!("INTERNAL Stack overflow");
+             Err(())
         }
     }
 
@@ -171,7 +175,7 @@ fn test_stack() {
     let aligned_value = Aligned::new(42i32);
 
     // Push the value (by reference)
-    stack.push(&aligned_value);
+    stack.push(&aligned_value).unwrap();
 
     // Pop the value back (unsafe because we assume we know the type)
     let value: Option<Aligned<i32>> = unsafe { stack.pop() };
@@ -193,7 +197,7 @@ fn test_stack() {
     // Test unsafe push_raw and pop_raw
     let raw_data: [u8; 4] = [1, 2, 3, 4];
     unsafe {
-        stack.push_raw(&raw_data);
+        stack.push_raw(&raw_data).unwrap();
         let popped_raw = stack.pop_raw(4).expect("Failed to pop raw data");
         assert_eq!(popped_raw, raw_data);
     }
@@ -201,7 +205,7 @@ fn test_stack() {
     // Ensure no mixed alignment issues by pushing raw and then not using pop for aligned types
     let raw_data_2: [u8; 8] = [5, 6, 7, 8, 9, 10, 11, 12];
     unsafe {
-        stack.push_raw(&raw_data_2);
+        stack.push_raw(&raw_data_2).unwrap();
         let popped_raw_2 = stack.pop_raw(8).expect("Failed to pop raw data 2");
         assert_eq!(popped_raw_2, raw_data_2);
     }
