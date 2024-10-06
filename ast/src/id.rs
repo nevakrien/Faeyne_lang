@@ -6,40 +6,40 @@ use crate::ast::StringTable;
 // We use NIL_ID as the nil type so that we can perform easy nil checks.
 
 // Core IDs
-pub const NIL_ID: usize = 0;
-pub const ERR_ID: usize = 1;
-pub const OK_ID: usize = 2;
+pub const NIL_ID: u32 = 0;
+pub const ERR_ID: u32 = 1;
+pub const OK_ID: u32 = 2;
 
 // Added :len with ID 3
-pub const LEN_ID: usize = 3;
+pub const LEN_ID: u32 = 3;
 
 // Type IDs
-pub const BOOL_ID: usize = 4;
-pub const STRING_ID: usize = 5;
-pub const INT_ID: usize = 6;
-pub const FLOAT_ID: usize = 7;
-pub const ATOM_ID: usize = 8;
-pub const FUNC_ID: usize = 9;
-pub const TYPE_ATOM_ID: usize = 10;
+pub const BOOL_ID: u32 = 4;
+pub const STRING_ID: u32 = 5;
+pub const INT_ID: u32 = 6;
+pub const FLOAT_ID: u32 = 7;
+pub const ATOM_ID: u32 = 8;
+pub const FUNC_ID: u32 = 9;
+pub const TYPE_ATOM_ID: u32 = 10;
 
-pub const TO_STRING_ID: usize = 11;
+pub const TO_STRING_ID: u32 = 11;
 
 // Special IDs
-pub const UNDERSCORE_ID: usize = 12;
-pub const MAIN_ID: usize = 13;
+pub const UNDERSCORE_ID: u32 = 12;
+pub const MAIN_ID: u32 = 13;
 
 // Function IDs
-pub const PRINTLN_ID: usize = 14;
-pub const READ_FILE_ID: usize = 15;
-pub const WRITE_FILE_ID: usize = 16;
-pub const DELETE_FILE_ID: usize = 17;
+pub const PRINTLN_ID: u32 = 14;
+pub const READ_FILE_ID: u32 = 15;
+pub const WRITE_FILE_ID: u32 = 16;
+pub const DELETE_FILE_ID: u32 = 17;
 
-pub const READ_DIR_ID: usize = 18;
-pub const MAKE_DIR_ID: usize = 19;
-pub const DELETE_DIR_ID: usize = 20;
+pub const READ_DIR_ID: u32 = 18;
+pub const MAKE_DIR_ID: u32 = 19;
+pub const DELETE_DIR_ID: u32 = 20;
 
-pub const STRING_OUT_OF_BOUNDS: usize = 21;
-pub const SELF_ID: usize = 22;
+pub const STRING_OUT_OF_BOUNDS: u32 = 21;
+pub const SELF_ID: u32 = 22;
 
 
 pub fn preload_table(table: &mut StringTable) {

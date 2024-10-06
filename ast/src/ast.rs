@@ -3,11 +3,11 @@ use std::collections::HashMap;
 use codespan::Span;
 use crate::id::*;
 // use crate::system::preload_table;
-//names are represented as a usize which is a key into our table names
+//names are represented as a u32 which is a key into our table names
 
 #[derive(Debug,PartialEq)]
 pub enum Statment {
-    Assign(usize, Value),
+    Assign(u32, Value),
     Call(FunctionCall),
     Match(MatchStatment), // New case for match statements
 }
@@ -22,8 +22,8 @@ pub struct FuncDec {
 
 #[derive(Debug,PartialEq)]
 pub struct FuncSig {
-    pub name: usize,     // Function name ID from the StringTable
-    pub args: Vec<usize>, // names of args
+    pub name: u32,     // Function name ID from the StringTable
+    pub args: Vec<u32>, // names of args
 }
 
 #[derive(Debug,PartialEq)]
@@ -49,7 +49,7 @@ impl Ret {
 
 #[derive(Debug,PartialEq)]
 pub struct Lambda {
-    pub sig: Vec<usize>,
+    pub sig: Vec<u32>,
     pub body: FuncBlock,
     pub debug_span: Span,
 }
@@ -64,7 +64,7 @@ pub struct FunctionCall {
 #[derive(Debug,PartialEq)]
 pub enum FValue {
     SelfRef(Span),
-    Name(usize),
+    Name(u32),
     FuncCall(Box<FunctionCall>),
     Lambda(Box<Lambda>),
     MatchLambda(Box<MatchLambda>),
@@ -76,9 +76,9 @@ pub enum Value {
     Int(i64),
     Float(f64),
     Bool(bool),
-    Atom(usize),
-    String(usize),
-    Variable(usize),
+    Atom(u32),
+    String(u32),
+    Variable(u32),
     SelfRef(Span),
     FuncCall(FunctionCall),
     Lambda(Box<Lambda>),
@@ -105,8 +105,8 @@ impl From<FValue> for Value {
 pub enum Literal {
     Int(i64),
     Float(f64),
-    Atom(usize),
-    String(usize),
+    Atom(u32),
+    String(u32),
     Bool(bool),
     Nil,
 }
@@ -128,7 +128,7 @@ impl From<Literal> for Value {
 #[derive(Debug,PartialEq)]
 pub enum MatchPattern {
     Literal(Literal), 
-    Variable(usize),   
+    Variable(u32),   
     Wildcard,          // The `_` pattern
     //Tuple(Vec<MatchPattern>), // Matching a tuple
 }
@@ -196,8 +196,8 @@ pub enum BuildIn {
 
 #[derive(Debug,PartialEq)]
 pub struct ImportFunc{
-    pub path: usize,
-    pub name: usize,
+    pub path: u32,
+    pub name: u32,
 }
 
 #[derive(Debug,PartialEq)]
@@ -208,7 +208,7 @@ pub enum OuterExp {
 
 #[derive(Debug,PartialEq,Clone)]
 pub struct StringTable<'input> {
-    map: HashMap<&'input str, usize>,
+    map: HashMap<&'input str, u32>,
     vec: Vec<&'input str>,
 }
 
@@ -228,11 +228,11 @@ impl<'input> StringTable<'input> {
     }
 
     // Returns the ID of the string, inserting it if it doesn't exist.
-    pub fn get_id(&mut self, s: &'input str) -> usize {
+    pub fn get_id(&mut self, s: &'input str) -> u32 {
         if let Some(&id) = self.map.get(s) {
             id
         } else {
-            let id = self.vec.len();
+            let id = self.vec.len() as u32;
             self.vec.push(s);
             self.map.insert(s, id);
             id
@@ -240,7 +240,7 @@ impl<'input> StringTable<'input> {
     }
 
     // Returns the ID of the string, inserting it if it doesn't exist.
-    pub fn check_id(&mut self, s: &'input str) -> Option<usize> {
+    pub fn check_id(&mut self, s: &'input str) -> Option<u32> {
         if let Some(&id) = self.map.get(s) {
             Some(id)
         } else {
@@ -248,21 +248,21 @@ impl<'input> StringTable<'input> {
         }
     }
 
-    pub fn get_existing_id(&self, s: &'input str) -> usize {
+    pub fn get_existing_id(&self, s: &'input str) -> u32 {
         self.map[s]
     }
 
     // Returns the string corresponding to an ID, or an error if the ID is out of bounds.
-    pub fn get_string(&self, id: usize) -> Option<&'input str> {
-        self.vec.get(id).copied()
+    pub fn get_string(&self, id: u32) -> Option<&'input str> {
+        self.vec.get(id as usize).copied()
     }
 
     // Returns the string corresponding to an ID, or an error if the ID is out of bounds.
-    pub fn get_escaped_string(&self, id: usize) -> String {
-        self.vec.get(id).map(|r|unescape(&r[1..r.len()-1]).unwrap()).unwrap()
+    pub fn get_escaped_string(&self, id: u32) -> String {
+        self.vec.get(id as usize).map(|r|unescape(&r[1..r.len()-1]).unwrap()).unwrap()
     }
 
-    pub fn compare_to(&self, id: usize,s: &str) -> bool {
+    pub fn compare_to(&self, id: u32,s: &str) -> bool {
         match self.get_string(id) {
             None => unreachable!("attempting to compare to a non existing entry"),
             Some(x) => x==s,

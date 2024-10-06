@@ -86,13 +86,13 @@ pub struct NoneCallble {
 
 #[derive(Debug,PartialEq)]
 pub struct UnreachableCase {
-    pub name : usize,
+    pub name : u32,
     pub sig : FuncSig,
 }
 
 #[derive(Debug,PartialEq)]
 pub struct UndefinedName {
-    pub id : usize,
+    pub id : u32,
 }
 
 #[derive(Debug,PartialEq)]

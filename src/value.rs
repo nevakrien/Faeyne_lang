@@ -1,6 +1,7 @@
 // Sketch for transitioning a tree walk interpreter to a bytecode interpreter with a focus on Value representation and stack integration
 
 use crate::stack::{Aligned, Stack};
+use ast::ast::StringTable;
 
 // Enum for value types
 #[repr(u8)]
@@ -14,6 +15,39 @@ pub enum ValueType {
     Int = 5,
     Float = 6,
     Func = 7,
+}
+
+impl TryFrom<u32> for ValueType {
+    type Error = ();
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(ValueType::Nil),
+            1 => Ok(ValueType::BoolTrue),
+            2 => Ok(ValueType::BoolFalse),
+            3 => Ok(ValueType::Atom),
+            4 => Ok(ValueType::String),
+            5 => Ok(ValueType::Int),
+            6 => Ok(ValueType::Float),
+            7 => Ok(ValueType::Func),
+            _ => Err(()),
+        }
+    }
+}
+
+// Enum to represent interpreted values
+#[derive(Debug, Clone, PartialEq)]
+pub enum InterpretedValue {
+    Nil,
+    Bool(bool),
+    Atom(u32),
+    String(u32),
+    Int(i64),
+    Float(f64),
+    Func(u32),
+}
+
+pub struct Context<'ctx>{
+    pub table:StringTable<'ctx>
 }
 
 // Trait for specialized Stack operations for InterpretedValue
@@ -201,34 +235,6 @@ impl<const STACK_SIZE: usize> ValueStack for Stack<STACK_SIZE> {
     }
 }
 
-impl TryFrom<u32> for ValueType {
-    type Error = ();
-    fn try_from(value: u32) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(ValueType::Nil),
-            1 => Ok(ValueType::BoolTrue),
-            2 => Ok(ValueType::BoolFalse),
-            3 => Ok(ValueType::Atom),
-            4 => Ok(ValueType::String),
-            5 => Ok(ValueType::Int),
-            6 => Ok(ValueType::Float),
-            7 => Ok(ValueType::Func),
-            _ => Err(()),
-        }
-    }
-}
-
-// Enum to represent interpreted values
-#[derive(Debug, Clone, PartialEq)]
-pub enum InterpretedValue {
-    Nil,
-    Bool(bool),
-    Atom(u32),
-    String(u32),
-    Int(i64),
-    Float(f64),
-    Func(u32),
-}
 
 #[test]
 fn test_value_stack() {

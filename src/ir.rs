@@ -1,4 +1,4 @@
 #[derive(Debug,PartialEq,Clone)]
 pub struct FuncSig{
-    pub arg_ids: Vec<usize>, //for now its all simple
+    pub arg_ids: Vec<u32>, //for now its all simple
 }
