@@ -1,20 +1,20 @@
 [0m[1m[38;5;9merror[0m[1m: When calling Function[0m
-    [0m[34m┌─[0m input:248:5
+    [0m[34m┌─[0m input:251:5
     [0m[34m│[0m
-[0m[34m248[0m [0m[34m│[0m     [0m[31mmatrix_main(system)[0m;
+[0m[34m251[0m [0m[34m│[0m     [0m[31mmatrix_main(system)[0m;
     [0m[34m│[0m     [0m[31m^^^^^^^^^^^^^^^^^^^[0m
 
 [0m[1m[38;5;9merror[0m[1m: When calling Function[0m
-    [0m[34m┌─[0m input:244:5
+    [0m[34m┌─[0m input:247:5
     [0m[34m│[0m
-[0m[34m244[0m [0m[34m│[0m     [0m[31mmatrix_mul(matrix,matrix)(1)(1)[0m |> system(:println)()
-    [0m[34m│[0m     [0m[31m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[0m[34m247[0m [0m[34m│[0m     [0m[31mmatrix_mul(matrix,matrix)[0m(1)(1) |> system(:println)()
+    [0m[34m│[0m     [0m[31m^^^^^^^^^^^^^^^^^^^^^^^^^[0m
 
 [0m[1m[38;5;9merror[0m[1m: When calling Function[0m
-    [0m[34m┌─[0m input:212:25
+    [0m[34m┌─[0m input:204:5
     [0m[34m│[0m
-[0m[34m212[0m [0m[34m│[0m                 true => [0m[31mmake_entry(m,i)[0m,
-    [0m[34m│[0m                         [0m[31m^^^^^^^^^^^^^^^[0m
+[0m[34m204[0m [0m[34m│[0m     [0m[31mmake_entry(1,1)[0m;
+    [0m[34m│[0m     [0m[31m^^^^^^^^^^^^^^^[0m
 
 [0m[1m[38;5;9merror[0m[1m: When calling Function[0m
     [0m[34m┌─[0m input:193:9

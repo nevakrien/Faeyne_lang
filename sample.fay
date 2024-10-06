@@ -191,15 +191,18 @@ def matrix_mul(A,B) {
 
     make_entry = fn(n,m) -> {
         fn(i,agg) -> {
-            match i>=A(:n){
+            match i==A(:n){
                 true =>{return  agg;},
                 false =>{}
             };
 
             c = A(i)(m)*B(n)(i);
-            self(i+1,c+agg)
-        }(0,0)
+            self(i-1,c+agg)
+        }(A(:n),0)
     };
+
+    make_entry(1,1);
+    make_entry(0,0);
     
     _make_row = fn(i,m,row) {
         match i==A(:m){
