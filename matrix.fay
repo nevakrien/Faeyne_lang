@@ -1,13 +1,13 @@
 def make_matrix(a,b,c,d) {
     match fn {
-		0 => match fn {
-			0=> a,
-			1=> b,
-		},
-		1 => match fn {
-			0=> c,
-			1=> d,
-		},
+        0 => match fn {
+            0=> a,
+            1=> b,
+        },
+        1 => match fn {
+            0=> c,
+            1=> d,
+        },
 
         :n=>2,
         :m=>2,
@@ -28,9 +28,12 @@ def matrix_mul(A,B) {
             };
 
             c = A(i)(m)*B(n)(i);
-            self(i+1,c+agg)
-        }(0,0)
+            self(i-1,c+agg)
+        }(A(:n),0)
     };
+
+    make_entry(1,1);
+    make_entry(0,0);
     
     _make_row = fn(i,m,row) {
         match i==A(:m){
@@ -63,13 +66,14 @@ def matrix_mul(A,B) {
     }
 }
 
-def main(system) {
-	a = 1;
-	b = 1;
-	c = 1;
-	d = 1;
+#catches bugs related to closures fairly well
+def matrix_main(system) {
+    a = 1;
+    b = 1;
+    c = 1;
+    d = 1;
 
-	matrix = make_matrix(a,b,c,d);
+    matrix = make_matrix(a,b,c,d);
 
-    matrix_mul(matrix,matrix)(1) |> system(:println)()
+    matrix_mul(matrix,matrix)(1)(1) |> system(:println)()
 }
