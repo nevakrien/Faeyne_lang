@@ -254,7 +254,9 @@ impl<'ctx,'call> ClosureScope<'ctx> {
             }
         }
     }
-
+    pub fn add_arg(&mut self,id:usize){
+        self.allowed_escapes.insert(id);
+    }
     pub fn add_args(&mut self,sig:&FuncSig){
         for id in sig.arg_ids.iter() {
             self.allowed_escapes.insert(*id);
@@ -450,7 +452,10 @@ pub enum Statment<'ctx>{
 impl<'ctx> Statment<'ctx>{
     pub fn add_to_closure(&self,scope: &VarScope<'ctx,'_>,closure : &mut ClosureScope<'ctx>) -> Result<(),ErrList>{
         match self{
-            Statment::Assign(_,x) => x.add_to_closure(scope,closure),
+            Statment::Assign(id,x) => {
+                closure.add_arg(*id);
+                x.add_to_closure(scope,closure)
+            },
             Statment::Call(x) => x.add_to_closure(scope,closure),
             Statment::Return(r) => {
                 let x : LazyVal = r.clone().into(); 
@@ -500,6 +505,7 @@ impl<'ctx> LazyFunc<'ctx> {
     }
 
     pub fn add_to_closure(&self,scope: &VarScope<'ctx, '_>,closure : &mut ClosureScope<'ctx>) -> Result<(),ErrList> {
+        closure.add_args(&self.sig);
         self.inner.add_to_closure(scope,closure)
     }
 }
