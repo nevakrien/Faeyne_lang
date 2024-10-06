@@ -205,6 +205,8 @@ def main(system){
     factorial(12) |>system(:println)();
     div_loop(100) |>system(:println)();
     div_loop(100);
+    #waste_more_time(1_00_000);#crash
+
     waste_more_time(1000);
     waste_more_time(300);
     waste_more_time(300);

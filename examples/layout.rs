@@ -5,15 +5,11 @@ use faeyne_lang::ir::LazyFunc;
 use faeyne_lang::ir::FuncSig;
 use faeyne_lang::ir::Block;
 use faeyne_lang::ir::Statment;
-use faeyne_lang::ir::FuncSig as OtherFuncSig;
-use faeyne_lang::ir::Statment as OtherStatment;
 use faeyne_lang::reporting::ErrList;
 use faeyne_lang::ir::GcPointer;
 use faeyne_lang::ir::GlobalFunc;
-use crate::Value::Func;
+use faeyne_lang::ir::Func;
 
-use faeyne_lang::ir::Func as OtherFunc;
-use faeyne_lang::ir::Value::Func as OtherOtherFunc;
 use faeyne_lang::ir::FunctionHandle;
 use faeyne_lang::basic_ops::buildin_add;
 use mem_viewer::_print_type_of;
@@ -90,56 +86,88 @@ macro_rules! view_mem {
 //     view_mem!(value_ret);
 // }
 
+pub type DynFFI<'ctx> = dyn Fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList>;
+
+#[derive(Clone)]
+pub enum OtherHandle<'ctx> {
+    FFI(fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList>),
+    // FFI2(fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList>),
+    // FFI3(fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList>),
+    // FFI4(fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList>),
+    // StateFFI(&'ctx DynFFI<'ctx>),
+    StateFFI2(*const DynFFI<'ctx>),
+    DataFFI(GcPointer<DynFFI<'ctx>>),
+    // MutFFI(Box<dyn FnMut(Vec<Value>) -> Result<Value, ErrList>>), // New FnMut variant
+    StaticDef(GlobalFunc<'ctx>),
+    Lambda(GcPointer<Func<'ctx>>),
+}
+
 fn main() {
+    let ffi_handle = OtherHandle::FFI(buildin_add);
+    view_mem!(ffi_handle);
 
+    let b = Box::new(|args: Vec<Value>| Ok(Value::Int(42)));
+    view_mem!(b);
 
-    let ffi_handle = FunctionHandle::FFI(buildin_add);
-    // view_mem!(ffi_handle);
-
-    let dyn_func = Box::leak(Box::new(|args: Vec<Value>| Ok(Value::Int(42))));
+    let dyn_func = Box::leak(b);
     view_mem!(dyn_func);
 
 
-    let state_ffi_handle =  FunctionHandle::StateFFI(dyn_func);
-    // view_mem!(state_ffi_handle);
-
-    let gc_func = GcPointer::new(|args: Vec<Value>| Ok(Value::Int(42)));
-    // view_mem!(gc_func);
-    
-    let data_ffi_handle = FunctionHandle::DataFFI(gc_func);
-    // view_mem!(data_ffi_handle);
-
-
-    // Create a LazyFunc that modifies its own scope but should not modify the outer/global scope
-    let  sig = FuncSig { arg_ids: vec![2] };
-    let inner = Block::new(vec![
-            // Inside the function, we assign a new value to the same variable ID (1)
-            Statment::Assign(69, LazyVal::Terminal(Value::Int(200))),
-    ]);
-    let debug_span = Span::new(0,10);
-
-    let mut global_scope = Box::leak(Box::new(GlobalScope::default()));
-    global_scope.add(69, inner.clone(), sig.clone());
-
-    let lazy_func = LazyFunc{sig,inner,debug_span};
-    // view_mem!(lazy_func);
-
-    let func =lazy_func.eval(&global_scope.make_subscope(1).unwrap()).unwrap();
-    // view_mem!(func);
-
-    let static_def_handle = global_scope.get(69).unwrap();
-    // view_mem!(static_def_handle);
-
-    let Value::Func(FunctionHandle::StaticDef(global_func)) = static_def_handle.clone() else {panic!()};
-    view_mem!(global_func);
-
-
-    view_mem!(static_def_handle);
-
-    let lambda_handle = FunctionHandle::Lambda(GcPointer::new(func));
-    view_mem!(lambda_handle);
-
-
-    // Memory layout inspection using view_mem! macro
+    let state_ffi_handle =  OtherHandle::StateFFI2(dyn_func);
+    view_mem!(state_ffi_handle);
 
 }
+
+// fn main() {
+
+
+//     // let ffi_handle = FunctionHandle::FFI(buildin_add);
+//     view_mem!(buildin_add);
+
+//     let dyn_func = Box::leak(Box::new(|args: Vec<Value>| Ok(Value::Int(42))));
+//     view_mem!(dyn_func);
+
+
+//     let state_ffi_handle =  FunctionHandle::StateFFI(dyn_func);
+//     view_mem!(state_ffi_handle);
+
+//     let gc_func = GcPointer::new(|args: Vec<Value>| Ok(Value::Int(42)));
+//     view_mem!(gc_func);
+    
+//     let data_ffi_handle = FunctionHandle::DataFFI(gc_func);
+//     view_mem!(data_ffi_handle);
+
+
+//     // Create a LazyFunc that modifies its own scope but should not modify the outer/global scope
+//     let  sig = FuncSig { arg_ids: vec![2] };
+//     let inner = Block::new(vec![
+//             // Inside the function, we assign a new value to the same variable ID (1)
+//             Statment::Assign(69, LazyVal::Terminal(Value::Int(200))),
+//     ]);
+//     let debug_span = Span::new(0,10);
+
+//     let mut global_scope = Box::leak(Box::new(GlobalScope::default()));
+//     global_scope.add(69, inner.clone(), sig.clone());
+
+//     let lazy_func = LazyFunc{sig,inner,debug_span};
+//     // view_mem!(lazy_func);
+
+//     let func =lazy_func.eval(&global_scope.make_subscope(1).unwrap()).unwrap();
+//     // view_mem!(func);
+
+//     let static_def_handle = global_scope.get(69).unwrap();
+//     // view_mem!(static_def_handle);
+
+//     let Value::Func(FunctionHandle::StaticDef(global_func)) = static_def_handle.clone() else {panic!()};
+//     view_mem!(global_func);
+
+
+//     view_mem!(static_def_handle);
+
+//     let lambda_handle = FunctionHandle::Lambda(GcPointer::new(func));
+//     view_mem!(lambda_handle);
+
+
+//     // Memory layout inspection using view_mem! macro
+
+// }
