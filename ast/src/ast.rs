@@ -253,7 +253,12 @@ impl<'input> StringTable<'input> {
     }
 
     // Returns the string corresponding to an ID, or an error if the ID is out of bounds.
-    pub fn get_string(&self, id: u32) -> Option<&'input str> {
+    pub fn get_raw_str(&self, id: u32) -> &'input str {
+        self.vec.get(id as usize).copied().unwrap()
+    }
+
+    // Returns the string corresponding to an ID, or an error if the ID is out of bounds.
+    pub fn get_display_str(&self, id: u32) -> Option<&'input str> {
         self.vec.get(id as usize).copied()
     }
 
@@ -262,12 +267,6 @@ impl<'input> StringTable<'input> {
         self.vec.get(id as usize).map(|r|unescape(&r[1..r.len()-1]).unwrap()).unwrap()
     }
 
-    pub fn compare_to(&self, id: u32,s: &str) -> bool {
-        match self.get_string(id) {
-            None => unreachable!("attempting to compare to a non existing entry"),
-            Some(x) => x==s,
-        }
-    }
 }
 
 
@@ -282,11 +281,11 @@ fn test_string_table() {
 
 
     // Check that we can retrieve "hello" by its ID
-    let retrieved_hello = table.get_string(id_hello).unwrap();
+    let retrieved_hello = table.get_raw_str(id_hello);
     assert_eq!(retrieved_hello, "hello");
 
     // Check that we can retrieve "world" by its ID
-    let retrieved_world = table.get_string(id_world).unwrap();
+    let retrieved_world = table.get_raw_str(id_world);
     assert_eq!(retrieved_world, "world");
 
     // Ensure that inserting "hello" again returns the same ID

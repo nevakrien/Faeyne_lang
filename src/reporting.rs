@@ -117,7 +117,7 @@ impl DiagnosticDisplay for FuncSig {
     fn display_with_table(&self, table: &StringTable) -> String {
         let args_names: Vec<_>= self.arg_ids
             .iter()
-            .map(|&id| table.get_string(id).unwrap_or("Unknown"))
+            .map(|&id| table.get_display_str(id).unwrap_or("Unknown"))
             .collect();
 
         format!("[{}]", args_names.join(", "))
@@ -242,11 +242,11 @@ fn emit_error(
         Error::Missing(UndefinedName { id }) => Diagnostic::error()
             .with_message(format!(
                 "Undefined name error: {}",
-                table.get_string(*id).unwrap_or("Unknown name")
+                table.get_display_str(*id).unwrap_or("Unknown name")
             )),
 
         Error::UnreachableCase(UnreachableCase { name, sig }) => {
-            let name_str = table.get_string(*name).unwrap_or("Unknown name");
+            let name_str = table.get_display_str(*name).unwrap_or("Unknown name");
             let sig_display = sig.display_with_table(table);
             Diagnostic::error()
                 .with_message(format!(

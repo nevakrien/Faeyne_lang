@@ -468,7 +468,7 @@ MatchOut : MatchOut = {
 
 MatchPattern : MatchPattern = {
     <l:Literal> => MatchPattern::Literal(l), 
-    <n:Name> => match table.compare_to(n,"_") {
+    <n:Name> => match table.get_raw_str(n)=="_" {
             true => MatchPattern::Wildcard,
             false => MatchPattern::Variable(n),
     },

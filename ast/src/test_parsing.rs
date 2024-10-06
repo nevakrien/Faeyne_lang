@@ -17,7 +17,7 @@ fn simple_parse_hello_world_function() {
 
     let func_dec = result.unwrap();
     
-    assert_eq!(table.get_string(func_dec.sig.name), Some("main"));
+    assert_eq!(table.get_display_str(func_dec.sig.name), Some("main"));
     assert!(func_dec.body.body.len() == 1, "Expected one statement in function body");
 }
 
@@ -52,7 +52,7 @@ fn main_simple_parse_lambda_function() {
     
     let func_dec = result.unwrap();
     
-    assert_eq!(table.get_string(func_dec.sig.name), Some("main"));
+    assert_eq!(table.get_display_str(func_dec.sig.name), Some("main"));
     assert_eq!(func_dec.sig.args.len(), 1);
     assert!(func_dec.body.body.len() == 1, "Expected one statement in function body");
 }
@@ -88,9 +88,9 @@ fn parse_hello_world_function() {
     let func_dec = result.unwrap();
     
     // Validate the function signature (name "main" and one argument "system")
-    assert_eq!(table.get_string(func_dec.sig.name), Some("main"));
+    assert_eq!(table.get_display_str(func_dec.sig.name), Some("main"));
     assert_eq!(func_dec.sig.args.len(), 1, "Expected one argument in function signature");
-    assert_eq!(table.get_string(func_dec.sig.args[0]), Some("system"));
+    assert_eq!(table.get_display_str(func_dec.sig.args[0]), Some("system"));
 
     // Validate the function body has one statement (a function call)
     assert_eq!(func_dec.body.body.len(), 1, "Expected one statement in function body");
@@ -101,14 +101,14 @@ fn parse_hello_world_function() {
         if let FValue::FuncCall(outer_call) = &func_call.name {
             // Ensure the outer function is `system`
             if let FValue::Name(system_name) = outer_call.name {
-                assert_eq!(table.get_string(system_name), Some("system"));
+                assert_eq!(table.get_display_str(system_name), Some("system"));
             } else {
                 panic!("Expected 'system' as the outer function name");
             }
 
             // The first argument of the outer call is `:println` (an atom)
             if let Value::Atom(atom_id) = &outer_call.args[0] {
-                assert_eq!(table.get_string(*atom_id), Some(":println"));
+                assert_eq!(table.get_display_str(*atom_id), Some(":println"));
             } else {
                 panic!("Expected :println as the argument to system");
             }
@@ -119,7 +119,7 @@ fn parse_hello_world_function() {
         // Validate the argument to `system(:println)` is `"hello world"`
         assert_eq!(func_call.args.len(), 1, "Expected one argument to system(:println)");
         if let Value::String(str_id) = &func_call.args[0] {
-            assert_eq!(table.get_string(*str_id), Some("'hello world'"));
+            assert_eq!(table.get_display_str(*str_id), Some("'hello world'"));
         } else {
             panic!("Expected 'hello world' as the argument to system(:println)");
         }
@@ -146,9 +146,9 @@ fn func_sig_single_arg() {
     let func_dec = result.unwrap();
 
     // Assert function name and argument
-    assert_eq!(table.get_string(func_dec.name).unwrap(), "main");
+    assert_eq!(table.get_display_str(func_dec.name).unwrap(), "main");
     assert_eq!(func_dec.args.len(), 1);
-    assert_eq!(table.get_string(func_dec.args[0]).unwrap(), "system");
+    assert_eq!(table.get_display_str(func_dec.args[0]).unwrap(), "system");
 }
 
 #[test]
@@ -167,11 +167,11 @@ fn func_sig_multiple_args() {
     let func_dec = result.unwrap();
 
     // Assert function name and argument list
-    assert_eq!(table.get_string(func_dec.name).unwrap(), "foo");
+    assert_eq!(table.get_display_str(func_dec.name).unwrap(), "foo");
     assert_eq!(func_dec.args.len(), 3);
-    assert_eq!(table.get_string(func_dec.args[0]).unwrap(), "bar");
-    assert_eq!(table.get_string(func_dec.args[1]).unwrap(), "baz");
-    assert_eq!(table.get_string(func_dec.args[2]).unwrap(), "qux");
+    assert_eq!(table.get_display_str(func_dec.args[0]).unwrap(), "bar");
+    assert_eq!(table.get_display_str(func_dec.args[1]).unwrap(), "baz");
+    assert_eq!(table.get_display_str(func_dec.args[2]).unwrap(), "qux");
 }
 
 #[test]
@@ -190,7 +190,7 @@ fn func_sig_no_args() {
     let func_dec = result.unwrap();
 
     // Assert function name and empty argument list
-    assert_eq!(table.get_string(func_dec.name).unwrap(), "noop");
+    assert_eq!(table.get_display_str(func_dec.name).unwrap(), "noop");
     assert_eq!(func_dec.args.len(), 0);
 }
 
@@ -210,7 +210,7 @@ fn function_calls_and_expressions() {
             FValue::Name(n) => n,
             _ => unreachable!()
         };
-        assert_eq!(table.get_string(name).unwrap(), "foo");
+        assert_eq!(table.get_display_str(name).unwrap(), "foo");
         assert_eq!(args.len(), 3);
         
         match args[0] {
@@ -222,7 +222,7 @@ fn function_calls_and_expressions() {
             _ => panic!("Expected second argument to be Float(2.5)"),
         }
         match args[2] {
-            Value::Variable(id) => assert_eq!(table.get_string(id).unwrap(), "x"),
+            Value::Variable(id) => assert_eq!(table.get_display_str(id).unwrap(), "x"),
             _ => panic!("Expected third argument to be Variable 'x'"),
         }
     } else {
@@ -259,7 +259,7 @@ fn function_call_no_args() {
             FValue::Name(n) => n,
             _ => unreachable!()
         };
-        assert_eq!(table.get_string(name).unwrap(), "foo");
+        assert_eq!(table.get_display_str(name).unwrap(), "foo");
         assert_eq!(args.len(), 0, "Expected no arguments");
     } else {
         panic!("Expected a function call");
@@ -288,7 +288,7 @@ fn func_block_with_statements_and_return() {
                 FValue::Name(n) => n,
                 _ => unreachable!()
             };
-            assert_eq!("s",table.get_string(name).unwrap());
+            assert_eq!("s",table.get_display_str(name).unwrap());
         },
         _ => unreachable!()
     };
@@ -619,17 +619,17 @@ fn test_basic_piping() {
 
     // Check the last function called in the chain is `c()`
     if let FValue::Name(c_name) = pipe_call.name {
-        assert_eq!(table.get_string(c_name).unwrap(), "c");
+        assert_eq!(table.get_display_str(c_name).unwrap(), "c");
 
         // Check the argument to `c()` is a `FuncCall` for `b()`
         if let Value::FuncCall(b_call) = &pipe_call.args[0] {
             if let FValue::Name(b_name) = b_call.name {
-                assert_eq!(table.get_string(b_name).unwrap(), "b");
+                assert_eq!(table.get_display_str(b_name).unwrap(), "b");
 
                 // Check the argument to `b()` is a `FuncCall` for `a()`
                 if let Value::FuncCall(a_call) = &b_call.args[0] {
                     if let FValue::Name(a_name) = a_call.name {
-                        assert_eq!(table.get_string(a_name).unwrap(), "a");
+                        assert_eq!(table.get_display_str(a_name).unwrap(), "a");
                     } else {
                         panic!("Expected function name 'a'");
                     }
@@ -658,7 +658,7 @@ fn test_piping_with_third_order_nesting() {
 
     // Check the last function called in the chain is `c()`
     if let FValue::Name(c_name) = pipe_call.name {
-        assert_eq!(table.get_string(c_name).unwrap(), "c");
+        assert_eq!(table.get_display_str(c_name).unwrap(), "c");
 
         // Check the arguments to `c()` (total 3 arguments, reverse order)
         assert_eq!(pipe_call.args.len(), 3);
@@ -681,7 +681,7 @@ fn test_piping_with_third_order_nesting() {
         // First argument is `b(a(1 + 2), y, n(m(x)))` (as a function call)
         if let Value::FuncCall(b_call) = &pipe_call.args[0] {
             if let FValue::Name(b_name) = b_call.name {
-                assert_eq!(table.get_string(b_name).unwrap(), "b");
+                assert_eq!(table.get_display_str(b_name).unwrap(), "b");
             } else {
                 panic!("Expected function name 'b'");
             }
@@ -692,7 +692,7 @@ fn test_piping_with_third_order_nesting() {
             // First argument to `b()` is `a(1 + 2)` (as a function call)
             if let Value::FuncCall(a_call) = &b_call.args[0] {
                 if let FValue::Name(a_name) = a_call.name {
-                    assert_eq!(table.get_string(a_name).unwrap(), "a");
+                    assert_eq!(table.get_display_str(a_name).unwrap(), "a");
                 } else {
                     panic!("Expected function name 'a'");
                 }
@@ -718,7 +718,7 @@ fn test_piping_with_third_order_nesting() {
             // Third argument to `b()` is `n(m(x))`
             if let Value::FuncCall(n_call) = &b_call.args[2] {
                 if let FValue::Name(n_name) = n_call.name {
-                    assert_eq!(table.get_string(n_name).unwrap(), "n");
+                    assert_eq!(table.get_display_str(n_name).unwrap(), "n");
                 } else {
                     panic!("Expected function name 'n'");
                 }
@@ -726,7 +726,7 @@ fn test_piping_with_third_order_nesting() {
                 // Check `n()` has one argument: `m(x)`
                 if let Value::FuncCall(m_call) = &n_call.args[0] {
                     if let FValue::Name(m_name) = m_call.name {
-                        assert_eq!(table.get_string(m_name).unwrap(), "m");
+                        assert_eq!(table.get_display_str(m_name).unwrap(), "m");
                     } else {
                         panic!("Expected function name 'm'");
                     }
@@ -762,7 +762,7 @@ fn test_piping_with_function_call_as_function() {
     if let FValue::FuncCall(c_call) = pipe_call.name {
         // Verify the name of the inner function call is `c`
         if let FValue::Name(c_name) = c_call.name {
-            assert_eq!(table.get_string(c_name).unwrap(), "c");
+            assert_eq!(table.get_display_str(c_name).unwrap(), "c");
 
             // Check that `c()` has no arguments in its first invocation
             assert_eq!(c_call.args.len(), 0);
@@ -770,7 +770,7 @@ fn test_piping_with_function_call_as_function() {
             // Check the argument to the result of `c()` is a function call for `a()`
             if let Value::FuncCall(a_call) = &pipe_call.args[0] {
                 if let FValue::Name(a_name) = a_call.name {
-                    assert_eq!(table.get_string(a_name).unwrap(), "a");
+                    assert_eq!(table.get_display_str(a_name).unwrap(), "a");
 
                     // Verify `a()` has no arguments
                     assert_eq!(a_call.args.len(), 0);
@@ -802,7 +802,7 @@ fn test_complex_piping_with_double_function_call() {
     if let FValue::FuncCall(c_call) = pipe_call.name {
         // Verify the name of the function is `c`
         if let FValue::Name(c_name) = c_call.name {
-            assert_eq!(table.get_string(c_name).unwrap(), "c");
+            assert_eq!(table.get_display_str(c_name).unwrap(), "c");
 
             // Check that `c()` has two arguments: `d(e())` and `f()`
             assert_eq!(c_call.args.len(), 2);
@@ -810,12 +810,12 @@ fn test_complex_piping_with_double_function_call() {
             // First argument is `d(e())`
             if let Value::FuncCall(d_call) = &c_call.args[0] {
                 if let FValue::Name(d_name) = d_call.name {
-                    assert_eq!(table.get_string(d_name).unwrap(), "d");
+                    assert_eq!(table.get_display_str(d_name).unwrap(), "d");
 
                     // Check `d()` has one argument: `e()`
                     if let Value::FuncCall(e_call) = &d_call.args[0] {
                         if let FValue::Name(e_name) = e_call.name {
-                            assert_eq!(table.get_string(e_name).unwrap(), "e");
+                            assert_eq!(table.get_display_str(e_name).unwrap(), "e");
                         } else {
                             panic!("Expected function name 'e'");
                         }
@@ -832,7 +832,7 @@ fn test_complex_piping_with_double_function_call() {
             // Second argument is `f()`
             if let Value::FuncCall(f_call) = &c_call.args[1] {
                 if let FValue::Name(f_name) = f_call.name {
-                    assert_eq!(table.get_string(f_name).unwrap(), "f");
+                    assert_eq!(table.get_display_str(f_name).unwrap(), "f");
 
                     // Verify `f()` has no arguments
                     assert_eq!(f_call.args.len(), 0);
@@ -849,12 +849,12 @@ fn test_complex_piping_with_double_function_call() {
         // Check the argument passed to `c()` is `b(a(), x)`
         if let Value::FuncCall(b_call) = &pipe_call.args[0] {
             if let FValue::Name(b_name) = b_call.name {
-                assert_eq!(table.get_string(b_name).unwrap(), "b");
+                assert_eq!(table.get_display_str(b_name).unwrap(), "b");
 
                 // First argument to `b()` is `a()`
                 if let Value::FuncCall(a_call) = &b_call.args[0] {
                     if let FValue::Name(a_name) = a_call.name {
-                        assert_eq!(table.get_string(a_name).unwrap(), "a");
+                        assert_eq!(table.get_display_str(a_name).unwrap(), "a");
 
                         // Verify `a()` has no arguments
                         assert_eq!(a_call.args.len(), 0);
@@ -891,9 +891,9 @@ fn parse_pipe_hello_world_function() {
     let func_dec = result.unwrap();
     
     // Validate the function signature (name "main" and one argument "system")
-    assert_eq!(table.get_string(func_dec.sig.name), Some("main"));
+    assert_eq!(table.get_display_str(func_dec.sig.name), Some("main"));
     assert_eq!(func_dec.sig.args.len(), 1, "Expected one argument in function signature");
-    assert_eq!(table.get_string(func_dec.sig.args[0]), Some("system"));
+    assert_eq!(table.get_display_str(func_dec.sig.args[0]), Some("system"));
 
     // Validate the function body has one statement (a function call)
     assert_eq!(func_dec.body.body.len(), 1, "Expected one statement in function body");
@@ -904,14 +904,14 @@ fn parse_pipe_hello_world_function() {
         if let FValue::FuncCall(outer_call) = &func_call.name {
             // Ensure the outer function is `system`
             if let FValue::Name(system_name) = outer_call.name {
-                assert_eq!(table.get_string(system_name), Some("system"));
+                assert_eq!(table.get_display_str(system_name), Some("system"));
             } else {
                 panic!("Expected 'system' as the outer function name");
             }
 
             // The first argument of the outer call is `:println` (an atom)
             if let Value::Atom(atom_id) = &outer_call.args[0] {
-                assert_eq!(table.get_string(*atom_id), Some(":println"));
+                assert_eq!(table.get_display_str(*atom_id), Some(":println"));
             } else {
                 panic!("Expected :println as the argument to system");
             }
@@ -922,7 +922,7 @@ fn parse_pipe_hello_world_function() {
         // Validate the argument to `system(:println)` is `"hello world"`
         assert_eq!(func_call.args.len(), 1, "Expected one argument to system(:println)");
         if let Value::String(str_id) = &func_call.args[0] {
-            assert_eq!(table.get_string(*str_id), Some("'hello world'"));
+            assert_eq!(table.get_display_str(*str_id), Some("'hello world'"));
         } else {
             panic!("Expected 'hello world' as the argument to system(:println)");
         }
@@ -944,9 +944,9 @@ fn parse_pipe_nil_bool() {
     let func_dec = result.unwrap();
     
     // Validate the function signature (name "main" and one argument "system")
-    assert_eq!(table.get_string(func_dec.sig.name), Some("main"));
+    assert_eq!(table.get_display_str(func_dec.sig.name), Some("main"));
     assert_eq!(func_dec.sig.args.len(), 1, "Expected one argument in function signature");
-    assert_eq!(table.get_string(func_dec.sig.args[0]), Some("system"));
+    assert_eq!(table.get_display_str(func_dec.sig.args[0]), Some("system"));
 
     // Validate the function body has one statement (a function call)
     assert_eq!(func_dec.body.body.len(), 1, "Expected one statement in function body");
@@ -957,7 +957,7 @@ fn parse_pipe_nil_bool() {
         if let FValue::FuncCall(outer_call) = &func_call.name {
             // Ensure the outer function is `system`
             if let FValue::Name(system_name) = outer_call.name {
-                assert_eq!(table.get_string(system_name), Some("system"));
+                assert_eq!(table.get_display_str(system_name), Some("system"));
             } else {
                 panic!("Expected 'system' as the outer function name");
             }
@@ -1003,9 +1003,9 @@ fn test_simple_match_statement() {
     let func_dec = result.unwrap();
     
     // Validate function signature
-    assert_eq!(table.get_string(func_dec.sig.name).unwrap(), "check_value");
+    assert_eq!(table.get_display_str(func_dec.sig.name).unwrap(), "check_value");
     assert_eq!(func_dec.sig.args.len(), 1);
-    assert_eq!(table.get_string(func_dec.sig.args[0]).unwrap(), "x");
+    assert_eq!(table.get_display_str(func_dec.sig.args[0]).unwrap(), "x");
     
     // Validate function body has one statement (the match statement)
     assert_eq!(func_dec.body.body.len(), 1, "Expected one statement in function body");
@@ -1014,7 +1014,7 @@ fn test_simple_match_statement() {
     if let Statment::Match(match_stmt) = &func_dec.body.body[0] {
         // Validate the expression being matched (should be variable 'x')
         if let Value::Variable(var_id) = *match_stmt.val {
-            assert_eq!(table.get_string(var_id).unwrap(), "x");
+            assert_eq!(table.get_display_str(var_id).unwrap(), "x");
         } else {
             panic!("Expected variable 'x' as the value being matched");
         }
@@ -1030,7 +1030,7 @@ fn test_simple_match_statement() {
             panic!("Expected pattern 1 in first arm");
         }
         if let MatchOut::Value(Value::String(str_id)) = &arm1.result {
-            assert_eq!(table.get_string(*str_id).unwrap(), "'one'");
+            assert_eq!(table.get_display_str(*str_id).unwrap(), "'one'");
         } else {
             panic!("Expected value 'one' in first arm");
         }
@@ -1043,7 +1043,7 @@ fn test_simple_match_statement() {
             panic!("Expected pattern 2 in second arm");
         }
         if let MatchOut::Value(Value::String(str_id)) = &arm2.result {
-            assert_eq!(table.get_string(*str_id).unwrap(), "'two'");
+            assert_eq!(table.get_display_str(*str_id).unwrap(), "'two'");
         } else {
             panic!("Expected value 'two' in second arm");
         }
@@ -1056,7 +1056,7 @@ fn test_simple_match_statement() {
             panic!("Expected wildcard pattern in third arm");
         }
         if let MatchOut::Value(Value::String(str_id)) = &arm3.result {
-            assert_eq!(table.get_string(*str_id).unwrap(), "'other'");
+            assert_eq!(table.get_display_str(*str_id).unwrap(), "'other'");
         } else {
             panic!("Expected value 'other' in third arm");
         }
@@ -1091,9 +1091,9 @@ fn test_match_with_blocks() {
     let func_dec = result.unwrap();
     
     // Validate function signature
-    assert_eq!(table.get_string(func_dec.sig.name).unwrap(), "handler");
+    assert_eq!(table.get_display_str(func_dec.sig.name).unwrap(), "handler");
     assert_eq!(func_dec.sig.args.len(), 1);
-    assert_eq!(table.get_string(func_dec.sig.args[0]).unwrap(), "event");
+    assert_eq!(table.get_display_str(func_dec.sig.args[0]).unwrap(), "event");
     
     // Validate function body has one statement (the match statement)
     assert_eq!(func_dec.body.body.len(), 1, "Expected one statement in function body");
@@ -1102,7 +1102,7 @@ fn test_match_with_blocks() {
     if let Statment::Match(match_stmt) = &func_dec.body.body[0] {
         // Validate the expression being matched (should be variable 'event')
         if let Value::Variable(var_id) = *match_stmt.val {
-            assert_eq!(table.get_string(var_id).unwrap(), "event");
+            assert_eq!(table.get_display_str(var_id).unwrap(), "event");
         } else {
             panic!("Expected variable 'event' as the value being matched");
         }
@@ -1113,7 +1113,7 @@ fn test_match_with_blocks() {
         // First arm: :click => { process_click(event); update_ui(); }
         let arm1 = &match_stmt.arms[0];
         if let MatchPattern::Literal(Literal::Atom(atom_id)) = arm1.pattern {
-            assert_eq!(table.get_string(atom_id).unwrap(), ":click");
+            assert_eq!(table.get_display_str(atom_id).unwrap(), ":click");
         } else {
             panic!("Expected atom ':click' in first arm");
         }
@@ -1127,7 +1127,7 @@ fn test_match_with_blocks() {
         // Second arm: :hover => { highlight_element(); }
         let arm2 = &match_stmt.arms[1];
         if let MatchPattern::Literal(Literal::Atom(atom_id)) = arm2.pattern {
-            assert_eq!(table.get_string(atom_id).unwrap(), ":hover");
+            assert_eq!(table.get_display_str(atom_id).unwrap(), ":hover");
         } else {
             panic!("Expected atom ':hover' in second arm");
         }
