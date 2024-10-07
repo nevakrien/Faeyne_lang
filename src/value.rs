@@ -1,3 +1,5 @@
+use core::cell::UnsafeCell;
+use core::mem::ManuallyDrop;
 use crate::stack::{Aligned, Stack};
 use ast::ast::StringTable;
 
@@ -35,7 +37,7 @@ impl TryFrom<u32> for ValueType {
 }
 
 #[repr(u32)] //this is to fit nicely with ValueType
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Copy, Debug, Clone, PartialEq)]
 pub enum IRValue {
     Nil = ValueType::Nil as u32,
     Bool(bool),
@@ -386,4 +388,188 @@ fn test_value_stack() {
     let _popped_string = stack.pop_string().unwrap();
     let popped_atom = stack.pop_atom().unwrap();
     assert_eq!(popped_atom, 123);
+}
+
+pub struct VarTable {
+    data: Vec<Option<IRValue>>,
+    names: Vec<usize>,
+}
+
+impl VarTable {
+    pub fn clear(&mut self) {
+        self.data.clear();
+        self.names.clear();
+    }
+
+    pub fn truncate(&mut self, n: usize) {
+        self.data.truncate(n);
+        self.names.truncate(n);
+    }
+
+    pub fn add_ids(&mut self, ids: &[usize]) {
+        self.names.reserve(ids.len());
+        self.data.reserve(ids.len());
+
+        self.names.extend(ids.iter());
+        self.data.extend(ids.iter().map(|_| None));
+    }
+
+    pub fn set(&mut self, id: usize, val: IRValue) -> Result<(), ()> {
+        if let Some(elem) = self.data.get_mut(id) {
+            *elem = Some(val);
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
+    pub fn get(&self, id: usize) -> Option<IRValue> {
+        self.data.get(id)?.clone()
+    }
+
+    pub fn get_debug_id(&self, id: usize) -> Option<usize> {
+        self.names.get(id).copied()
+    }
+}
+
+pub struct Scope<'a> {
+    table: &'a mut VarTable,
+    base_size: usize,
+}
+
+impl Drop for Scope<'_> {
+    fn drop(&mut self) {
+        // println!("calling drop length of {}", self.base_size);
+        self.table.truncate(self.base_size);
+    }
+}
+
+impl<'a> Scope<'a> {
+    pub fn new_global(table: &'a mut VarTable) -> Self {
+        let base_size = table.names.len();
+        Scope { table, base_size }
+    }
+
+    pub fn add_scope(&mut self, ids: &[usize]) -> Scope {
+        let base_size = self.table.names.len();
+        self.table.add_ids(ids);
+        Scope {
+            table: self.table,
+            base_size,
+        }
+    }
+
+    pub fn consume(self) -> &'a mut VarTable{
+        let cell = UnsafeCell::new(self);
+        let manual = ManuallyDrop::new(cell);
+        let ptr = manual.get();
+        
+        unsafe{&mut *(*ptr).table}
+    }
+
+    pub fn set(&mut self, id: usize, val: IRValue) -> Result<(), ()> {
+        self.table.set(id, val)
+    }
+
+    pub fn get(&self, id: usize) -> Option<IRValue> {
+        self.table.get(id)
+    }
+
+    pub fn get_debug_id(&self, id: usize) -> Option<usize> {
+        self.table.get_debug_id(id)
+    }
+
+    pub fn len(&self) -> usize {
+        self.table.names.len()
+    }
+}
+
+#[test]
+fn test_scope_add_and_remove() {
+    let mut var_table = VarTable {
+        data: Vec::new(),
+        names: Vec::new(),
+    };
+
+    // Create a global scope
+    let mut global_scope = Scope::new_global(&mut var_table);
+
+    assert_eq!(global_scope.len(), 0);
+
+    // Add a new nested scope with some variables
+    {
+        let ids = vec![1, 2, 3];
+        let mut nested_scope = global_scope.add_scope(&ids);
+
+        // Verify that the IDs and corresponding data are added
+        assert_eq!(nested_scope.len(), 3);
+
+        // Set some values for these variables
+        nested_scope.set(0, IRValue::Int(42)).unwrap();
+        nested_scope.set(1, IRValue::Bool(true)).unwrap();
+        nested_scope.set(2, IRValue::String(123)).unwrap();
+
+        // Verify the values are set correctly
+        assert_eq!(nested_scope.get(0), Some(IRValue::Int(42)));
+        assert_eq!(nested_scope.get(1), Some(IRValue::Bool(true)));
+        assert_eq!(nested_scope.get(2), Some(IRValue::String(123)));
+
+        std::mem::drop(nested_scope);
+    } // The nested scope ends here, dropping it and clearing its entries.
+
+    // After the nested scope is dropped, the size of the table should return to its previous value
+    assert_eq!(global_scope.len(), 0);
+
+    // Add another nested scope to test again
+    {
+        let ids = vec![4, 5];
+        let mut nested_scope_2 = global_scope.add_scope(&ids);
+
+        // Verify that the IDs and corresponding data are added
+        assert_eq!(nested_scope_2.len(), 2);
+
+        // Set some values for these variables
+        nested_scope_2.set(0, IRValue::Float(3.14)).unwrap();
+        nested_scope_2.set(1, IRValue::Atom(456)).unwrap();
+
+        // Verify the values are set correctly
+        assert_eq!(nested_scope_2.get(0), Some(IRValue::Float(3.14)));
+        assert_eq!(nested_scope_2.get(1), Some(IRValue::Atom(456)));
+    } // The second nested scope ends here, dropping it and clearing its entries.
+
+    // After the second nested scope is dropped, the size of the table should return to its previous value
+    assert_eq!(global_scope.len(), 0);
+}
+
+#[test]
+fn test_scope_consume() {
+    let mut var_table = VarTable {
+        data: Vec::new(),
+        names: Vec::new(),
+    };
+
+    // Create a global scope
+    let mut global_scope = Scope::new_global(&mut var_table);
+
+    // Add a new nested scope with some variables
+    {
+        let ids = vec![1, 2, 3];
+        let mut nested_scope = global_scope.add_scope(&ids);
+
+        // Set some values for these variables
+        nested_scope.set(0, IRValue::Int(42)).unwrap();
+        nested_scope.set(1, IRValue::Bool(true)).unwrap();
+        nested_scope.set(2, IRValue::String(123)).unwrap();
+
+        // Consume the nested scope and get back the mutable reference to VarTable
+        let returned_table = nested_scope.consume();
+
+        // Verify that the values are still present in the returned table
+        assert_eq!(returned_table.get(0), Some(IRValue::Int(42)));
+        assert_eq!(returned_table.get(1), Some(IRValue::Bool(true)));
+        assert_eq!(returned_table.get(2), Some(IRValue::String(123)));
+    }
+
+    // After consuming the nested scope, the size of the global scope should not be affected
+    assert_eq!(global_scope.len(), 3);
 }
