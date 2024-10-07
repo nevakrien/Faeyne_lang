@@ -586,97 +586,237 @@ fn test_scope_consume() {
 
 
 
-//Cuckoo Hash table
+/// Updated to Linear Probing with a fixed constant for probing steps and resizing on insertion failure
 pub struct StringRegistry {
-    values: Vec<Option<(NonZeroU32,String)>>
+    values: Vec<Option<(NonZeroU32, String)>>,
+    cur_id: NonZeroU32,
 }
+
+const LEFT_PROBS: usize = 1; // Fixed constant for probing backwards
+const RIGHT_PROBS: usize = 1; // Fixed constant for probing forwards
 
 impl StringRegistry {
-    pub fn new(cap:usize) -> Self{
-        StringRegistry{values:(0..cap).map(|_| None).collect()}
-    }
-    fn fnv1a_hash_u32_to_usize(value: NonZeroU32) -> usize {
-        const FNV_OFFSET_BASIS: usize = 0xcbf29ce484222325; // FNV offset basis for 64-bit.
-        const FNV_PRIME: usize = 0x00000100000001B3;      // FNV prime for 64-bit.
-
-        let mut hash = FNV_OFFSET_BASIS;
-
-        for byte in u32::from(value).to_le_bytes() {
-            hash ^= byte as usize;
-            hash = hash.wrapping_mul(FNV_PRIME);
-        }
-
-        hash
-    }
-
-    fn hash1(id:NonZeroU32) -> usize {
-        (u32::from(id) -1) as usize
-    }
-
-    fn hash2(id:NonZeroU32) -> usize {
-        Self::fnv1a_hash_u32_to_usize(id)
-    }
-
-    fn get_from_hash(&self,made_hash:usize,id:NonZeroU32) -> Option<&str>{
-        let Some((id2,ref s)) = self.values[made_hash%self.values.len()] else{return None;};
-        if id!=id2 {
-            return None;
-        }
-        Some(&s)
-
-    }
-
-    fn mut_from_hash(&mut self,made_hash:usize,id:NonZeroU32) -> Option<&mut Option<(NonZeroU32,String)>>{
-        let idx = made_hash%self.values.len();
-        let spot = &mut self.values[idx];
-        let Some((id2,_)) = spot else{return None;};
-        if id!=*id2 {
-            return None;
-        }
-        Some(spot)
-    }
-
-    fn del_from_hash(&mut self,made_hash:usize,id:NonZeroU32) -> Option<()>{
-        self.mut_from_hash(made_hash,id).map(|spot| {*spot=None;})
-    }
-
-    fn try_insert_from_hash(&mut self,made_hash:usize,id:NonZeroU32,value:String) -> Option<&mut Option<(NonZeroU32,String)>>{
-        let idx = made_hash%self.values.len();
-        let spot = &mut self.values[idx];
-        match &*spot {
-            None => {
-                *spot=Some((id,value));
-                None
-            },
-            Some(_) => Some(spot)
+    pub fn new(cap: usize) -> Self {
+        StringRegistry {
+            values: vec![None; cap],
+            cur_id: NonZeroU32::new(1).unwrap(),
         }
     }
 
-    pub fn insert(&self,id_raw:u32) {
+    fn hash(&self, id: NonZeroU32) -> usize {
+        (u32::from(id) - 1) as usize % self.values.len()
+    }
+
+    fn resize(&mut self) {
+        let new_capacity = self.values.len() * 2;
+        let old_values = std::mem::replace(&mut self.values, vec![None; new_capacity]);
+
+        for entry in old_values.into_iter().flatten() {
+            let (id, value) = entry;
+            self.insert_internal(id, value); // Rehash and insert existing entries
+        }
+    }
+
+    fn insert_internal(&mut self, id: NonZeroU32, value: String) {
+        let idx = self.hash(id);
+
+        // Quick immediate check for the initial index (this clues the compiler to not set up the loop first)
+        if let None = &self.values[idx] {
+            self.values[idx] = Some((id, value));
+            return;
+        }
+
+        // First probe backwards
+        for i in 1..LEFT_PROBS {
+            let idx = (idx + self.values.len() - i) % self.values.len(); // Move backwards with wrap around
+            if let None = &self.values[idx] {
+                self.values[idx] = Some((id, value));
+                return;
+            }
+        }
+
+        // Then probe forwards starting from 1
+        for i in 1..=RIGHT_PROBS {
+            let idx = (idx + i) % self.values.len();
+            if let None = &self.values[idx] {
+                self.values[idx] = Some((id, value));
+                return;
+            }
+        }
+
+        // If insertion fails within max_probes, resize and retry
+        self.resize();
+        self.insert_internal(id, value);
+    }
+
+    pub fn insert(&mut self, value: String) -> u32 {
+        let id = self.cur_id;
+        self.cur_id = NonZeroU32::new(u32::from(id) + 1).unwrap();
+        self.insert_internal(id, value);
+        id.into()
+    }
+
+    pub fn get(&self, id_raw: u32) -> Option<&str> {
         let id = NonZeroU32::new(id_raw).expect("WRONG ID PASSED");
-        //10 is arbitrary
-        for _ in 0..10 { 
+        let idx = self.hash(id);
 
+        // Quick immediate check for the initial index (this clues the compiler to not set up the loop first)
+        match &self.values[idx] {
+            Some((existing_id, value)) if *existing_id == id => {
+                return Some(value);
+            }
+            None => return None, // Not found
+            _ => {}
         }
+
+        // First probe backwards
+        for i in 1..LEFT_PROBS {
+            let idx = (idx + self.values.len() - i) % self.values.len(); // Move backwards with wrap around
+            match &self.values[idx] {
+                Some((existing_id, value)) if *existing_id == id => {
+                    return Some(value);
+                }
+                None => return None, // Not found
+                _ => {}
+            }
+        }
+
+        // Then probe forwards starting from 1
+        for i in 1..=RIGHT_PROBS {
+            let idx = (idx + i) % self.values.len();
+            match &self.values[idx] {
+                Some((existing_id, value)) if *existing_id == id => {
+                    return Some(value);
+                }
+                None => return None, // Not found
+                _ => {}
+            }
+        }
+
+        None // Not found, probing limit reached
     }
 
-    pub fn get(&self,id_raw:u32) -> Option<&str> {
+    pub fn del(&mut self, id_raw: u32) -> bool {
         let id = NonZeroU32::new(id_raw).expect("WRONG ID PASSED");
-        let first = self.get_from_hash(Self::hash1(id),id);
-        if first.is_some() {
-            return first;
+        let idx = self.hash(id);
+
+        // Quick immediate check for the initial index (this clues the compiler to not set up the loop first)
+        match &self.values[idx] {
+            Some((existing_id, _)) if *existing_id == id => {
+                self.values[idx] = None; // Mark as deleted
+                return true;
+            }
+            None => return false, // Not found
+            _ => {}
         }
 
-        self.get_from_hash(Self::hash2(id),id)
-    }
-
-    pub fn del(&mut self,id_raw:u32) -> Option<()> {
-        let id = NonZeroU32::new(id_raw).expect("WRONG ID PASSED");
-        let first = self.del_from_hash(Self::hash1(id),id);
-        if first.is_some() {
-            return first;
+        // First probe backwards
+        for i in 1..LEFT_PROBS {
+            let idx = (idx + self.values.len() - i) % self.values.len(); // Move backwards with wrap around
+            match &self.values[idx] {
+                Some((existing_id, _)) if *existing_id == id => {
+                    self.values[idx] = None; // Mark as deleted
+                    return true;
+                }
+                None => return false, // Not found
+                _ => {}
+            }
         }
 
-        self.del_from_hash(Self::hash2(id),id)
+        // Then probe forwards starting from 1
+        for i in 1..=RIGHT_PROBS {
+            let idx = (idx + i) % self.values.len();
+            match &self.values[idx] {
+                Some((existing_id, _)) if *existing_id == id => {
+                    self.values[idx] = None; // Mark as deleted
+                    return true;
+                }
+                None => return false, // Not found
+                _ => {}
+            }
+        }
+
+        false // Not found, probing limit reached
     }
 }
+
+#[test]
+fn test_insert_get_delete() {
+    let mut registry = StringRegistry::new(2);
+
+    // Insert elements and verify returned IDs
+    let id_one = registry.insert("one".to_string());
+    let id_two = registry.insert("two".to_string());
+    let id_three = registry.insert("three".to_string());
+    assert_eq!(id_one, 1);
+    assert_eq!(id_two, 2);
+    assert_eq!(id_three, 3);
+
+    // Get elements
+    assert_eq!(registry.get(id_one), Some("one"));
+    assert_eq!(registry.get(id_two), Some("two"));
+    assert_eq!(registry.get(id_three), Some("three"));
+    assert_eq!(registry.get(4), None);
+
+    // Insert more elements
+    for i in 4..=50 {
+        let value = format!("value_{}", i);
+        let id = registry.insert(value.clone());
+        assert_eq!(registry.get(id), Some(value.as_str()));
+    }
+
+    // Delete elements and verify
+    assert!(registry.del(id_two));
+    assert_eq!(registry.get(id_two), None);
+
+    // Insert new element after deletion
+    let new_id_two = registry.insert("new_two".to_string());
+    assert_eq!(registry.get(new_id_two), Some("new_two"));
+    assert_ne!(id_two, new_id_two);
+
+    // Random deletes
+    for i in (5..=20).step_by(3) {
+        assert!(registry.del(i));
+        assert_eq!(registry.get(i), None);
+    }
+
+    // Reinsert and verify values
+    for i in (5..=20).step_by(3) {
+        let value = format!("reinserted_value_{}", i);
+        let id = registry.insert(value.clone());
+        assert_eq!(registry.get(id), Some(value.as_str()));
+    }
+}
+
+#[test]
+fn test_resize() {
+    let mut registry = StringRegistry::new(100);
+
+    // Insert elements to force resize
+    for i in 1..=200 {
+        let value = format!("value_{}", i);
+        let id = registry.insert(value.clone());
+        assert_eq!(registry.get(id), Some(value.as_str()));
+    }
+
+    // Ensure all elements are present after resize
+    for i in 1..=200 {
+        let value = format!("value_{}", i);
+        assert_eq!(registry.get(i), Some(value.as_str()));
+    }
+
+    // Random deletes after resizing
+    for i in (50..=150).step_by(7) {
+        assert!(registry.del(i));
+        assert_eq!(registry.get(i), None);
+    }
+
+    // Insert new elements after deletions
+    for i in (50..=150).step_by(7) {
+        let value = format!("new_value_{}", i);
+        let id = registry.insert(value.clone());
+        assert_eq!(registry.get(id), Some(value.as_str()));
+    }
+}
+
+

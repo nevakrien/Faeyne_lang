@@ -1,46 +1,31 @@
-// Main function for performance testing the Value stack
-
-use faeyne_lang::value::{IRValue, ValueStack};
-use faeyne_lang::stack::Stack;
+use faeyne_lang::value::StringRegistry;
 use std::time::Instant;
 
-fn main() {
-    const STACK_SIZE: usize = 1_000_000;
-    let mut stack: Stack = Stack::with_capacity(STACK_SIZE);
+pub fn main() {
+    let mut registry = StringRegistry::new(1000);
 
+    // Advanced stress test with alternating insertions, deletions, and retrievals
     let start = Instant::now();
-
-    for _ in 0..100 {
-        // Start the timer
-
-        // Initial push of a few values
-        for i in 0..100 {
-            stack.push_value(&IRValue::Int(i as i64)).unwrap();
-            stack.push_value(&IRValue::Bool(i % 2 == 0)).unwrap();
-            stack.push_value(&IRValue::Atom(i as u32)).unwrap();
+    let mut operation_count = 0;
+    for i in 2001..=5000 {
+        registry.insert(format!("advanced_value_{}", i));
+        operation_count += 1;
+        if i % 3 == 0 {
+            registry.del(i - 1500);
+            operation_count += 1;
         }
-
-        // Simulate program behavior with alternating push/pop
-        for _ in 0..1_000_000 {
-            stack.push_value(&IRValue::Int(42)).unwrap();
-            stack.push_value(&IRValue::Bool(true)).unwrap();
-            stack.push_value(&IRValue::Atom(7)).unwrap();
-            stack.pop_value().unwrap();
-            stack.pop_value().unwrap();
-            stack.push_value(&IRValue::String(99)).unwrap();
-            stack.pop_value().unwrap();
-            stack.pop_value().unwrap();
+        if i % 4 == 0 {
+            registry.get(i - 1000);
+            operation_count += 1;
         }
-
-        // Pop the original values
-        for _ in 0..100 {
-            stack.pop_value().unwrap();
-            stack.pop_value().unwrap();
-            stack.pop_value().unwrap();
+        if i % 5 == 0 {
+            registry.insert(format!("extra_value_{}", i));
+            operation_count += 1;
         }
     }
-
-     // Stop the timer and print the elapsed time
     let duration = start.elapsed();
-    println!("Performance test completed in: {:?}", duration);
+    let avg_time_per_operation = duration.as_secs_f64() / operation_count as f64 * 1_000_000.0; // Average time per operation in microseconds
+    println!("Time taken for stress test: {:?}", duration);
+    println!("Total operations: {}", operation_count);
+    println!("Average time per operation: {:.3}µs", avg_time_per_operation);
 }
