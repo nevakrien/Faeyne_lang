@@ -1,9 +1,8 @@
-// Sketch for transitioning a tree walk interpreter to a bytecode interpreter with a focus on Value representation and stack integration
 use crate::stack::{Aligned, Stack};
 use ast::ast::StringTable;
 
 // Enum for value types
-#[repr(u32)]
+#[repr(u32)] //used because the stack is 64bits aligned and this lets us cram a u32 id next to this baby
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ValueType {
     //0 is undefined
@@ -35,8 +34,7 @@ impl TryFrom<u32> for ValueType {
     }
 }
 
-// Enum to represent interpreted values
-#[repr(u32)]
+#[repr(u32)] //this is to fit nicely with ValueType
 #[derive(Debug, Clone, PartialEq)]
 pub enum IRValue {
     Nil = ValueType::Nil as u32,
@@ -55,7 +53,7 @@ pub struct Context<'ctx,'code,const STACK_SIZE: usize>{
 
 // Trait for specialized Stack operations for IRValue
 pub trait ValueStack {
-    //note that push_grow is 2x slower than push. so going with 1 ensure capacity followed by many uncheck pushes is more performent
+    //note that push_grow is 2x slower than push. so its recommended to ensure capacity and then push with unwraps.
     fn pop_value(&mut self) -> Result<IRValue, ()>;
     fn pop_nil(&mut self) -> Result<(), ()>;
     fn pop_atom(&mut self) -> Result<u32, ()>;

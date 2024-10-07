@@ -42,17 +42,14 @@ impl<T: Sized + Clone> Aligned<T> {
         buffer
     }
 
-    // Method to return the owned inner value (move out).
     pub fn to_inner(self) -> T {
         self.inner
     }
 
-    // Immutable reference to the inner value.
     pub fn inner_ref(&self) -> &T {
         &self.inner
     }
 
-    // Mutable reference to the inner value.
     pub fn inner_mut_ref(&mut self) -> &mut T {
         &mut self.inner
     }
@@ -65,9 +62,11 @@ pub struct Stack {
     data: NonNull<MaybeUninit<u8>>, // Pointer to aligned memory
 }
 
+static ALIGN :usize= 16;
+
 impl Stack {
     pub fn with_capacity(capacity: usize) -> Self {
-        let layout = Layout::from_size_align(capacity, 16).expect("Invalid layout");
+        let layout = Layout::from_size_align(capacity, ALIGN).expect("Invalid layout");
         let data = unsafe { alloc(layout) as *mut MaybeUninit<u8> };
         let data = NonNull::new(data).expect("Failed to allocate memory");
         Self { len: 0, capacity, data }
@@ -83,12 +82,12 @@ impl Stack {
         if required_capacity > self.capacity {
             let new_capacity = self.capacity.max(1) * 2;
             let new_capacity = new_capacity.max(required_capacity);
-            let layout = Layout::from_size_align(new_capacity, 16).expect("Invalid layout");
+            let layout = Layout::from_size_align(new_capacity, ALIGN).expect("Invalid layout");
             unsafe {
                 let new_data = alloc(layout) as *mut MaybeUninit<u8>;
                 let new_data = NonNull::new(new_data).expect("Failed to allocate memory");
                 ptr::copy_nonoverlapping(self.data.as_ptr(), new_data.as_ptr(), self.len);
-                dealloc(self.data.as_ptr() as *mut u8, Layout::from_size_align(self.capacity, 16).expect("Invalid layout"));
+                dealloc(self.data.as_ptr() as *mut u8, Layout::from_size_align(self.capacity, ALIGN).expect("Invalid layout"));
                 self.data = new_data;
                 self.capacity = new_capacity;
             }
@@ -97,18 +96,17 @@ impl Stack {
 
     pub fn shrink_to_fit(&mut self) {
         let size = self.len.max(1);
-        let layout = Layout::from_size_align(size, 16).expect("Invalid layout");
+        let layout = Layout::from_size_align(size, ALIGN).expect("Invalid layout");
         unsafe {
             let new_data = alloc(layout) as *mut MaybeUninit<u8>;
             let new_data = NonNull::new(new_data).expect("Failed to allocate memory");
             ptr::copy_nonoverlapping(self.data.as_ptr(), new_data.as_ptr(), self.len);
-            dealloc(self.data.as_ptr() as *mut u8, Layout::from_size_align(self.capacity, 16).expect("Invalid layout"));
+            dealloc(self.data.as_ptr() as *mut u8, Layout::from_size_align(self.capacity, ALIGN).expect("Invalid layout"));
             self.data = new_data;
             self.capacity = size;
         }
     }
 
-    // Push method takes a reference to Aligned<T> and converts it into an 8-byte slice.
     #[inline]
     pub fn push<T: Sized + Clone>(&mut self, aligned: &Aligned<T>) -> Result<(), ()> {
         let end = self.len + 8;
@@ -130,7 +128,6 @@ impl Stack {
         }
     }
 
-    // Push with growth capability.
     #[inline]
     pub fn push_grow<T: Sized + Clone>(&mut self, aligned: &Aligned<T>) {
         loop {
@@ -141,7 +138,6 @@ impl Stack {
         }
     }
 
-    // Pop method, which is unsafe because the caller needs to ensure they are reading the correct type.
     // SAFETY: The caller must ensure that the data being popped is correctly aligned and matches the expected type.
     #[inline]
     pub unsafe fn pop<T: Sized + Clone>(&mut self) -> Option<Aligned<T>> {
@@ -166,7 +162,6 @@ impl Stack {
         }
     }
 
-    // Unsafe push method to push a raw byte array of any size.
     // SAFETY: The caller must ensure that the alignment of the pushed data is correct.
     #[inline]
     pub unsafe fn push_raw(&mut self, bytes: &[u8]) -> Result<(), ()> {
@@ -183,7 +178,6 @@ impl Stack {
         }
     }
 
-    // Unsafe pop method to pop a raw byte array of any size.
     // SAFETY: The caller must ensure that the alignment and size are correct when reading the data.
     #[inline]
     pub unsafe fn pop_raw(&mut self, size: usize) -> Option<Vec<u8>> {
@@ -205,7 +199,7 @@ impl Stack {
 
 impl Drop for Stack {
     fn drop(&mut self) {
-        let layout = Layout::from_size_align(self.capacity, 16).expect("Invalid layout");
+        let layout = Layout::from_size_align(self.capacity, ALIGN).expect("Invalid layout");
         unsafe {
             dealloc(self.data.as_ptr() as *mut u8, layout);
         }
