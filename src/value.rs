@@ -1,7 +1,8 @@
+use core::num::NonZeroU32;
 use core::cell::UnsafeCell;
 use core::mem::ManuallyDrop;
 use crate::stack::{Aligned, Stack};
-use ast::ast::StringTable;
+
 
 // Enum for value types
 #[repr(u32)] //used because the stack is 64bits aligned and this lets us cram a u32 id next to this baby
@@ -46,11 +47,6 @@ pub enum IRValue {
     Int(i64),
     Float(f64),
     Func(u32),
-}
-
-pub struct Context<'ctx,'code,const STACK_SIZE: usize>{
-    pub table: &'ctx StringTable<'code>,
-    pub stack: &'ctx mut Stack,
 }
 
 // Trait for specialized Stack operations for IRValue
@@ -392,7 +388,7 @@ fn test_value_stack() {
 
 pub struct VarTable {
     data: Vec<Option<IRValue>>,
-    names: Vec<usize>,
+    pub names: Vec<u32>,
 }
 
 impl VarTable {
@@ -402,8 +398,6 @@ impl VarTable {
     }
 
     pub fn reset_data(&mut self) {
-        // self.data.clear();
-        // self.data.extend(self.names.iter().map(|_| None))
         self.data.iter_mut().for_each(|x| *x=None);
     }
 
@@ -412,7 +406,7 @@ impl VarTable {
         self.names.truncate(n);
     }
 
-    pub fn add_ids(&mut self, ids: &[usize]) {
+    pub fn add_ids(&mut self, ids: &[u32]) {
         self.names.reserve(ids.len());
         self.data.reserve(ids.len());
 
@@ -433,13 +427,13 @@ impl VarTable {
         self.data.get(id)?.clone()
     }
 
-    pub fn get_debug_id(&self, id: usize) -> Option<usize> {
+    pub fn get_debug_id(&self, id: usize) -> Option<u32> {
         self.names.get(id).copied()
     }
 }
 
 pub struct Scope<'a> {
-    table: &'a mut VarTable,
+    pub table: &'a mut VarTable,
     base_size: usize,
 }
 
@@ -456,7 +450,7 @@ impl<'a> Scope<'a> {
         Scope { table, base_size }
     }
 
-    pub fn add_scope(&mut self, ids: &[usize]) -> Scope {
+    pub fn add_scope(&mut self, ids: &[u32]) -> Scope {
         let base_size = self.table.names.len();
         self.table.add_ids(ids);
         Scope {
@@ -486,7 +480,7 @@ impl<'a> Scope<'a> {
         self.table.get(id)
     }
 
-    pub fn get_debug_id(&self, id: usize) -> Option<usize> {
+    pub fn get_debug_id(&self, id: usize) -> Option<u32> {
         self.table.get_debug_id(id)
     }
 
@@ -588,4 +582,101 @@ fn test_scope_consume() {
     assert_eq!(global_scope.get(0), Some(IRValue::Int(42)));
     assert_eq!(global_scope.get(1), Some(IRValue::Bool(true)));
     assert_eq!(global_scope.get(2), Some(IRValue::String(123)));
+}
+
+
+
+//Cuckoo Hash table
+pub struct StringRegistry {
+    values: Vec<Option<(NonZeroU32,String)>>
+}
+
+impl StringRegistry {
+    pub fn new(cap:usize) -> Self{
+        StringRegistry{values:(0..cap).map(|_| None).collect()}
+    }
+    fn fnv1a_hash_u32_to_usize(value: NonZeroU32) -> usize {
+        const FNV_OFFSET_BASIS: usize = 0xcbf29ce484222325; // FNV offset basis for 64-bit.
+        const FNV_PRIME: usize = 0x00000100000001B3;      // FNV prime for 64-bit.
+
+        let mut hash = FNV_OFFSET_BASIS;
+
+        for byte in u32::from(value).to_le_bytes() {
+            hash ^= byte as usize;
+            hash = hash.wrapping_mul(FNV_PRIME);
+        }
+
+        hash
+    }
+
+    fn hash1(id:NonZeroU32) -> usize {
+        (u32::from(id) -1) as usize
+    }
+
+    fn hash2(id:NonZeroU32) -> usize {
+        Self::fnv1a_hash_u32_to_usize(id)
+    }
+
+    fn get_from_hash(&self,made_hash:usize,id:NonZeroU32) -> Option<&str>{
+        let Some((id2,ref s)) = self.values[made_hash%self.values.len()] else{return None;};
+        if id!=id2 {
+            return None;
+        }
+        Some(&s)
+
+    }
+
+    fn mut_from_hash(&mut self,made_hash:usize,id:NonZeroU32) -> Option<&mut Option<(NonZeroU32,String)>>{
+        let idx = made_hash%self.values.len();
+        let spot = &mut self.values[idx];
+        let Some((id2,_)) = spot else{return None;};
+        if id!=*id2 {
+            return None;
+        }
+        Some(spot)
+    }
+
+    fn del_from_hash(&mut self,made_hash:usize,id:NonZeroU32) -> Option<()>{
+        self.mut_from_hash(made_hash,id).map(|spot| {*spot=None;})
+    }
+
+    fn try_insert_from_hash(&mut self,made_hash:usize,id:NonZeroU32,value:String) -> Option<&mut Option<(NonZeroU32,String)>>{
+        let idx = made_hash%self.values.len();
+        let spot = &mut self.values[idx];
+        match &*spot {
+            None => {
+                *spot=Some((id,value));
+                None
+            },
+            Some(_) => Some(spot)
+        }
+    }
+
+    pub fn insert(&self,id_raw:u32) {
+        let id = NonZeroU32::new(id_raw).expect("WRONG ID PASSED");
+        //10 is arbitrary
+        for _ in 0..10 { 
+
+        }
+    }
+
+    pub fn get(&self,id_raw:u32) -> Option<&str> {
+        let id = NonZeroU32::new(id_raw).expect("WRONG ID PASSED");
+        let first = self.get_from_hash(Self::hash1(id),id);
+        if first.is_some() {
+            return first;
+        }
+
+        self.get_from_hash(Self::hash2(id),id)
+    }
+
+    pub fn del(&mut self,id_raw:u32) -> Option<()> {
+        let id = NonZeroU32::new(id_raw).expect("WRONG ID PASSED");
+        let first = self.del_from_hash(Self::hash1(id),id);
+        if first.is_some() {
+            return first;
+        }
+
+        self.del_from_hash(Self::hash2(id),id)
+    }
 }

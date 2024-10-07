@@ -24,7 +24,9 @@ pub enum Error {
     NoneCallble(NoneCallble),
     Stacked(InternalError),
     IllegalSelfRef(IllegalSelfRef),
-    Recursion(RecursionError)
+    Recursion(RecursionError),
+
+    Bug(&'static str)
     //UndocumentedError,
 }
 
@@ -106,7 +108,6 @@ pub struct InternalError {
 pub struct IllegalSelfRef {
     pub span : Span,
 }
-
 
 pub trait DiagnosticDisplay {
     fn display_with_table(&self, table: &StringTable) -> String;
@@ -294,7 +295,15 @@ fn emit_error(
             .with_notes(vec![
                 "This is likely caused by an infinite loop".to_string(),
             ]),
-
+        Error::Bug(message) => {
+            let diagnostic = Diagnostic::error()
+                .with_message("An internal bug has occurred.")
+                .with_notes(vec![
+                    format!("Details: {}", message),
+                ]);
+            term::emit(buffer, config, files, &diagnostic).unwrap();
+            Diagnostic::help().with_message("This is not your fault, but rather an implementation bug. Please report this to the maintainers.")
+        }
     };
 
     // Emit the diagnostic for the current error
