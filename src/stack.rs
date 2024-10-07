@@ -73,6 +73,7 @@ impl Stack {
         Self { len: 0, capacity, data }
     }
 
+    #[inline(always)]
     pub fn get_capacity(&self) -> usize {
         self.capacity
     }
@@ -108,6 +109,7 @@ impl Stack {
     }
 
     // Push method takes a reference to Aligned<T> and converts it into an 8-byte slice.
+    #[inline]
     pub fn push<T: Sized + Clone>(&mut self, aligned: &Aligned<T>) -> Result<(), ()> {
         let end = self.len + 8;
 
@@ -129,6 +131,7 @@ impl Stack {
     }
 
     // Push with growth capability.
+    #[inline]
     pub fn push_grow<T: Sized + Clone>(&mut self, aligned: &Aligned<T>) {
         loop {
             match self.push(aligned) {
@@ -140,6 +143,7 @@ impl Stack {
 
     // Pop method, which is unsafe because the caller needs to ensure they are reading the correct type.
     // SAFETY: The caller must ensure that the data being popped is correctly aligned and matches the expected type.
+    #[inline]
     pub unsafe fn pop<T: Sized + Clone>(&mut self) -> Option<Aligned<T>> {
         if self.len >= 8 {
             self.len -= 8;
@@ -164,6 +168,7 @@ impl Stack {
 
     // Unsafe push method to push a raw byte array of any size.
     // SAFETY: The caller must ensure that the alignment of the pushed data is correct.
+    #[inline]
     pub unsafe fn push_raw(&mut self, bytes: &[u8]) -> Result<(), ()> {
         let end = self.len + bytes.len();
 
@@ -180,6 +185,7 @@ impl Stack {
 
     // Unsafe pop method to pop a raw byte array of any size.
     // SAFETY: The caller must ensure that the alignment and size are correct when reading the data.
+    #[inline]
     pub unsafe fn pop_raw(&mut self, size: usize) -> Option<Vec<u8>> {
         if self.len >= size {
             self.len -= size;
