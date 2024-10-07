@@ -3,7 +3,7 @@ use crate::stack::{Aligned, Stack};
 use ast::ast::StringTable;
 
 // Enum for value types
-#[repr(u8)]
+#[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ValueType {
     //0 is undefined
@@ -19,6 +19,7 @@ pub enum ValueType {
 
 impl TryFrom<u32> for ValueType {
     type Error = ();
+    #[inline(always)]
     fn try_from(value: u32) -> Result<Self, Self::Error> {
         match value {
             1 => Ok(ValueType::Nil),
@@ -35,9 +36,10 @@ impl TryFrom<u32> for ValueType {
 }
 
 // Enum to represent interpreted values
+#[repr(u32)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum IRValue {
-    Nil,
+    Nil = ValueType::Nil as u32,
     Bool(bool),
     Atom(u32),
     String(u32),
