@@ -401,6 +401,12 @@ impl VarTable {
         self.names.clear();
     }
 
+    pub fn reset_data(&mut self) {
+        // self.data.clear();
+        // self.data.extend(self.names.iter().map(|_| None))
+        self.data.iter_mut().for_each(|x| *x=None);
+    }
+
     pub fn truncate(&mut self, n: usize) {
         self.data.truncate(n);
         self.names.truncate(n);
@@ -460,12 +466,17 @@ impl<'a> Scope<'a> {
     }
 
     pub fn consume(self) -> &'a mut VarTable{
+        //we need to hold a pointer to the object AFTER its droped (without freeing it)
+        //and we also need the borrow checker to know its legal
+        //which is why unsafecell is needed
+        //using memforget would break
         let cell = UnsafeCell::new(self);
         let manual = ManuallyDrop::new(cell);
         let ptr = manual.get();
         
         unsafe{&mut *(*ptr).table}
     }
+
 
     pub fn set(&mut self, id: usize, val: IRValue) -> Result<(), ()> {
         self.table.set(id, val)
@@ -572,4 +583,9 @@ fn test_scope_consume() {
 
     // After consuming the nested scope, the size of the global scope should not be affected
     assert_eq!(global_scope.len(), 3);
+
+    // Verify that the values are still present in the returned table
+    assert_eq!(global_scope.get(0), Some(IRValue::Int(42)));
+    assert_eq!(global_scope.get(1), Some(IRValue::Bool(true)));
+    assert_eq!(global_scope.get(2), Some(IRValue::String(123)));
 }
