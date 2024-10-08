@@ -606,28 +606,39 @@ impl<T:Clone> Registry<T> {
     }
 
     fn hash(&self, id: NonZeroU32) -> usize {
-        (u32::from(id) - 1) as usize % self.values.len()
+        (u32::from(id) - 1) as usize
     }
 
-    fn resize(&mut self) {
-        let new_capacity = self.values.len() * 2;
+    fn grow(&mut self) {
+        let mut new_capacity = self.values.len() * 2;
         let old_values = std::mem::replace(&mut self.values, vec![None; new_capacity]);
 
-        for entry in old_values.into_iter() {
-            if let Some((id, value)) = entry {
-                self.insert_internal(id, value);
+        'outer: loop{
+            'inner:  for entry in old_values.into_iter() {
+                if let Some((id, value)) = entry {
+                    match self.try_insert(id, value){
+                        Ok(()) => {},
+                        Err(()) => {
+                            new_capacity*=2;
+                            self.values=vec![None; new_capacity];
+                            break 'inner;
+                        }
+                    };
+                }
             }
+            break 'outer;
         }
+        
 
     }
 
-    fn insert_internal(&mut self, id: NonZeroU32, value: T) {
-        let idx = self.hash(id);
+    pub fn try_insert(&mut self, id: NonZeroU32, value: T) -> Result<(),()>{
+        let idx = self.hash(id)% self.values.len();
 
         // Quick immediate check for the initial index (this clues the compiler to not set up the loop first)
         if let None = &self.values[idx] {
             self.values[idx] = Some((id, value));
-            return;
+            return Ok(());
         }
 
         // First probe backwards
@@ -635,7 +646,7 @@ impl<T:Clone> Registry<T> {
             let idx = (idx + self.values.len() - i) % self.values.len(); // Move backwards with wrap around
             if let None = &self.values[idx] {
                 self.values[idx] = Some((id, value));
-                return;
+                return Ok(());
             }
         }
 
@@ -644,13 +655,22 @@ impl<T:Clone> Registry<T> {
             let idx = (idx + i) % self.values.len();
             if let None = &self.values[idx] {
                 self.values[idx] = Some((id, value));
-                return;
+                return Ok(());
             }
         }
 
-        // If insertion fails within max_probes, resize and retry
-        self.resize();
-        self.insert_internal(id, value);
+        Err(())
+    }
+
+    fn insert_internal(&mut self, id: NonZeroU32, value: T) {
+        match self.try_insert(id,value.clone()) {
+            Ok(()) => {},
+            Err(()) => {
+                // If insertion fails within max_probes, grow and retry
+                self.grow();
+                self.insert_internal(id, value);
+            }
+        }
     }
 
     pub fn insert(&mut self, value: T) -> u32 {
@@ -662,7 +682,7 @@ impl<T:Clone> Registry<T> {
 
     pub fn get(&self, id_raw: u32) -> Option<&T> {
         let id = NonZeroU32::new(id_raw).expect("WRONG ID PASSED");
-        let idx = self.hash(id);
+        let idx = self.hash(id)% self.values.len();
 
         // Quick immediate check for the initial index (this clues the compiler to not set up the loop first)
         match &self.values[idx] {
@@ -702,7 +722,7 @@ impl<T:Clone> Registry<T> {
 
     pub fn del(&mut self, id_raw: u32) -> bool {
         let id = NonZeroU32::new(id_raw).expect("WRONG ID PASSED");
-        let idx = self.hash(id);
+        let idx = self.hash(id)% self.values.len();
 
         // Quick immediate check for the initial index (this clues the compiler to not set up the loop first)
         match &self.values[idx] {
@@ -799,17 +819,17 @@ fn test_insert_get_delete() {
 }
 
 #[test]
-fn test_resize() {
+fn test_grow() {
     let mut registry = Registry::new(100);
 
-    // Insert elements to force resize
+    // Insert elements to force grow
     for i in 1..=200 {
         let value = format!("value_{}", i);
         let id = registry.insert(value.clone());
         assert_eq!(registry.get(id), Some(&value));
     }
 
-    // Ensure all elements are present after resize
+    // Ensure all elements are present after grow
     for i in 1..=200 {
         let value = format!("value_{}", i);
         assert_eq!(registry.get(i), Some(&value));
