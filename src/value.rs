@@ -682,8 +682,13 @@ impl<T:Clone> Registry<T> {
 
     pub fn try_insert(&mut self, value: T) -> Result<u32,()> {
         let id = self.cur_id;
-        self.cur_id = NonZeroU32::new(u32::from(id) + 1).unwrap();
-        self.try_insert_internal(id, value).map(|_| id.into())
+        match self.try_insert_internal(id, value) {
+            Ok(()) => {
+                self.cur_id=NonZeroU32::new(u32::from(id) + 1).unwrap();
+                Ok(id.into())
+            } 
+            Err(()) => Err(())
+        }
         
     }
 
