@@ -1,3 +1,6 @@
+#![allow(clippy::result_unit_err)]
+
+
 use core::num::NonZeroU32;
 use core::cell::UnsafeCell;
 use core::mem::ManuallyDrop;

@@ -1,3 +1,5 @@
+#![allow(clippy::result_unit_err)]
+
 use core::ptr;
 use core::mem;
 use std::mem::{MaybeUninit, size_of};
@@ -304,6 +306,7 @@ impl<'a> StackView<'a> {
         }
     }
 
+    // SAFETY: The caller must ensure that the data being popped matches the expected type.
     #[inline]
     pub unsafe fn peak<T: Sized + Clone>(&mut self) -> Option<Aligned<T>> {
         let ans = self.pop();
