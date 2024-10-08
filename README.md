@@ -82,6 +82,7 @@ will work and should give line information.
 
 # dev notes
 
+# version 1
 ## lifetime nightmare
 the lifetime of the global scope is giving me trouble.
 after a lot of fighting with it I got it to free everything while being ALMOST fully safe.
@@ -102,3 +103,7 @@ starting to look at profiling and picking very low hanging fruit I found that gl
 when doing the string inversion run most of the cost was on the alocation of new string parts. This is good because it means the overhead from the languge itself is basically zero and everything is in the algorithem.
 
 I then wanted to test closures. making a very deeply nested closure and calling it seems to have a LOT of cost in the hash function(which is weird considering we are using ints)
+
+# todo
+Gc is going to be a proper nightmare. the main issue is that if we are called from a subprocess we may acidently remove values other processes are using.
+we need a way to clearly mark global values AND the arguments of main as a no remove.

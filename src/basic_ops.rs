@@ -35,13 +35,13 @@ pub fn handle_bin(context:&mut Context,op:BinOp) -> Result<(),ErrList>{
     match op {
         BinOp::Equal => {
             let value = is_equal(context)?;
-            context.stack.push_grow_bool(value);
+            context.stack.push_bool(value).map_err(|_|{Error::StackOverflow.to_list()})?;
             Ok(())
         },
 
         BinOp::NotEqual => {
             let value = !is_equal(context)?;
-            context.stack.push_grow_bool(value);
+            context.stack.push_bool(value).map_err(|_|{Error::StackOverflow.to_list()})?;
             Ok(())
         },
         _ => todo!()

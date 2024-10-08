@@ -10,7 +10,7 @@ use std::ptr::NonNull;
 #[derive(Copy,Clone, Debug, PartialEq)]
 #[repr(align(8))]
 pub struct Aligned<T: Sized + Clone> {
-    inner: T, // Private field
+    pub inner: T,
 }
 
 impl<T: Sized + Clone> Aligned<T> {
@@ -277,7 +277,7 @@ fn test_stack() {
 
 #[derive(Clone)]
 pub struct StackView<'a> {
-    pub idx: isize,
+    idx: isize,
     pub data:&'a [u8]
 }
 
@@ -293,6 +293,19 @@ impl<'a> StackView<'a> {
             &*(slice as *const [MaybeUninit<u8>] as *const [u8])
         };
         StackView{data,idx:(data.len()-1) as isize}
+    }
+
+    /// # Safety
+    ///
+    /// the index must be pointing to an aligned value
+    /// also note that pop/peak will be called with type assumbtions
+    /// so this function shares respobsibility
+    pub unsafe fn set_index(&mut self,idx:isize) {
+        self.idx=idx;
+    }
+
+    pub fn get_index(&self) -> isize {
+        self.idx
     }
 
     /// # Safety
