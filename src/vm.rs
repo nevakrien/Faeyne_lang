@@ -1,3 +1,7 @@
+use crate::value::IRValue;
+use crate::basic_ops::handle_bin;
+use crate::basic_ops::BinOp;
+use smallvec::SmallVec;
 use crate::value::StringRegistry;
 use crate::value::Registry;
 use crate::reporting::Error;
@@ -10,28 +14,32 @@ use ast::ast::StringTable;
 
 #[derive(Clone,Debug)]
 pub struct Function{
-    pub code:Vec<Operation>
+    pub code:SmallVec<[Operation;128]>,//optimize more later (right now we are not using that memory on the HEAP case which is not ideal)
+    pub comp_time_values: Vec<IRValue>,
 }
 
 // #[repr(C)] //want to orgenize by importance
 pub struct Context<'ctx,'code> {
-    scope: Scope<'ctx>,
-    stack: &'ctx mut Stack,
-
-    funcs: &'ctx Registry<Function>,
-    strings: &'ctx StringRegistry,
+    pub code: &'code Function,
+    pub scope: Scope<'ctx>,
+    pub stack: &'ctx mut Stack,
     
-    table: &'ctx StringTable<'code>,//for errors only
+
+    pub funcs: &'ctx Registry<Function>,
+    pub strings: &'ctx StringRegistry,
+    
+    pub table: &'ctx StringTable<'code>,//for errors only
 
 }
 
 impl<'ctx,'code> Context<'ctx,'code> {
     pub fn new(
-        table: &'ctx StringTable<'code>,stack: &'ctx mut Stack,scope: Scope<'ctx>,
+        table: &'ctx StringTable<'code>,code: &'code Function,
+        stack: &'ctx mut Stack,scope: Scope<'ctx>,
         strings: &'ctx StringRegistry,funcs: &'ctx Registry<Function>
     ) -> Self{
         
-        Context{table,stack,scope,strings,funcs}
+        Context{table,code,stack,scope,strings,funcs}
     }
 
     pub fn pop_to(&mut self,id:u32) -> Result<(),ErrList>{
@@ -39,9 +47,20 @@ impl<'ctx,'code> Context<'ctx,'code> {
             Ok(x) => self.scope.set(id as usize,x)
                 .map_err(|_| Error::Bug("tried seting a non existent id").to_list()),
             
-            Err(..)  => Err(Error::Bug("stack overflow").to_list()),
+            Err(..)  => Err(Error::Bug("over poping").to_list()),
         }
-        
+    }
+
+    pub fn push_from(&mut self,id:u32) -> Result<(),ErrList>{
+        let value = self.scope.get(id as usize)
+            .ok_or_else(|| Error::Bug("tried seting a non existent id").to_list())?;
+        self.stack.push_grow_value(&value);
+        Ok(())
+    }
+
+    pub fn push_constant(&mut self,id:u32) -> Result<(),ErrList>{
+        let val = self.code.comp_time_values[id as usize];
+        self.stack.push_value(&val).map_err(|_|{Error::StackOverflow.to_list()})
     }
 
     pub fn curent_var_names(&self) -> Vec<&'code str> {
@@ -49,34 +68,20 @@ impl<'ctx,'code> Context<'ctx,'code> {
         .map(|id| self.table.get_raw_str(*id))
         .collect()
     } 
+
+    pub fn handle_op(&mut self,op:Operation) -> Result<(),ErrList> {
+        match op {
+            BinOp(b) => handle_bin(self,b),
+            PopTo(id) => self.pop_to(id),
+            PushFrom(id) => self.push_from(id),
+            PushConst(id) => self.push_constant(id),
+
+            _ => todo!(),
+        }
+    }
 }
 
-#[derive(Debug,PartialEq,Clone,Copy)]
-#[repr(u32)]
-pub enum BinOp {
-    Add,
-    Sub,
-    Mul,
-    Div,
-    IntDiv,
-    Modulo,
-    Pow,
 
-    Equal,
-    NotEqual,
-    Smaller,
-    Bigger,
-    SmallerEq,
-    BiggerEq,
-
-    And,
-    Or,
-    Xor,
-
-    DoubleAnd,
-    DoubleOr,
-    DoubleXor,
-}
 
 #[derive(Debug,PartialEq,Clone,Copy)]
 pub enum Operation {
@@ -86,8 +91,11 @@ pub enum Operation {
 
     PopTo(u32),
     PushFrom(u32),
+    PushConst(u32),
 
     BinOp(BinOp),
 
     CaptureClosure,//pops the data off the stack and creates a new function returning it as an IRValue to the stack
 }
+
+use Operation::*;

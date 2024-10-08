@@ -24,9 +24,11 @@ pub enum Error {
     NoneCallble(NoneCallble),
     Stacked(InternalError),
     IllegalSelfRef(IllegalSelfRef),
+    
     Recursion(RecursionError),
+    StackOverflow,
 
-    Bug(&'static str)
+    Bug(&'static str),
     //UndocumentedError,
 }
 
@@ -303,7 +305,15 @@ fn emit_error(
                 ]);
             term::emit(buffer, config, files, &diagnostic).unwrap();
             Diagnostic::help().with_message("This is not your fault, but rather an implementation bug. Please report this to the maintainers.")
-        }
+        },
+        Error::StackOverflow => {
+            let diagnostic = Diagnostic::error()
+                .with_message("StackOverflow");
+            term::emit(buffer, config, files, &diagnostic).unwrap();
+
+
+            Diagnostic::help().with_message("probably caused by an infinite loop or excessive memory consumbtion")
+        },
     };
 
     // Emit the diagnostic for the current error
