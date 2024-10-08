@@ -340,6 +340,9 @@ fn test_stack_view() {
     let pop_value_2: Option<Aligned<i32>> = unsafe { stack_view.pop() };
     assert_eq!(pop_value_2, Some(aligned_value_2));
 
+    let pop_value_1: Option<Aligned<i32>> = unsafe { stack_view.peak() };
+    assert_eq!(pop_value_1, Some(aligned_value_1));
+
     let pop_value_1: Option<Aligned<i32>> = unsafe { stack_view.pop() };
     assert_eq!(pop_value_1, Some(aligned_value_1));
 
@@ -360,6 +363,6 @@ fn test_stack_view() {
     let pop_value_1: Option<Aligned<[u8; 8]>> = unsafe { stack_view_1.pop() };
     assert_eq!(pop_value_1.map(|aligned| aligned.to_inner()), Some(raw_data));
 
-    let pop_value_2: Option<Aligned<[u8; 8]>> = unsafe { stack_view_2.pop() };
+    let pop_value_2: Option<Aligned<[u8; 8]>> = unsafe { stack_view_2.peak() };
     assert_eq!(pop_value_2.map(|aligned| aligned.to_inner()), Some(raw_data));
 }
