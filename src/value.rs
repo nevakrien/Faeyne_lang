@@ -586,17 +586,18 @@ fn test_scope_consume() {
 
 
 
-pub struct Registry<T: Clone> {
+/// Updated to Linear Probing with a fixed constant for probing steps and resizing on insertion failure
+pub struct Registry<T:Clone> {
     values: Vec<Option<(NonZeroU32, T)>>,
     cur_id: NonZeroU32,
 }
 
 pub type StringRegistry = Registry<String>;
 
-const LEFT_PROBS: usize = 4; // Fixed constant for probing backwards
-const RIGHT_PROBS: usize = 5; // Fixed constant for probing forwards
+const LEFT_PROBS: usize = 1; // Fixed constant for probing backwards
+const RIGHT_PROBS: usize = 1; // Fixed constant for probing forwards
 
-impl<T: Clone> Registry<T> {
+impl<T:Clone> Registry<T> {
     pub fn new(cap: usize) -> Self {
         Registry {
             values: vec![None; cap],
@@ -612,23 +613,25 @@ impl<T: Clone> Registry<T> {
         let new_capacity = self.values.len() * 2;
         let old_values = std::mem::replace(&mut self.values, vec![None; new_capacity]);
 
-        for entry in old_values.into_iter().flatten() {
-            let (id, value) = entry;
-            self.insert_internal(id, value); // Rehash and insert existing entries
+        for entry in old_values.into_iter() {
+            if let Some((id, value)) = entry {
+                self.insert_internal(id, value);
+            }
         }
+
     }
 
     fn insert_internal(&mut self, id: NonZeroU32, value: T) {
         let idx = self.hash(id);
 
-        // Quick immediate check for the initial index
+        // Quick immediate check for the initial index (this clues the compiler to not set up the loop first)
         if let None = &self.values[idx] {
             self.values[idx] = Some((id, value));
             return;
         }
 
         // First probe backwards
-        for i in 0..LEFT_PROBS {
+        for i in 1..LEFT_PROBS {
             let idx = (idx + self.values.len() - i) % self.values.len(); // Move backwards with wrap around
             if let None = &self.values[idx] {
                 self.values[idx] = Some((id, value));
@@ -661,7 +664,7 @@ impl<T: Clone> Registry<T> {
         let id = NonZeroU32::new(id_raw).expect("WRONG ID PASSED");
         let idx = self.hash(id);
 
-        // Quick immediate check for the initial index
+        // Quick immediate check for the initial index (this clues the compiler to not set up the loop first)
         match &self.values[idx] {
             Some((existing_id, value)) if *existing_id == id => {
                 return Some(value);
@@ -671,7 +674,7 @@ impl<T: Clone> Registry<T> {
         }
 
         // First probe backwards
-        for i in 0..LEFT_PROBS {
+        for i in 1..LEFT_PROBS {
             let idx = (idx + self.values.len() - i) % self.values.len(); // Move backwards with wrap around
             match &self.values[idx] {
                 Some((existing_id, value)) if *existing_id == id => {
@@ -701,7 +704,7 @@ impl<T: Clone> Registry<T> {
         let id = NonZeroU32::new(id_raw).expect("WRONG ID PASSED");
         let idx = self.hash(id);
 
-        // Quick immediate check for the initial index
+        // Quick immediate check for the initial index (this clues the compiler to not set up the loop first)
         match &self.values[idx] {
             Some((existing_id, _)) if *existing_id == id => {
                 self.values[idx] = None; // Mark as deleted
@@ -712,7 +715,7 @@ impl<T: Clone> Registry<T> {
         }
 
         // First probe backwards
-        for i in 0..LEFT_PROBS {
+        for i in 1..LEFT_PROBS {
             let idx = (idx + self.values.len() - i) % self.values.len(); // Move backwards with wrap around
             match &self.values[idx] {
                 Some((existing_id, _)) if *existing_id == id => {
@@ -741,9 +744,15 @@ impl<T: Clone> Registry<T> {
     }
 }
 
+impl StringRegistry {
+    pub fn get_str(&self, id_raw: u32) -> Option<&str> {
+        self.get(id_raw).map(|x| x.as_str())
+    }
+}
+
 #[test]
 fn test_insert_get_delete() {
-    let mut registry = Registry::new(100);
+    let mut registry = Registry::new(2);
 
     // Insert elements and verify returned IDs
     let id_one = registry.insert("one".to_string());
@@ -754,16 +763,16 @@ fn test_insert_get_delete() {
     assert_eq!(id_three, 3);
 
     // Get elements
-    assert_eq!(registry.get(id_one), Some(&"one".to_string()));
-    assert_eq!(registry.get(id_two), Some(&"two".to_string()));
-    assert_eq!(registry.get(id_three), Some(&"three".to_string()));
-    assert_eq!(registry.get(4), None);
+    assert_eq!(registry.get_str(id_one), Some("one"));
+    assert_eq!(registry.get_str(id_two), Some("two"));
+    assert_eq!(registry.get_str(id_three), Some("three"));
+    assert_eq!(registry.get_str(4), None);
 
     // Insert more elements
     for i in 4..=50 {
         let value = format!("value_{}", i);
         let id = registry.insert(value.clone());
-        assert_eq!(registry.get(id), Some(&value));
+        assert_eq!(registry.get(id), Some(value).as_ref());
     }
 
     // Delete elements and verify
@@ -772,7 +781,7 @@ fn test_insert_get_delete() {
 
     // Insert new element after deletion
     let new_id_two = registry.insert("new_two".to_string());
-    assert_eq!(registry.get(new_id_two), Some(&"new_two".to_string()));
+    assert_eq!(registry.get_str(new_id_two), Some("new_two"));
     assert_ne!(id_two, new_id_two);
 
     // Random deletes
@@ -819,3 +828,5 @@ fn test_resize() {
         assert_eq!(registry.get(id), Some(&value));
     }
 }
+
+
