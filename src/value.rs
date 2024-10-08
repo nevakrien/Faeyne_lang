@@ -616,7 +616,7 @@ impl<T:Clone> Registry<T> {
         'outer: loop{
             'inner:  for entry in old_values.into_iter() {
                 if let Some((id, value)) = entry {
-                    match self.try_insert(id, value){
+                    match self.try_insert_internal(id, value){
                         Ok(()) => {},
                         Err(()) => {
                             new_capacity*=2;
@@ -632,7 +632,7 @@ impl<T:Clone> Registry<T> {
 
     }
 
-    pub fn try_insert(&mut self, id: NonZeroU32, value: T) -> Result<(),()>{
+    pub fn try_insert_internal(&mut self, id: NonZeroU32, value: T) -> Result<(),()>{
         let idx = self.hash(id)% self.values.len();
 
         // Quick immediate check for the initial index (this clues the compiler to not set up the loop first)
@@ -663,7 +663,7 @@ impl<T:Clone> Registry<T> {
     }
 
     fn insert_internal(&mut self, id: NonZeroU32, value: T) {
-        match self.try_insert(id,value.clone()) {
+        match self.try_insert_internal(id,value.clone()) {
             Ok(()) => {},
             Err(()) => {
                 // If insertion fails within max_probes, grow and retry
@@ -678,6 +678,13 @@ impl<T:Clone> Registry<T> {
         self.cur_id = NonZeroU32::new(u32::from(id) + 1).unwrap();
         self.insert_internal(id, value);
         id.into()
+    }
+
+    pub fn try_insert(&mut self, value: T) -> Result<u32,()> {
+        let id = self.cur_id;
+        self.cur_id = NonZeroU32::new(u32::from(id) + 1).unwrap();
+        self.try_insert_internal(id, value).map(|_| id.into())
+        
     }
 
     pub fn get(&self, id_raw: u32) -> Option<&T> {
