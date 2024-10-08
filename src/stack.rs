@@ -140,7 +140,7 @@ impl Stack {
         }
     }
 
-    // SAFETY: The caller must ensure that the data being popped matches the expected type.
+    ///# Safety: The caller must ensure that the data being popped matches the expected type.
     #[inline]
     pub unsafe fn pop<T: Sized + Clone>(&mut self) -> Option<Aligned<T>> {
         if self.len >= 8 {
@@ -164,7 +164,7 @@ impl Stack {
         }
     }
 
-    // SAFETY: The caller must ensure that the alignment of the pushed data is correct.
+    ///# Safety: The caller must ensure that the alignment of the pushed data is correct.
     #[inline]
     pub unsafe fn push_raw(&mut self, bytes: &[u8]) -> Result<(), ()> {
         let end = self.len + bytes.len();
@@ -180,7 +180,7 @@ impl Stack {
         }
     }
 
-    // SAFETY: The caller must ensure that the alignment and size are correct when reading the data.
+    ///# Safety: The caller must ensure that the alignment and size are correct when reading the data.
     #[inline]
     pub unsafe fn pop_raw(&mut self, size: usize) -> Option<Vec<u8>> {
         if self.len >= size {
@@ -289,7 +289,7 @@ impl<'a> StackView<'a> {
         StackView{data,idx:(data.len()-1) as isize}
     }
 
-    // SAFETY: The caller must ensure that the data being popped matches the expected type.
+    ///# Safety: The caller must ensure that the data being popped matches the expected type.
     #[inline]
     pub unsafe fn pop<T: Sized + Clone>(&mut self) -> Option<Aligned<T>> {
         if self.idx >= 7 {
@@ -306,7 +306,7 @@ impl<'a> StackView<'a> {
         }
     }
 
-    // SAFETY: The caller must ensure that the data being popped matches the expected type.
+    ///# Safety: The caller must ensure that the data being popped matches the expected type.
     #[inline]
     pub unsafe fn peak<T: Sized + Clone>(&mut self) -> Option<Aligned<T>> {
         let ans = self.pop();

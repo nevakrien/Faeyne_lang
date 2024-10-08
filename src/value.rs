@@ -490,6 +490,10 @@ impl<'a> Scope<'a> {
     pub fn len(&self) -> usize {
         self.table.names.len()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.table.names.is_empty()
+    }
 }
 
 #[test]
@@ -617,17 +621,15 @@ impl<T:Clone> Registry<T> {
         let old_values = std::mem::replace(&mut self.values, vec![None; new_capacity]);
 
         'outer: loop{
-            for entry in old_values.iter() {
-                if let Some((id, value)) = entry {
-                    match self.try_insert_internal(*id, value.clone()){
-                        Ok(()) => {},
-                        Err(()) => {
-                            new_capacity*=2;
-                            self.values=vec![None; new_capacity];
-                            continue 'outer;
-                        }
-                    };
-                }
+            for (id, value) in old_values.iter().flatten() {
+                match self.try_insert_internal(*id, value.clone()){
+                    Ok(()) => {},
+                    Err(()) => {
+                        new_capacity*=2;
+                        self.values=vec![None; new_capacity];
+                        continue 'outer;
+                    }
+                };
             }
             break 'outer;
         }
@@ -645,7 +647,7 @@ impl<T:Clone> Registry<T> {
         }
 
         // First probe backwards
-        for i in 1..LEFT_PROBS {
+        for i in 1..LEFT_PROBS+1 {
             let idx = (idx + self.values.len() - i) % self.values.len(); // Move backwards with wrap around
             if self.values[idx].is_none() {
                 self.values[idx] = Some((id, value));
@@ -654,7 +656,7 @@ impl<T:Clone> Registry<T> {
         }
 
         // Then probe forwards starting from 1
-        for i in 1..=RIGHT_PROBS {
+        for i in 1..RIGHT_PROBS+1 {
             let idx = (idx + i) % self.values.len();
             if self.values[idx].is_none() {
                 self.values[idx] = Some((id, value));
@@ -709,7 +711,7 @@ impl<T:Clone> Registry<T> {
         }
 
         // First probe backwards
-        for i in 1..LEFT_PROBS {
+        for i in 1..LEFT_PROBS+1 {
             let idx = (idx + self.values.len() - i) % self.values.len(); // Move backwards with wrap around
             match &self.values[idx] {
                 Some((existing_id, value)) if *existing_id == id => {
@@ -721,7 +723,7 @@ impl<T:Clone> Registry<T> {
         }
 
         // Then probe forwards starting from 1
-        for i in 1..=RIGHT_PROBS {
+        for i in 1..RIGHT_PROBS+1 {
             let idx = (idx + i) % self.values.len();
             match &self.values[idx] {
                 Some((existing_id, value)) if *existing_id == id => {
@@ -750,7 +752,7 @@ impl<T:Clone> Registry<T> {
         }
 
         // First probe backwards
-        for i in 1..LEFT_PROBS {
+        for i in 1..LEFT_PROBS+1 {
             let idx = (idx + self.values.len() - i) % self.values.len(); // Move backwards with wrap around
             match &self.values[idx] {
                 Some((existing_id, _)) if *existing_id == id => {
@@ -763,7 +765,7 @@ impl<T:Clone> Registry<T> {
         }
 
         // Then probe forwards starting from 1
-        for i in 1..=RIGHT_PROBS {
+        for i in 1..RIGHT_PROBS+1 {
             let idx = (idx + i) % self.values.len();
             match &self.values[idx] {
                 Some((existing_id, _)) if *existing_id == id => {
