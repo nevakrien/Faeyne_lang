@@ -319,7 +319,7 @@ fn test_stack_view() {
     // Create some aligned values
     let aligned_value_1 = Aligned::new(10i32);
     let aligned_value_2 = Aligned::new(20i32);
-    let aligned_value_3 = Aligned::new(30i32);
+    let aligned_value_3 = Aligned::new(30u32);
 
     // Push the aligned values to the stack
     stack.push(&aligned_value_1).unwrap();
@@ -330,11 +330,11 @@ fn test_stack_view() {
     let mut stack_view = StackView::from_stack(&stack);
 
     // Peek the last value in the stack
-    let peak_value: Option<Aligned<i32>> = unsafe { stack_view.peak() };
+    let peak_value: Option<Aligned<u32>> = unsafe { stack_view.peak() };
     assert_eq!(peak_value, Some(aligned_value_3));
 
     // Pop the values and verify they match what was pushed
-    let pop_value_3: Option<Aligned<i32>> = unsafe { stack_view.pop() };
+    let pop_value_3: Option<Aligned<u32>> = unsafe { stack_view.pop() };
     assert_eq!(pop_value_3, Some(aligned_value_3));
 
     let pop_value_2: Option<Aligned<i32>> = unsafe { stack_view.pop() };
