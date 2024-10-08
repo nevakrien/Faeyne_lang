@@ -19,7 +19,7 @@ lalrpop-util = "0.21.0"
 
 #[dev-dependencies]
 mem_viewer = "0.3.0"
-smallvec = "1.13.2"
+# smallvec = "1.13.2"
 
 
 [dependencies.stacker]

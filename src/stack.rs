@@ -138,7 +138,7 @@ impl Stack {
         }
     }
 
-    // SAFETY: The caller must ensure that the data being popped is correctly aligned and matches the expected type.
+    // SAFETY: The caller must ensure that the data being popped matches the expected type.
     #[inline]
     pub unsafe fn pop<T: Sized + Clone>(&mut self) -> Option<Aligned<T>> {
         if self.len >= 8 {
@@ -206,6 +206,8 @@ impl Drop for Stack {
     }
 }
 
+
+
 #[test]
 fn test_stack() {
     let mut stack = Stack::with_capacity(100);
@@ -263,4 +265,101 @@ fn test_stack() {
     // Test shrink_to_fit
     stack.shrink_to_fit();
     assert_eq!(stack.get_capacity(), stack.len.max(1));
+}
+
+#[derive(Clone)]
+pub struct StackView<'a> {
+    pub idx: isize,
+    pub data:&'a [u8]
+}
+
+impl<'a> StackView<'a> {
+    #[inline]
+    pub fn from_stack(s:&'a Stack) -> Self {
+        let data = unsafe{ 
+            //cant be making a mut ref to the data at any point
+            //so we make sure we are working with const
+
+            let r : *const MaybeUninit<u8> =s.data.as_ptr();
+            let slice = std::slice::from_raw_parts(r,s.len);
+            &*(slice as *const [MaybeUninit<u8>] as *const [u8])
+        };
+        StackView{data,idx:(data.len()-1) as isize}
+    }
+
+    // SAFETY: The caller must ensure that the data being popped matches the expected type.
+    #[inline]
+    pub unsafe fn pop<T: Sized + Clone>(&mut self) -> Option<Aligned<T>> {
+        if self.idx >= 7 {
+            self.idx -= 8;
+
+            let start = (self.idx +1) as usize ; 
+            let ptr :*const [u8;8]=self.data.as_ptr().add(start ) as *const [u8;8];
+            // SAFETY: Transmute the 8 bytes back into the correct type T.
+            let value: T = mem::transmute_copy::<[u8;8], T>(&*ptr);
+
+            Some(Aligned::new(value))
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    pub unsafe fn peak<T: Sized + Clone>(&mut self) -> Option<Aligned<T>> {
+        let ans = self.pop();
+        self.idx+=8;
+        ans
+    }
+}
+
+#[test]
+fn test_stack_view() {
+    let mut stack = Stack::with_capacity(200);
+
+    // Create some aligned values
+    let aligned_value_1 = Aligned::new(10i32);
+    let aligned_value_2 = Aligned::new(20i32);
+    let aligned_value_3 = Aligned::new(30i32);
+
+    // Push the aligned values to the stack
+    stack.push(&aligned_value_1).unwrap();
+    stack.push(&aligned_value_2).unwrap();
+    stack.push(&aligned_value_3).unwrap();
+
+    // Create a `StackView` from the `Stack`
+    let mut stack_view = StackView::from_stack(&stack);
+
+    // Peek the last value in the stack
+    let peak_value: Option<Aligned<i32>> = unsafe { stack_view.peak() };
+    assert_eq!(peak_value, Some(aligned_value_3));
+
+    // Pop the values and verify they match what was pushed
+    let pop_value_3: Option<Aligned<i32>> = unsafe { stack_view.pop() };
+    assert_eq!(pop_value_3, Some(aligned_value_3));
+
+    let pop_value_2: Option<Aligned<i32>> = unsafe { stack_view.pop() };
+    assert_eq!(pop_value_2, Some(aligned_value_2));
+
+    let pop_value_1: Option<Aligned<i32>> = unsafe { stack_view.pop() };
+    assert_eq!(pop_value_1, Some(aligned_value_1));
+
+    // Ensure there are no more items to pop
+    let pop_value_none: Option<Aligned<i32>> = unsafe { stack_view.pop() };
+    assert_eq!(pop_value_none, None);
+
+    // Push some raw data and create multiple `StackView` instances
+    let raw_data: [u8; 8] = [1, 2, 3, 4, 5, 6, 7, 8];
+    unsafe {
+        stack.push_raw(&raw_data).unwrap();
+    }
+
+    let mut stack_view_1 = StackView::from_stack(&stack);
+    let mut stack_view_2 = StackView::from_stack(&stack);
+
+    // Both views should be able to pop the same value without modifying the stack
+    let pop_value_1: Option<Aligned<[u8; 8]>> = unsafe { stack_view_1.pop() };
+    assert_eq!(pop_value_1.map(|aligned| aligned.to_inner()), Some(raw_data));
+
+    let pop_value_2: Option<Aligned<[u8; 8]>> = unsafe { stack_view_2.pop() };
+    assert_eq!(pop_value_2.map(|aligned| aligned.to_inner()), Some(raw_data));
 }

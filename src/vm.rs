@@ -1,7 +1,7 @@
+use crate::stack::StackView;
 use crate::value::IRValue;
 use crate::basic_ops::handle_bin;
 use crate::basic_ops::BinOp;
-use smallvec::SmallVec;
 use crate::value::StringRegistry;
 use crate::value::Registry;
 use crate::reporting::Error;
@@ -12,20 +12,18 @@ use crate::value::Scope;
 use ast::ast::StringTable;
 
 
-#[derive(Clone,Debug)]
-pub struct Function{
-    pub code:SmallVec<[Operation;128]>,//optimize more later (right now we are not using that memory on the HEAP case which is not ideal)
-    pub comp_time_values: Vec<IRValue>,
-}
+pub type Function<'code> = StackView<'code>;
+pub type FunctionRegistry<'code>=Registry<Function<'code>>;
 
 // #[repr(C)] //want to orgenize by importance
 pub struct Context<'ctx,'code> {
-    pub code: &'code Function,
+    pub pos:usize,
+    pub code: Function<'code>,//we need a varible length stack for these...
     pub scope: Scope<'ctx>,
     pub stack: &'ctx mut Stack,
     
-
-    pub funcs: &'ctx Registry<Function>,
+    pub constants: &'code[IRValue],
+    pub funcs: &'ctx FunctionRegistry<'code>,
     pub strings: &'ctx StringRegistry,
     
     pub table: &'ctx StringTable<'code>,//for errors only
@@ -34,12 +32,13 @@ pub struct Context<'ctx,'code> {
 
 impl<'ctx,'code> Context<'ctx,'code> {
     pub fn new(
-        table: &'ctx StringTable<'code>,code: &'code Function,
+        table: &'ctx StringTable<'code>,
+        code: StackView<'code>,constants: &'code[IRValue],
         stack: &'ctx mut Stack,scope: Scope<'ctx>,
-        strings: &'ctx StringRegistry,funcs: &'ctx Registry<Function>
+        strings: &'ctx StringRegistry,funcs: &'ctx FunctionRegistry<'code>
     ) -> Self{
         
-        Context{table,code,stack,scope,strings,funcs}
+        Context{pos:0,table,code,constants,stack,scope,strings,funcs}
     }
 
     pub fn pop_to(&mut self,id:u32) -> Result<(),ErrList>{
@@ -59,7 +58,7 @@ impl<'ctx,'code> Context<'ctx,'code> {
     }
 
     pub fn push_constant(&mut self,id:u32) -> Result<(),ErrList>{
-        let val = self.code.comp_time_values[id as usize];
+        let val = self.constants[id as usize];
         self.stack.push_value(&val).map_err(|_|{Error::StackOverflow.to_list()})
     }
 
@@ -79,6 +78,12 @@ impl<'ctx,'code> Context<'ctx,'code> {
             _ => todo!(),
         }
     }
+
+    // pub fn ret(&mut self,p:u32) -> Result<(),ErrList> {
+    //     self.pos = p as usize;
+    //     todo!()
+
+    // }
 }
 
 
@@ -86,8 +91,8 @@ impl<'ctx,'code> Context<'ctx,'code> {
 #[derive(Debug,PartialEq,Clone,Copy)]
 pub enum Operation {
     Call(u32),//calls a function args are passed through the stack and a single return value is left at the end (args are consumed)
-    RetBig,//returns out of the function scope. 
-    RetSmall,//returns out of a match block
+    RetBig(u32),//returns out of the function scope. 
+    RetSmall(u32),//returns out of a match block
 
     PopTo(u32),
     PushFrom(u32),
