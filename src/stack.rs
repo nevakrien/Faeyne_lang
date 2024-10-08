@@ -155,7 +155,7 @@ impl Stack {
                 *r = self.data.as_ptr().add(start + i).read();
             }
 
-            let bytes = mem::transmute::<_, [u8; 8]>(data);
+            let bytes = mem::transmute::<[MaybeUninit<u8>; 8], [u8; 8]>(data);
 
             // SAFETY: Transmute the 8 bytes back into the correct type T.
             let value: T = mem::transmute_copy::<[u8; 8], T>(&bytes);
