@@ -303,7 +303,7 @@ impl ValueStack for Stack {
     #[inline]
     fn push_float(&mut self, val: f64) -> Result<(), ()> {
         let tag = ValueType::Float as u64;
-        let aligned_data = Aligned::new(val.to_bits() as u64);
+        let aligned_data = Aligned::new(val.to_bits());
         let aligned_tag = Aligned::new(tag);
         self.push(&aligned_data)?;
         self.push(&aligned_tag)
@@ -312,7 +312,7 @@ impl ValueStack for Stack {
     #[inline]
     fn push_grow_float(&mut self, val: f64) {
         let tag = ValueType::Float as u64;
-        let aligned_data = Aligned::new(val.to_bits() as u64);
+        let aligned_data = Aligned::new(val.to_bits());
         let aligned_tag = Aligned::new(tag);
         self.push_grow(&aligned_data);
         self.push_grow(&aligned_tag);
@@ -427,7 +427,7 @@ impl VarTable {
     }
 
     pub fn get(&self, id: usize) -> Option<IRValue> {
-        self.data.get(id)?.clone()
+        *self.data.get(id)?
     }
 
     pub fn get_debug_id(&self, id: usize) -> Option<u32> {
@@ -617,14 +617,14 @@ impl<T:Clone> Registry<T> {
         let old_values = std::mem::replace(&mut self.values, vec![None; new_capacity]);
 
         'outer: loop{
-            'inner:  for entry in old_values.into_iter() {
+            for entry in old_values.iter() {
                 if let Some((id, value)) = entry {
-                    match self.try_insert_internal(id, value){
+                    match self.try_insert_internal(*id, value.clone()){
                         Ok(()) => {},
                         Err(()) => {
                             new_capacity*=2;
                             self.values=vec![None; new_capacity];
-                            break 'inner;
+                            continue 'outer;
                         }
                     };
                 }
@@ -639,7 +639,7 @@ impl<T:Clone> Registry<T> {
         let idx = self.hash(id)% self.values.len();
 
         // Quick immediate check for the initial index (this clues the compiler to not set up the loop first)
-        if let None = &self.values[idx] {
+        if self.values[idx].is_none() {
             self.values[idx] = Some((id, value));
             return Ok(());
         }
@@ -647,7 +647,7 @@ impl<T:Clone> Registry<T> {
         // First probe backwards
         for i in 1..LEFT_PROBS {
             let idx = (idx + self.values.len() - i) % self.values.len(); // Move backwards with wrap around
-            if let None = &self.values[idx] {
+            if self.values[idx].is_none() {
                 self.values[idx] = Some((id, value));
                 return Ok(());
             }
@@ -656,7 +656,7 @@ impl<T:Clone> Registry<T> {
         // Then probe forwards starting from 1
         for i in 1..=RIGHT_PROBS {
             let idx = (idx + i) % self.values.len();
-            if let None = &self.values[idx] {
+            if self.values[idx].is_none() {
                 self.values[idx] = Some((id, value));
                 return Ok(());
             }
