@@ -8,6 +8,7 @@ default-run="faeyne_lang"
 
 
 [dependencies]
+arrayvec = "0.7.6"
 ast = { path = "ast" }
 
 

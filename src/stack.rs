@@ -63,6 +63,26 @@ impl<T: Sized + Clone> Aligned<T> {
     }
 }
 
+#[repr(transparent)]
+pub struct StackRet{
+    idx:i32
+}
+
+impl StackRet {
+    pub fn get(&self) -> i32 {
+        self.idx
+    }
+
+    // # Safety
+    ///
+    /// this id is used to return back to the stack
+    /// as such it must point to an ininlized aligned 
+    ///correctly typed area of the stack 
+    pub unsafe fn new(idx:i32) -> Self {
+        StackRet{idx}
+    }
+}
+
 // Stack that stores bytes using a manually allocated aligned buffer.
 pub struct Stack {
     len: usize,
@@ -73,6 +93,7 @@ pub struct Stack {
 static ALIGN :usize= 16;
 
 impl Stack {
+    
     pub fn with_capacity(capacity: usize) -> Self {
         let layout = Layout::from_size_align(capacity, ALIGN).expect("Invalid layout");
         let data = unsafe { alloc(layout) as *mut MaybeUninit<u8> };
@@ -102,7 +123,10 @@ impl Stack {
         }
     }
 
-    pub fn shrink_to_fit(&mut self) {
+    /// # Safety
+    ///
+    ///Invalidates StackRet
+    pub unsafe fn shrink_to_fit(&mut self) {
         let size = self.len.max(1);
         let layout = Layout::from_size_align(size, ALIGN).expect("Invalid layout");
         unsafe {
@@ -226,7 +250,7 @@ impl Stack {
     /// same as push
     #[inline]
     pub unsafe fn push_stack_view(&mut self, stack_view: &StackView) -> Result<(), ()> {
-        self.push(&Aligned::new(stack_view.idx))?;
+        self.push(&Aligned::new(stack_view.len))?;
         self.push(&Aligned::new(stack_view.data.len()))?;
         self.push(&Aligned::new(stack_view.data.as_ptr())) //this makes it basically impossible for us to get the wrong tag by mistake
 
@@ -243,6 +267,17 @@ impl Stack {
                 Err(_) => self.ensure_capacity(mem::size_of::<StackView>()),
             }
         }
+    }
+
+    pub fn make_ret(&self) -> StackRet {   
+        //safe because up to length we have valid memory
+        //this memory may be overflowed and rewritten to by other self memory
+        //either way this is 100% valid
+        unsafe{StackRet::new(self.len.try_into().unwrap())}
+    }
+
+    pub fn return_to(&mut self,ret:StackRet) {
+        self.len = ret.get() as usize;
     }
 
     
@@ -268,6 +303,8 @@ fn test_stack() {
 
     // Push the value (by reference)
     unsafe{stack.push(&aligned_value).unwrap();}
+
+    let ret = stack.make_ret();
 
     // Pop the value back (unsafe because we assume we know the type)
     let value: Option<Aligned<i32>> = unsafe { stack.pop() };
@@ -313,14 +350,29 @@ fn test_stack() {
         assert_eq!(value, Some(aligned_value));
     }
 
+    
+    unsafe{
+        assert!(stack.pop::<u8>().is_none())
+    }
+
+    //test returning
+    stack.return_to(ret);
+    // Pop the value back (unsafe because we assume we know the type)
+    let value: Option<Aligned<i32>> = unsafe { stack.pop() };
+
+    // Compare with the original i32 value inside Aligned.
+    assert_eq!(value, Some(aligned_value));
+
     // Test shrink_to_fit
-    stack.shrink_to_fit();
+    unsafe{stack.shrink_to_fit();}
     assert_eq!(stack.get_capacity(), stack.len.max(1));
+
 }
 
 #[derive(Clone)]
 pub struct StackView<'a> {
-    idx: isize,
+    // idx: isize,
+    len:usize,
     pub data:&'a [u8]
 }
 
@@ -335,20 +387,16 @@ impl<'a> StackView<'a> {
             let slice = std::slice::from_raw_parts(r,s.len);
             &*(slice as *const [MaybeUninit<u8>] as *const [u8])
         };
-        StackView{data,idx:(data.len()-1) as isize}
+        StackView{data,len:data.len()}
     }
 
-    /// # Safety
-    ///
-    /// the index must be pointing to an aligned value
-    /// also note that pop/peak will be called with type assumbtions
-    /// so this function shares respobsibility
-    pub unsafe fn set_index(&mut self,idx:isize) {
-        self.idx=idx;
+    pub fn make_ret(&self) -> StackRet {   
+        //safe because up to length is aligned
+        unsafe{StackRet::new(self.len.try_into().unwrap())}
     }
 
-    pub fn get_index(&self) -> isize {
-        self.idx
+    pub fn return_to(&mut self,ret:StackRet) {
+        self.len = ret.get() as usize;
     }
 
     /// # Safety
@@ -356,10 +404,10 @@ impl<'a> StackView<'a> {
     /// The caller must ensure that the data being popped matches the expected type.
     #[inline]
     pub unsafe fn pop<T: Sized + Clone>(&mut self) -> Option<Aligned<T>> {
-        if self.idx >= 7 {
-            self.idx -= 8;
+        if self.len >= 8 {
+            self.len -= 8;
 
-            let start = (self.idx + 1) as usize;
+            let start = self.len;
 
             let ptr = self.data.as_ptr().add(start) as *const Aligned<T>;
 
@@ -375,9 +423,9 @@ impl<'a> StackView<'a> {
     /// The caller must ensure that the alignment and size are correct when reading the data.
     #[inline]
     pub unsafe fn pop_raw(&mut self, size: usize) -> Option<Vec<u8>> {
-        if (self.idx+1) as usize>= size {
-            self.idx -= size as isize;
-            let start = self.idx as usize;
+        if self.len>= size {
+            self.len -= size;
+            let start = self.len;
 
             let bytes = &self.data[start..start+size];
 
@@ -393,7 +441,7 @@ impl<'a> StackView<'a> {
     #[inline]
     pub unsafe fn peak<T: Sized + Clone>(&mut self) -> Option<Aligned<T>> {
         let ans = self.pop();
-        self.idx+=8;
+        self.len+=8;
         ans
     }
 }
@@ -415,15 +463,15 @@ pub trait PopStack{
     #[inline]
     unsafe fn pop_stack_view(&mut self) -> Option<StackView> {
         let ptr :*const u8= self.pop()?.to_inner();        
+        let cap :usize= self.pop()?.to_inner();
         let len :usize= self.pop()?.to_inner();
-        let idx :isize= self.pop()?.to_inner();
 
         // #[cfg(miri)]//miri will error here because it cant detect ptr is a valid existing pointer...
         // panic!();
 
-        let data = slice::from_raw_parts(ptr,len);
+        let data = slice::from_raw_parts(ptr,cap);
 
-        Some(StackView{idx,data})
+        Some(StackView{len,data})
     }
     
 }
@@ -455,7 +503,7 @@ fn test_stack_view() {
         stack.push(&aligned_value_2).unwrap();
         stack.push(&aligned_value_3).unwrap();
     }
-    
+
 
     // Create a `StackView` from the `Stack`
     let mut stack_view = StackView::from_stack(&stack);
@@ -467,6 +515,9 @@ fn test_stack_view() {
     // Pop the values and verify they match what was pushed
     let pop_value_3: Option<Aligned<u32>> = unsafe { stack_view.pop() };
     assert_eq!(pop_value_3, Some(aligned_value_3));
+
+    let ret_spot = stack_view.make_ret();
+
 
     let pop_value_2: Option<Aligned<i32>> = unsafe { stack_view.pop() };
     assert_eq!(pop_value_2, Some(aligned_value_2));
@@ -480,6 +531,11 @@ fn test_stack_view() {
     // Ensure there are no more items to pop
     let pop_value_none: Option<Aligned<i32>> = unsafe { stack_view.pop() };
     assert_eq!(pop_value_none, None);
+
+    //check returning
+    stack_view.return_to(ret_spot);
+    let pop_value_2: Option<Aligned<i32>> = unsafe { stack_view.pop() };
+    assert_eq!(pop_value_2, Some(aligned_value_2));
 
     // Push some raw data and create multiple `StackView` instances
     let raw_data: [u8; 8] = [1, 2, 3, 4, 5, 6, 7, 8];

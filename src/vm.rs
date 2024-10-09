@@ -10,6 +10,7 @@ use crate::stack::Stack;
 use crate::value::Scope;
 use ast::ast::StringTable;
 
+use arrayvec::ArrayVec;
 
 #[derive(Clone)]
 pub enum Function<'code> {
@@ -21,7 +22,9 @@ pub type FunctionRegistry<'code>=Registry<Function<'code>>;
 // #[repr(C)] //want to orgenize by importance
 pub struct Context<'ctx,'code> {
     // pub pos:usize,
-    pub code: StackView<'code>,//we need a varible length stack for these...
+    code: StackView<'code>,//we need a varible length stack for these...
+    call_stack: ArrayVec<StackView<'code>,1000>,
+
     pub scope: Scope<'ctx>,
     static_ids: &'ctx[u32], //these ids should not be GCed
     pub stack: &'ctx mut Stack,
@@ -34,7 +37,12 @@ pub struct Context<'ctx,'code> {
 }
 
 impl<'ctx,'code> Context<'ctx,'code> {
-    pub fn new(
+    /// # Safety
+    ///
+    /// code must never tell us to pop the wrong type from stack.
+    /// as long as code allways pops any non value type on stack that it pushed
+    /// the code is safe
+    pub unsafe fn new(
         table: &'ctx StringTable<'code>,
         code: StackView<'code>,//constants: &'code[IRValue],
         static_ids: &'ctx[u32],
@@ -42,8 +50,16 @@ impl<'ctx,'code> Context<'ctx,'code> {
         strings: &'ctx StringRegistry,funcs: &'ctx FunctionRegistry<'code>
     ) -> Self{
         
-        Context{static_ids,table,code,stack,scope,strings,funcs}
+        Context{
+            call_stack:ArrayVec::new(),
+            static_ids,table,code,stack,scope,strings,funcs
+        }
     }
+
+    pub fn get_code(&self) -> &StackView<'code>{
+        &self.code
+    }
+
 
     fn pop_to(&mut self,id:u32) -> Result<(),ErrList>{
         match self.stack.pop_value(){
@@ -73,24 +89,29 @@ impl<'ctx,'code> Context<'ctx,'code> {
         .collect()
     } 
 
-    // fn small_ret(&mut self) -> Result<(),ErrList> {
-    //     self.code.set_index(id as isize);
-    // }
+    fn small_ret(&mut self,id:u32) -> Result<(),ErrList> {
+        // unsafe {self.code.set_index(id as isize);}
+        todo!()
+    }
+
+    fn big_ret(&mut self) -> Result<(),ErrList> {
+        self.code = self.call_stack.pop().ok_or_else(|| Error::Bug("over pop call stack").to_list())?;
+        todo!()
+    }
 
     /// # Safety
     ///
-    /// operations are assumed to give us the correct thing to try.
-    /// this could have been noted by marking EVERYTHING as unsafe
-    /// however I dont think thats productive so instead all data is assumed to be 
-    fn handle_op(&mut self,op:Operation) -> Result<(),ErrList> {
+    /// this is safe as long as we pop the ops 1 by 1 as the code says
+    /// we are relying on the compilation step making correct code 
+    pub unsafe fn handle_op(&mut self,op:Operation) -> Result<(),ErrList> {
         match op {
             BinOp(b) => handle_bin(self,b),
             PopTo(id) => self.pop_to(id),
             PushFrom(id) => self.push_from(id),
             PushConst => self.push_constant(),
-            // RetSmall(id) => {
 
-            // }
+            RetSmall(id) => self.small_ret(id),
+            RetBig => self.big_ret(),
 
             _ => todo!(),
         }
@@ -98,9 +119,12 @@ impl<'ctx,'code> Context<'ctx,'code> {
 
     //returns true if we should keep going
     pub fn next_op(&mut self) -> Result<bool,ErrList>{
-        let r = unsafe {self.code.pop()};
-        let Some(op) = r else {return Ok(false)};
-        self.handle_op(op.to_inner()).map(|_| true)
+        unsafe {
+            let r = self.code.pop();
+            let Some(op) = r else {return Ok(false)};
+            self.handle_op(op.to_inner()).map(|_| true)
+        }
+        
     }
 
 }
@@ -111,7 +135,7 @@ impl<'ctx,'code> Context<'ctx,'code> {
 #[repr(u32)]
 pub enum Operation {
     Call,//calls a function args are passed through the stack and a single return value is left at the end (args are consumed)
-    RetBig(u32),//returns out of the function scope. 
+    RetBig,//returns out of the function scope. 
     RetSmall(u32),//returns out of a match block
 
     PopTo(u32),
