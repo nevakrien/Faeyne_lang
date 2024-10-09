@@ -218,8 +218,8 @@ impl Stack {
     #[inline]
     pub fn push_stack_view(&mut self, stack_view: &StackView) -> Result<(), ()> {
         self.push(&Aligned::new(stack_view.idx))?;
-        self.push(&Aligned::new(stack_view.data.as_ptr()))?;
-        self.push(&Aligned::new(stack_view.data.len()))
+        self.push(&Aligned::new(stack_view.data.len()))?;
+        self.push(&Aligned::new(stack_view.data.as_ptr())) //this makes it basically impossible for us to get the wrong tag by mistake
 
     }
 
@@ -351,7 +351,7 @@ impl<'a> StackView<'a> {
 
             let ptr = self.data.as_ptr().add(start) as *const Aligned<T>;
 
-            Some((&*ptr).clone())
+            Some((*ptr).clone())
         } else {
             None
         }
@@ -397,10 +397,13 @@ pub trait PopStack{
     /// The caller must ensure that the data being popped matches the expected type.
     unsafe fn pop<T: Sized + Clone>(&mut self) -> Option<Aligned<T>>; 
 
+    /// # Safety
+    ///
+    /// The caller must ensure that the data being popped matches the expected type.
     #[inline]
     unsafe fn pop_stack_view(&mut self) -> Option<StackView> {
-        let len :usize= self.pop()?.to_inner();
         let ptr :*const u8= self.pop()?.to_inner();        
+        let len :usize= self.pop()?.to_inner();
         let idx :isize= self.pop()?.to_inner();
 
         // #[cfg(miri)]//miri will error here because it cant detect ptr is a valid existing pointer...

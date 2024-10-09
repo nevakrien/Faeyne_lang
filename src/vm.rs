@@ -73,16 +73,24 @@ impl<'ctx,'code> Context<'ctx,'code> {
         .collect()
     } 
 
+    // fn small_ret(&mut self) -> Result<(),ErrList> {
+    //     self.code.set_index(id as isize);
+    // }
+
+    /// # Safety
+    ///
+    /// operations are assumed to give us the correct thing to try.
+    /// this could have been noted by marking EVERYTHING as unsafe
+    /// however I dont think thats productive so instead all data is assumed to be 
     fn handle_op(&mut self,op:Operation) -> Result<(),ErrList> {
         match op {
             BinOp(b) => handle_bin(self,b),
             PopTo(id) => self.pop_to(id),
             PushFrom(id) => self.push_from(id),
             PushConst => self.push_constant(),
-            // RetSmall(id) => unsafe{
-            //     self.code.set_index(id as isize);
-            //     Ok(())
-            // },
+            // RetSmall(id) => {
+
+            // }
 
             _ => todo!(),
         }
