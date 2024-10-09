@@ -403,8 +403,8 @@ pub trait PopStack{
         let ptr :*const u8= self.pop()?.to_inner();        
         let idx :isize= self.pop()?.to_inner();
 
-        #[cfg(miri)]//miri will error here because it cant detect ptr is a valid existing pointer...
-        panic!();
+        // #[cfg(miri)]//miri will error here because it cant detect ptr is a valid existing pointer...
+        // panic!();
 
         let data = slice::from_raw_parts(ptr,len);
 
@@ -481,7 +481,7 @@ fn test_stack_view() {
 }
 
 #[test]
-#[cfg(not(miri))]
+// #[cfg(not(miri))]
 fn test_stack_view_push_pop() {
     let mut stack1 = Stack::with_capacity(300);
     let mut stack2 = Stack::with_capacity(300);
@@ -506,7 +506,7 @@ fn test_stack_view_push_pop() {
 }
 
 #[test]
-#[cfg(not(miri))]
+// #[cfg(not(miri))]
 fn test_push_pop_valid_pointer() {
     let mut stack = Stack::with_capacity(100);
 
@@ -520,4 +520,8 @@ fn test_push_pop_valid_pointer() {
 
     unsafe{assert_eq!(12345,*ptr)};
     unsafe{assert_eq!(12345,*p)};
+
+    unsafe{
+        let _ = Box::from_raw(ptr);
+    }
 }
