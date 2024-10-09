@@ -25,24 +25,29 @@ impl<T: Sized + Clone> Aligned<T> {
     }
 
     // Method that returns an 8-byte slice of the inner value, padded with zeros if necessary.
-    pub fn as_u8_slice(&self) -> [u8; 8] {
-        let size_of_t = size_of::<T>();
+    pub fn as_u8_slice(&self) -> &[MaybeUninit<u8>; 8] {
+        // let size_of_t = size_of::<T>();
 
-        // Create a buffer of 8 bytes initialized to 0 (for padding).
-        let mut buffer: [u8; 8] = [0; 8];
+        // // Create a buffer of 8 bytes initialized to 0 (for padding).
+        // let mut buffer: [u8; 8] = [0; 8];
 
-        // SAFETY: Convert the reference to the inner value into a raw byte slice.
-        let bytes = unsafe {
-            std::slice::from_raw_parts(
-                &self.inner as *const T as *const u8,
-                size_of_t,
-            )
-        };
+        // // SAFETY: Convert the reference to the inner value into a raw byte slice.
+        // let bytes = unsafe {
+        //     std::slice::from_raw_parts(
+        //         &self.inner as *const T as *const u8,
+        //         size_of_t,
+        //     )
+        // };
 
-        // Copy the bytes into the buffer (it will only copy size_of_t bytes, rest remains 0).
-        buffer[..size_of_t].copy_from_slice(bytes);
+        // // Copy the bytes into the buffer (it will only copy size_of_t bytes, rest remains 0).
+        // buffer[..size_of_t].copy_from_slice(bytes);
 
-        buffer
+        // buffer
+
+        unsafe {
+            let ptr=self as *const _ as *const [MaybeUninit<u8>; 8];
+            &*ptr
+        }
     }
 
     pub fn to_inner(self) -> T {
@@ -119,7 +124,7 @@ impl Stack {
 
             // Write the bytes into the stack
             unsafe {
-                let data_ptr = self.data.as_ptr().add(self.len) as *mut u8;
+                let data_ptr = self.data.as_ptr().add(self.len); //as *mut u8;
                 ptr::copy_nonoverlapping(bytes.as_ptr(), data_ptr, bytes.len());
             }
 
@@ -150,21 +155,9 @@ impl Stack {
             self.len -= 8;
             let start = self.len;
 
-            // Create an array of MaybeUninit<u8> and read the bytes into it
-            let mut data: [MaybeUninit<u8>; 8] = MaybeUninit::uninit().assume_init();
+            let ptr = self.data.as_ptr().add(start) as *const Aligned<T>;
 
-            let data_ptr = self.data.as_ptr().add(start) as *const u8;
-            for (i, r) in data.iter_mut().enumerate() {
-                *r = MaybeUninit::new(data_ptr.add(i).read());
-            }
-
-            // SAFETY: Now the data array is fully initialized
-            let bytes: [u8; 8] = mem::transmute_copy(&data);
-
-            // SAFETY: Transmute the 8 bytes back into the correct type T.
-            let value: T = mem::transmute_copy::<[u8; 8], T>(&bytes);
-
-            Some(Aligned::new(value))
+            Some((&*ptr).clone())
         } else {
             None
         }
@@ -356,20 +349,9 @@ impl<'a> StackView<'a> {
 
             let start = (self.idx + 1) as usize;
 
-            // Create an array of MaybeUninit<u8> and read the bytes into it
-            let mut data: [MaybeUninit<u8>; 8] = MaybeUninit::uninit().assume_init();
+            let ptr = self.data.as_ptr().add(start) as *const Aligned<T>;
 
-            for (i, r) in data.iter_mut().enumerate() {
-                *r = MaybeUninit::new(self.data[start + i]);
-            }
-
-            // SAFETY: Now the data array is fully initialized
-            let bytes: [u8; 8] = mem::transmute_copy(&data);
-
-            // SAFETY: Transmute the 8 bytes back into the correct type T.
-            let value: T = mem::transmute_copy::<[u8; 8], T>(&bytes);
-
-            Some(Aligned::new(value))
+            Some((&*ptr).clone())
         } else {
             None
         }
