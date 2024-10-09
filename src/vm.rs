@@ -1,3 +1,4 @@
+use crate::stack::StackRet;
 use crate::value::{ValuePushStack,ValuePopStack};
 use crate::stack::StackView;
 use crate::basic_ops::handle_bin;
@@ -19,11 +20,21 @@ pub enum Function<'code> {
 }
 pub type FunctionRegistry<'code>=Registry<Function<'code>>;
 
+pub struct RetData<'ctx, 'code> {
+    ret: StackRet,
+    code:StackView<'code>,
+    scope:Scope<'ctx>
+}
+
+pub const MAX_LOCAL_SCOPES: usize = 1000;
+pub const MAX_RECURSION :usize=2_500;
+
 // #[repr(C)] //want to orgenize by importance
 pub struct Context<'ctx,'code> {
     // pub pos:usize,
     code: StackView<'code>,//we need a varible length stack for these...
-    call_stack: ArrayVec<StackView<'code>,1000>,
+    call_stack:  &'ctx mut ArrayVec<RetData<'ctx,'code>,MAX_RECURSION>,
+    local_call_stack: &'ctx mut ArrayVec<RetData<'ctx,'code>,MAX_LOCAL_SCOPES>,
 
     pub scope: Scope<'ctx>,
     static_ids: &'ctx[u32], //these ids should not be GCed
@@ -43,16 +54,20 @@ impl<'ctx,'code> Context<'ctx,'code> {
     /// as long as code allways pops any non value type on stack that it pushed
     /// the code is safe
     pub unsafe fn new(
+
         table: &'ctx StringTable<'code>,
         code: StackView<'code>,//constants: &'code[IRValue],
         static_ids: &'ctx[u32],
+        
         stack: &'ctx mut Stack,scope: Scope<'ctx>,
+        call_stack:  &'ctx mut ArrayVec<RetData<'ctx,'code>,MAX_RECURSION>,
+        local_call_stack: &'ctx mut ArrayVec<RetData<'ctx,'code>,MAX_LOCAL_SCOPES>,
+        
         strings: &'ctx StringRegistry,funcs: &'ctx FunctionRegistry<'code>
     ) -> Self{
         
         Context{
-            call_stack:ArrayVec::new(),
-            static_ids,table,code,stack,scope,strings,funcs
+            static_ids,table,code,stack,call_stack,local_call_stack,scope,strings,funcs
         }
     }
 
@@ -89,16 +104,45 @@ impl<'ctx,'code> Context<'ctx,'code> {
         .collect()
     } 
 
-    fn small_ret(&mut self,id:u32) -> Result<(),ErrList> {
-        // unsafe {self.code.set_index(id as isize);}
-        todo!()
-    }
-
     fn big_ret(&mut self) -> Result<(),ErrList> {
-        self.code = self.call_stack.pop().ok_or_else(|| Error::Bug("over pop call stack").to_list())?;
+        let ret_data = self.call_stack.pop().ok_or_else(|| Error::Bug("over pop call stack").to_list())?;
+        let value = self.stack.pop_value().map_err(|()| Error::Bug("over pop value stack").to_list())?;
+
+        self.code = ret_data.code;
+        self.stack.return_to(ret_data.ret);
+        
+
+        self.stack.push_value(&value).map_err(|_|{Error::StackOverflow.to_list()})?;
+        
+
+        self.scope = ret_data.scope;
+        self.local_call_stack.clear();
+
         todo!()
     }
 
+    fn small_ret(&mut self) -> Result<(),ErrList> {
+        let ret_data = self.local_call_stack.pop().ok_or_else(|| Error::Bug("over pop call stack").to_list())?;
+        let value = self.stack.pop_value().map_err(|()| Error::Bug("over pop value stack").to_list())?;
+
+        self.code = ret_data.code;
+        self.stack.return_to(ret_data.ret);
+        
+
+        self.stack.push_value(&value).map_err(|_|{Error::StackOverflow.to_list()})?;
+
+        self.scope = ret_data.scope;
+
+        todo!()
+    }
+
+    // fn push_scope(&mut self,code:StackView<'code>,ret:StackRet) -> Result<(),ErrList> {
+    //     let mut ret = RetData{scope:self.scope,code,ret};
+    //     self.scope = ret.scope.add_scope(&[]);
+    //     Ok(())
+    // }
+
+    
     /// # Safety
     ///
     /// this is safe as long as we pop the ops 1 by 1 as the code says
@@ -110,7 +154,7 @@ impl<'ctx,'code> Context<'ctx,'code> {
             PushFrom(id) => self.push_from(id),
             PushConst => self.push_constant(),
 
-            RetSmall(id) => self.small_ret(id),
+            RetSmall => self.small_ret(),
             RetBig => self.big_ret(),
 
             _ => todo!(),
@@ -134,9 +178,11 @@ impl<'ctx,'code> Context<'ctx,'code> {
 #[derive(Debug,PartialEq,Clone,Copy)]
 #[repr(u32)]
 pub enum Operation {
-    Call,//calls a function args are passed through the stack and a single return value is left at the end (args are consumed)
+    //type ids end at 8 so we take a safe distance from them to maje the try_from fail on most UB
+
+    Call = 16,//calls a function args are passed through the stack and a single return value is left at the end (args are consumed)
     RetBig,//returns out of the function scope. 
-    RetSmall(u32),//returns out of a match block
+    RetSmall,//returns out of a match block
 
     PopTo(u32),
     PushFrom(u32),

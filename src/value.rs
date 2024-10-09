@@ -460,6 +460,7 @@ impl VarTable {
     }
 }
 
+//needs a redesign
 pub struct Scope<'a> {
     pub table: &'a mut VarTable,
     base_size: usize,

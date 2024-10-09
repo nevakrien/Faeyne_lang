@@ -64,7 +64,6 @@ pub fn append_err_list(mut a: Result<(),ErrList>, b:Result<(),ErrList>) -> Resul
     }
 }
 
-pub static MAX_RECURSION :usize=2_500;
 
 #[derive(Debug,PartialEq)]
 pub struct RecursionError{
