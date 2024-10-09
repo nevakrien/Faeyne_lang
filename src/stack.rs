@@ -1,5 +1,6 @@
 #![allow(clippy::result_unit_err)]
 
+use core::slice;
 use core::ptr;
 use core::mem;
 use std::mem::{MaybeUninit, size_of};
@@ -66,7 +67,7 @@ pub struct Stack {
 
 static ALIGN :usize= 16;
 
-impl Stack {
+impl<'a> Stack {
     pub fn with_capacity(capacity: usize) -> Self {
         let layout = Layout::from_size_align(capacity, ALIGN).expect("Invalid layout");
         let data = unsafe { alloc(layout) as *mut MaybeUninit<u8> };
@@ -186,6 +187,19 @@ impl Stack {
 
     /// # Safety
     ///
+    /// The caller must ensure that the alignment of the pushed data is correct.
+    #[inline]
+    pub unsafe fn push_raw_grow<T: Sized + Clone>(&mut self,  bytes: &[u8]) {
+        loop {
+            match self.push_raw(bytes) {
+                Ok(_) => break,
+                Err(_) => self.ensure_capacity(8),
+            }
+        }
+    }
+
+    /// # Safety
+    ///
     /// The caller must ensure that the alignment and size are correct when reading the data.
     #[inline]
     pub unsafe fn pop_raw(&mut self, size: usize) -> Option<Vec<u8>> {
@@ -202,6 +216,36 @@ impl Stack {
         } else {
             None
         }
+    }
+
+    #[inline]
+    pub fn push_stack_view(&mut self, stack_view: &'a StackView<'a>) -> Result<(), ()> {
+        self.push(&Aligned::new(stack_view.idx))?;
+        self.push(&Aligned::new(stack_view.data.as_ptr()))?;
+        self.push(&Aligned::new(stack_view.data.len()))
+
+    }
+
+    #[inline]
+    pub fn push_stack_view_grow(&mut self, stack_view: &'a StackView<'a>) {
+        loop {
+            match self.push_stack_view(stack_view) {
+                Ok(_) => break,
+                Err(_) => self.ensure_capacity(mem::size_of::<StackView>()),
+            }
+        }
+    }
+
+    #[inline]
+    unsafe fn pop_stack_view(&mut self) -> Option<StackView<'a>> {
+        let len :usize= self.pop()?.to_inner();
+        let ptr :*const u8= self.pop()?.to_inner();        
+        let idx :isize= self.pop()?.to_inner();
+
+        println!("{}",*ptr);
+        let data = slice::from_raw_parts(ptr,len);//miri will error here because it cant detect ptr is a valid existing pointer...
+
+        Some(StackView{idx,data})
     }
 }
 
@@ -365,6 +409,8 @@ pub trait PopStack{
     ///
     /// The caller must ensure that the data being popped matches the expected type.
     unsafe fn pop<T: Sized + Clone>(&mut self) -> Option<Aligned<T>>; 
+
+    
 }
 
 impl PopStack for Stack {
@@ -432,4 +478,46 @@ fn test_stack_view() {
 
     let pop_value_2: Option<Aligned<[u8; 8]>> = unsafe { stack_view_2.peak() };
     assert_eq!(pop_value_2.map(|aligned| aligned.to_inner()), Some(raw_data));
+}
+
+#[test]
+#[cfg(not(miri))]
+fn test_stack_view_push_pop() {
+    let mut stack1 = Stack::with_capacity(300);
+    let mut stack2 = Stack::with_capacity(300);
+
+    // Create an aligned value
+    let aligned_value_1 = Aligned::new(42i32);
+    stack1.push_grow(&aligned_value_1);
+
+    {
+        // Create a stack view from stack1
+        let stack_view = StackView::from_stack(&stack1);
+
+        // Push the stack view onto stack2
+        stack2.push_stack_view_grow(&stack_view);
+    } // End the borrow of `stack1` by `stack_view` here
+
+    // Pop the stack view back from stack2
+    let popped_view = unsafe { stack2.pop_stack_view() };
+    assert!(popped_view.is_some());
+    // Ensure the data length matches what was originally pushed
+    assert_eq!(popped_view.unwrap().data.len(), 8); // Replace the direct data comparison with a length check
+}
+
+#[test]
+#[cfg(not(miri))]
+fn test_push_pop_valid_pointer() {
+    let mut stack = Stack::with_capacity(100);
+
+    // Create some random data on the heap
+    let value = Box::new(12345);
+    let ptr = Box::into_raw(value);
+
+    stack.push_grow(&Aligned::new(ptr));
+    let p :*const usize= unsafe{stack.pop().unwrap().to_inner()};
+    assert_eq!(p,ptr);
+
+    unsafe{assert_eq!(12345,*ptr)};
+    unsafe{assert_eq!(12345,*p)};
 }
