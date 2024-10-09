@@ -67,7 +67,7 @@ pub struct Stack {
 
 static ALIGN :usize= 16;
 
-impl<'a> Stack {
+impl Stack {
     pub fn with_capacity(capacity: usize) -> Self {
         let layout = Layout::from_size_align(capacity, ALIGN).expect("Invalid layout");
         let data = unsafe { alloc(layout) as *mut MaybeUninit<u8> };
@@ -119,9 +119,8 @@ impl<'a> Stack {
 
             // Write the bytes into the stack
             unsafe {
-                for (i, byte) in bytes.iter().enumerate() {
-                    self.data.as_ptr().add(self.len + i).write(MaybeUninit::new(*byte));
-                }
+                let data_ptr = self.data.as_ptr().add(self.len) as *mut u8;
+                ptr::copy_nonoverlapping(bytes.as_ptr(), data_ptr, bytes.len());
             }
 
             self.len = end;
@@ -130,6 +129,7 @@ impl<'a> Stack {
             Err(())
         }
     }
+
 
     #[inline]
     pub fn push_grow<T: Sized + Clone>(&mut self, aligned: &Aligned<T>) {
@@ -150,13 +150,16 @@ impl<'a> Stack {
             self.len -= 8;
             let start = self.len;
 
-            let mut data: [MaybeUninit<u8>; 8] = [MaybeUninit::uninit(); 8];
+            // Create an array of MaybeUninit<u8> and read the bytes into it
+            let mut data: [MaybeUninit<u8>; 8] = MaybeUninit::uninit().assume_init();
 
+            let data_ptr = self.data.as_ptr().add(start) as *const u8;
             for (i, r) in data.iter_mut().enumerate() {
-                *r = self.data.as_ptr().add(start + i).read();
+                *r = MaybeUninit::new(data_ptr.add(i).read());
             }
 
-            let bytes = mem::transmute::<[MaybeUninit<u8>; 8], [u8; 8]>(data);
+            // SAFETY: Now the data array is fully initialized
+            let bytes: [u8; 8] = mem::transmute_copy(&data);
 
             // SAFETY: Transmute the 8 bytes back into the correct type T.
             let value: T = mem::transmute_copy::<[u8; 8], T>(&bytes);
@@ -166,6 +169,7 @@ impl<'a> Stack {
             None
         }
     }
+
 
     /// # Safety
     ///
@@ -219,7 +223,7 @@ impl<'a> Stack {
     }
 
     #[inline]
-    pub fn push_stack_view(&mut self, stack_view: &'a StackView<'a>) -> Result<(), ()> {
+    pub fn push_stack_view(&mut self, stack_view: &StackView) -> Result<(), ()> {
         self.push(&Aligned::new(stack_view.idx))?;
         self.push(&Aligned::new(stack_view.data.as_ptr()))?;
         self.push(&Aligned::new(stack_view.data.len()))
@@ -227,7 +231,7 @@ impl<'a> Stack {
     }
 
     #[inline]
-    pub fn push_stack_view_grow(&mut self, stack_view: &'a StackView<'a>) {
+    pub fn push_stack_view_grow(&mut self, stack_view: &StackView) {
         loop {
             match self.push_stack_view(stack_view) {
                 Ok(_) => break,
@@ -236,17 +240,7 @@ impl<'a> Stack {
         }
     }
 
-    #[inline]
-    unsafe fn pop_stack_view(&mut self) -> Option<StackView<'a>> {
-        let len :usize= self.pop()?.to_inner();
-        let ptr :*const u8= self.pop()?.to_inner();        
-        let idx :isize= self.pop()?.to_inner();
-
-        println!("{}",*ptr);
-        let data = slice::from_raw_parts(ptr,len);//miri will error here because it cant detect ptr is a valid existing pointer...
-
-        Some(StackView{idx,data})
-    }
+    
 }
 
 impl Drop for Stack {
@@ -360,16 +354,27 @@ impl<'a> StackView<'a> {
         if self.idx >= 7 {
             self.idx -= 8;
 
-            let start = (self.idx +1) as usize ; 
-            let ptr :*const [u8;8]=self.data.as_ptr().add(start ) as *const [u8;8];
+            let start = (self.idx + 1) as usize;
+
+            // Create an array of MaybeUninit<u8> and read the bytes into it
+            let mut data: [MaybeUninit<u8>; 8] = MaybeUninit::uninit().assume_init();
+
+            for (i, r) in data.iter_mut().enumerate() {
+                *r = MaybeUninit::new(self.data[start + i]);
+            }
+
+            // SAFETY: Now the data array is fully initialized
+            let bytes: [u8; 8] = mem::transmute_copy(&data);
+
             // SAFETY: Transmute the 8 bytes back into the correct type T.
-            let value: T = mem::transmute_copy::<[u8;8], T>(&*ptr);
+            let value: T = mem::transmute_copy::<[u8; 8], T>(&bytes);
 
             Some(Aligned::new(value))
         } else {
             None
         }
     }
+
 
     /// # Safety
     ///
@@ -410,6 +415,19 @@ pub trait PopStack{
     /// The caller must ensure that the data being popped matches the expected type.
     unsafe fn pop<T: Sized + Clone>(&mut self) -> Option<Aligned<T>>; 
 
+    #[inline]
+    unsafe fn pop_stack_view(&mut self) -> Option<StackView> {
+        let len :usize= self.pop()?.to_inner();
+        let ptr :*const u8= self.pop()?.to_inner();        
+        let idx :isize= self.pop()?.to_inner();
+
+        #[cfg(miri)]//miri will error here because it cant detect ptr is a valid existing pointer...
+        panic!();
+
+        let data = slice::from_raw_parts(ptr,len);
+
+        Some(StackView{idx,data})
+    }
     
 }
 
