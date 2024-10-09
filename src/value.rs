@@ -53,7 +53,8 @@ pub enum IRValue {
     Func(u32),
 }
 
-// Trait for specialized Stack operations for IRValue
+
+//this is a safe wrapper around a stack that assumes it behaves a
 pub trait ValuePushStack {
     fn push_value(&mut self, value: &IRValue) -> Result<(), ()>;    
     fn push_nil(&mut self) -> Result<(), ()>;
@@ -84,6 +85,14 @@ pub trait ValuePopStack{
     fn pop_float(&mut self) -> Result<f64, ()>;
     
 }
+
+// pub struct ValuePushStack{
+//     inner:Stack
+// }
+
+// pub struct ValuePopStack<T:PopStack>{
+//     inner:T
+// }
 
 impl ValuePushStack for Stack {
     #[inline]
@@ -118,14 +127,14 @@ impl ValuePushStack for Stack {
     fn push_nil(&mut self) -> Result<(), ()> {
         let tag = ValueType::Nil as u64;
         let aligned = Aligned::new(tag);
-        self.push(&aligned)
+        unsafe{self.push(&aligned)}
     }
 
     #[inline]
     fn push_grow_nil(&mut self) {
         let tag = ValueType::Nil as u64;
         let aligned = Aligned::new(tag);
-        self.push_grow(&aligned)
+        unsafe{self.push_grow(&aligned)}
     }
 
     #[inline]
@@ -136,7 +145,7 @@ impl ValuePushStack for Stack {
             ValueType::BoolFalse as u64
         };
         let aligned = Aligned::new(tag);
-        self.push(&aligned)
+        unsafe{self.push(&aligned)}
     }
 
     #[inline]
@@ -147,35 +156,35 @@ impl ValuePushStack for Stack {
             ValueType::BoolFalse as u64
         };
         let aligned = Aligned::new(tag);
-        self.push_grow(&aligned)
+        unsafe{self.push_grow(&aligned)}
     }
 
     #[inline]
     fn push_atom(&mut self, id: u32) -> Result<(), ()> {
         let packed_data = (id as u64) << 32 | ValueType::Atom as u64;
         let aligned = Aligned::new(packed_data);
-        self.push(&aligned)
+       unsafe{ self.push(&aligned)}
     }
 
     #[inline]
     fn push_grow_atom(&mut self, id: u32) {
         let packed_data = (id as u64) << 32 | ValueType::Atom as u64;
         let aligned = Aligned::new(packed_data);
-        self.push_grow(&aligned)
+        unsafe{self.push_grow(&aligned)}
     }
 
     #[inline]
     fn push_string(&mut self, id: u32) -> Result<(), ()> {
         let packed_data = (id as u64) << 32 | ValueType::String as u64;
         let aligned = Aligned::new(packed_data);
-        self.push(&aligned)
+        unsafe{self.push(&aligned)}
     }
 
     #[inline]
     fn push_grow_string(&mut self, id: u32) {
         let packed_data = (id as u64) << 32 | ValueType::String as u64;
         let aligned = Aligned::new(packed_data);
-        self.push_grow(&aligned)
+        unsafe{self.push_grow(&aligned)}
     }
 
     #[inline]
@@ -183,8 +192,10 @@ impl ValuePushStack for Stack {
         let tag = ValueType::Int as u64;
         let aligned_data = Aligned::new(val as u64);
         let aligned_tag = Aligned::new(tag);
-        self.push(&aligned_data)?;
-        self.push(&aligned_tag)
+        unsafe{
+            self.push(&aligned_data)?;
+            self.push(&aligned_tag)
+        }
     }
 
     #[inline]
@@ -192,8 +203,11 @@ impl ValuePushStack for Stack {
         let tag = ValueType::Int as u64;
         let aligned_data = Aligned::new(val as u64);
         let aligned_tag = Aligned::new(tag);
-        self.push_grow(&aligned_data);
-        self.push_grow(&aligned_tag);
+        unsafe{
+            self.push_grow(&aligned_data);
+            self.push_grow(&aligned_tag);
+        }
+        
     }
 
     #[inline]
@@ -201,8 +215,10 @@ impl ValuePushStack for Stack {
         let tag = ValueType::Float as u64;
         let aligned_data = Aligned::new(val.to_bits());
         let aligned_tag = Aligned::new(tag);
-        self.push(&aligned_data)?;
-        self.push(&aligned_tag)
+        unsafe{
+            self.push(&aligned_data)?;
+            self.push(&aligned_tag)
+        }
     }
 
     #[inline]
@@ -210,22 +226,24 @@ impl ValuePushStack for Stack {
         let tag = ValueType::Float as u64;
         let aligned_data = Aligned::new(val.to_bits());
         let aligned_tag = Aligned::new(tag);
-        self.push_grow(&aligned_data);
-        self.push_grow(&aligned_tag);
+        unsafe{
+            self.push_grow(&aligned_data);
+            self.push_grow(&aligned_tag);
+        }
     }
 
     #[inline]
     fn push_func(&mut self, id: u32) -> Result<(), ()> {
         let packed_data = (id as u64) << 32 | ValueType::Func as u64;
         let aligned = Aligned::new(packed_data);
-        self.push(&aligned)
+        unsafe{self.push(&aligned)}
     }
 
     #[inline]
     fn push_grow_func(&mut self, id: u32) {
         let packed_data = (id as u64) << 32 | ValueType::Func as u64;
         let aligned = Aligned::new(packed_data);
-        self.push_grow(&aligned);
+        unsafe{self.push_grow(&aligned);}
     }
 }
 

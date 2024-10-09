@@ -115,8 +115,12 @@ impl Stack {
         }
     }
 
+    /// # Safety
+    ///
+    /// When not using ValueStack this is perfectly safe.
+    /// However when using ValueStack pushing a type thats untagged can break the invariance
     #[inline]
-    pub fn push<T: Sized + Clone>(&mut self, aligned: &Aligned<T>) -> Result<(), ()> {
+    pub unsafe fn push<T: Sized + Clone>(&mut self, aligned: &Aligned<T>) -> Result<(), ()> {
         let end = self.len + 8;
 
         if end <= self.capacity {
@@ -135,9 +139,11 @@ impl Stack {
         }
     }
 
-
+    /// # Safety
+    ///
+    /// same as push
     #[inline]
-    pub fn push_grow<T: Sized + Clone>(&mut self, aligned: &Aligned<T>) {
+    pub unsafe fn push_grow<T: Sized + Clone>(&mut self, aligned: &Aligned<T>) {
         loop {
             match self.push(aligned) {
                 Ok(_) => break,
@@ -215,16 +221,22 @@ impl Stack {
         }
     }
 
+    /// # Safety
+    ///
+    /// same as push
     #[inline]
-    pub fn push_stack_view(&mut self, stack_view: &StackView) -> Result<(), ()> {
+    pub unsafe fn push_stack_view(&mut self, stack_view: &StackView) -> Result<(), ()> {
         self.push(&Aligned::new(stack_view.idx))?;
         self.push(&Aligned::new(stack_view.data.len()))?;
         self.push(&Aligned::new(stack_view.data.as_ptr())) //this makes it basically impossible for us to get the wrong tag by mistake
 
     }
 
+    /// # Safety
+    ///
+    /// same as push
     #[inline]
-    pub fn push_stack_view_grow(&mut self, stack_view: &StackView) {
+    pub unsafe fn push_stack_view_grow(&mut self, stack_view: &StackView) {
         loop {
             match self.push_stack_view(stack_view) {
                 Ok(_) => break,
@@ -255,7 +267,7 @@ fn test_stack() {
     let aligned_value = Aligned::new(42i32);
 
     // Push the value (by reference)
-    stack.push(&aligned_value).unwrap();
+    unsafe{stack.push(&aligned_value).unwrap();}
 
     // Pop the value back (unsafe because we assume we know the type)
     let value: Option<Aligned<i32>> = unsafe { stack.pop() };
@@ -292,7 +304,7 @@ fn test_stack() {
 
     // Test push_grow to force resizing
     for _ in 0..20 {
-        stack.push_grow(&aligned_value);
+        unsafe{stack.push_grow(&aligned_value);}
     }
 
     // Pop the value back (unsafe because we assume we know the type)
@@ -438,9 +450,12 @@ fn test_stack_view() {
     let aligned_value_3 = Aligned::new(30u32);
 
     // Push the aligned values to the stack
-    stack.push(&aligned_value_1).unwrap();
-    stack.push(&aligned_value_2).unwrap();
-    stack.push(&aligned_value_3).unwrap();
+    unsafe{
+        stack.push(&aligned_value_1).unwrap();
+        stack.push(&aligned_value_2).unwrap();
+        stack.push(&aligned_value_3).unwrap();
+    }
+    
 
     // Create a `StackView` from the `Stack`
     let mut stack_view = StackView::from_stack(&stack);
@@ -491,14 +506,14 @@ fn test_stack_view_push_pop() {
 
     // Create an aligned value
     let aligned_value_1 = Aligned::new(42i32);
-    stack1.push_grow(&aligned_value_1);
+    unsafe{stack1.push_grow(&aligned_value_1);}
 
     {
         // Create a stack view from stack1
         let stack_view = StackView::from_stack(&stack1);
 
         // Push the stack view onto stack2
-        stack2.push_stack_view_grow(&stack_view);
+        unsafe{stack2.push_stack_view_grow(&stack_view);}
     } // End the borrow of `stack1` by `stack_view` here
 
     // Pop the stack view back from stack2
@@ -517,7 +532,7 @@ fn test_push_pop_valid_pointer() {
     let value = Box::new(12345);
     let ptr = Box::into_raw(value);
 
-    stack.push_grow(&Aligned::new(ptr));
+    unsafe{stack.push_grow(&Aligned::new(ptr));}
     let p :*const usize= unsafe{stack.pop().unwrap().to_inner()};
     assert_eq!(p,ptr);
 
