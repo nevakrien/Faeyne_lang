@@ -1,6 +1,7 @@
 #![allow(clippy::result_unit_err)]
 
 
+use crate::stack::PopStack;
 use core::num::NonZeroU32;
 use core::cell::UnsafeCell;
 use core::mem::ManuallyDrop;
@@ -53,15 +54,7 @@ pub enum IRValue {
 }
 
 // Trait for specialized Stack operations for IRValue
-pub trait ValueStack {
-    //note that push_grow is 2x slower than push. so its recommended to ensure capacity and then push with unwraps.
-    fn pop_value(&mut self) -> Result<IRValue, ()>;
-    fn pop_nil(&mut self) -> Result<(), ()>;
-    fn pop_atom(&mut self) -> Result<u32, ()>;
-    fn pop_string(&mut self) -> Result<u32, ()>;
-    fn pop_int(&mut self) -> Result<i64, ()>;
-    fn pop_float(&mut self) -> Result<f64, ()>;
-    
+pub trait ValuePushStack {
     fn push_value(&mut self, value: &IRValue) -> Result<(), ()>;    
     fn push_nil(&mut self) -> Result<(), ()>;
     fn push_bool(&mut self, val: bool) -> Result<(), ()>;
@@ -81,7 +74,18 @@ pub trait ValueStack {
     fn push_grow_func(&mut self, id: u32);
 }
 
-impl ValueStack for Stack {
+pub trait ValuePopStack{
+    //note that push_grow is 2x slower than push. so its recommended to ensure capacity and then push with unwraps.
+    fn pop_value(&mut self) -> Result<IRValue, ()>;
+    fn pop_nil(&mut self) -> Result<(), ()>;
+    fn pop_atom(&mut self) -> Result<u32, ()>;
+    fn pop_string(&mut self) -> Result<u32, ()>;
+    fn pop_int(&mut self) -> Result<i64, ()>;
+    fn pop_float(&mut self) -> Result<f64, ()>;
+    
+}
+
+impl ValuePushStack for Stack {
     #[inline]
     fn push_value(&mut self, value: &IRValue) -> Result<(), ()> {
         match value {
@@ -109,115 +113,7 @@ impl ValueStack for Stack {
     }
 
 
-    #[inline]
-    fn pop_value(&mut self) -> Result<IRValue, ()> {
-        unsafe {
-            match self.pop::<u64>() {
-                Some(aligned_tag) => {
-                    let tag = aligned_tag.to_inner();
-                    match ValueType::try_from((tag & 0xFFFFFFFF) as u32) {
-                        Ok(ValueType::Nil) => Ok(IRValue::Nil),
-                        Ok(ValueType::BoolTrue) => Ok(IRValue::Bool(true)),
-                        Ok(ValueType::BoolFalse) => Ok(IRValue::Bool(false)),
-                        Ok(ValueType::Atom) => Ok(IRValue::Atom((tag >> 32) as u32)),
-                        Ok(ValueType::String) => Ok(IRValue::String((tag >> 32) as u32)),
-                        Ok(ValueType::Func) => Ok(IRValue::Func((tag >> 32) as u32)),
-                        Ok(ValueType::Int) => {
-                            let data = match self.pop::<u64>() {
-                                Some(aligned_data) => aligned_data,
-                                None => return Err(()),
-                            };
-                            Ok(IRValue::Int(data.to_inner() as i64))
-                        }
-                        Ok(ValueType::Float) => {
-                            let data = match self.pop::<u64>() {
-                                Some(aligned_data) => aligned_data,
-                                None => return Err(()),
-                            };
-                            Ok(IRValue::Float(f64::from_bits(data.to_inner())))
-                        }
-                        _ => Err(()),
-                    }
-                }
-                None => Err(()),
-            }
-        }
-    }
-
-    #[inline]
-    fn pop_nil(&mut self) -> Result<(), ()> {
-        if let Some(aligned) = unsafe { self.pop::<u64>() } {
-            let tag = aligned.to_inner();
-            if tag == ValueType::Nil as u64 {
-                Ok(())
-            } else {
-                Err(())
-            }
-        } else {
-            Err(())
-        }
-    }
-
-    #[inline]
-    fn pop_atom(&mut self) -> Result<u32, ()> {
-        if let Some(aligned) = unsafe { self.pop::<u64>() } {
-            let tag = aligned.to_inner();
-            if (tag & 0xFFFFFFFF) as u32 == ValueType::Atom as u32 {
-                Ok((tag >> 32) as u32)
-            } else {
-                Err(())
-            }
-        } else {
-            Err(())
-        }
-    }
-
-    #[inline]
-    fn pop_string(&mut self) -> Result<u32, ()> {
-        if let Some(aligned) = unsafe { self.pop::<u64>() } {
-            let tag = aligned.to_inner();
-            if (tag & 0xFFFFFFFF) as u32 == ValueType::String as u32 {
-                Ok((tag >> 32) as u32)
-            } else {
-                Err(())
-            }
-        } else {
-            Err(())
-        }
-    }
-
-    #[inline]
-    fn pop_int(&mut self) -> Result<i64, ()> {
-        if let Some(aligned_tag) = unsafe { self.pop::<u64>() } {
-            let tag = aligned_tag.to_inner();
-            if (tag & 0xFFFFFFFF) as u32 == ValueType::Int as u32 {
-                if let Some(aligned_data) = unsafe { self.pop::<u64>() } {
-                    Ok(aligned_data.to_inner() as i64)
-                } else {
-                    Err(())
-                }
-            } else {
-                Err(())
-            }
-        } else {
-            Err(())
-        }
-    }
-
-    #[inline]
-    fn pop_float(&mut self) -> Result<f64, ()> {
-        if let (Some(aligned_tag), Some(aligned_data)) = (unsafe { self.pop::<u64>() }, unsafe { self.pop::<u64>() }) {
-            let tag = aligned_tag.to_inner();
-            if (tag & 0xFFFFFFFF) as u32 == ValueType::Float as u32 {
-                Ok(f64::from_bits(aligned_data.to_inner()))
-            } else {
-                Err(())
-            }
-        } else {
-            Err(())
-        }
-    }
-
+    
     #[inline]
     fn push_nil(&mut self) -> Result<(), ()> {
         let tag = ValueType::Nil as u64;
@@ -333,6 +229,117 @@ impl ValueStack for Stack {
     }
 }
 
+impl<S:PopStack> ValuePopStack for S{
+    #[inline]
+    fn pop_value(&mut self) -> Result<IRValue, ()> {
+        unsafe {
+            match self.pop::<u64>() {
+                Some(aligned_tag) => {
+                    let tag = aligned_tag.to_inner();
+                    match ValueType::try_from((tag & 0xFFFFFFFF) as u32) {
+                        Ok(ValueType::Nil) => Ok(IRValue::Nil),
+                        Ok(ValueType::BoolTrue) => Ok(IRValue::Bool(true)),
+                        Ok(ValueType::BoolFalse) => Ok(IRValue::Bool(false)),
+                        Ok(ValueType::Atom) => Ok(IRValue::Atom((tag >> 32) as u32)),
+                        Ok(ValueType::String) => Ok(IRValue::String((tag >> 32) as u32)),
+                        Ok(ValueType::Func) => Ok(IRValue::Func((tag >> 32) as u32)),
+                        Ok(ValueType::Int) => {
+                            let data = match self.pop::<u64>() {
+                                Some(aligned_data) => aligned_data,
+                                None => return Err(()),
+                            };
+                            Ok(IRValue::Int(data.to_inner() as i64))
+                        }
+                        Ok(ValueType::Float) => {
+                            let data = match self.pop::<u64>() {
+                                Some(aligned_data) => aligned_data,
+                                None => return Err(()),
+                            };
+                            Ok(IRValue::Float(f64::from_bits(data.to_inner())))
+                        }
+                        _ => Err(()),
+                    }
+                }
+                None => Err(()),
+            }
+        }
+    }
+
+    #[inline]
+    fn pop_nil(&mut self) -> Result<(), ()> {
+        if let Some(aligned) = unsafe { self.pop::<u64>() } {
+            let tag = aligned.to_inner();
+            if tag == ValueType::Nil as u64 {
+                Ok(())
+            } else {
+                Err(())
+            }
+        } else {
+            Err(())
+        }
+    }
+
+    #[inline]
+    fn pop_atom(&mut self) -> Result<u32, ()> {
+        if let Some(aligned) = unsafe { self.pop::<u64>() } {
+            let tag = aligned.to_inner();
+            if (tag & 0xFFFFFFFF) as u32 == ValueType::Atom as u32 {
+                Ok((tag >> 32) as u32)
+            } else {
+                Err(())
+            }
+        } else {
+            Err(())
+        }
+    }
+
+    #[inline]
+    fn pop_string(&mut self) -> Result<u32, ()> {
+        if let Some(aligned) = unsafe { self.pop::<u64>() } {
+            let tag = aligned.to_inner();
+            if (tag & 0xFFFFFFFF) as u32 == ValueType::String as u32 {
+                Ok((tag >> 32) as u32)
+            } else {
+                Err(())
+            }
+        } else {
+            Err(())
+        }
+    }
+
+    #[inline]
+    fn pop_int(&mut self) -> Result<i64, ()> {
+        if let Some(aligned_tag) = unsafe { self.pop::<u64>() } {
+            let tag = aligned_tag.to_inner();
+            if (tag & 0xFFFFFFFF) as u32 == ValueType::Int as u32 {
+                if let Some(aligned_data) = unsafe { self.pop::<u64>() } {
+                    Ok(aligned_data.to_inner() as i64)
+                } else {
+                    Err(())
+                }
+            } else {
+                Err(())
+            }
+        } else {
+            Err(())
+        }
+    }
+
+    #[inline]
+    fn pop_float(&mut self) -> Result<f64, ()> {
+        if let (Some(aligned_tag), Some(aligned_data)) = (unsafe { self.pop::<u64>() }, unsafe { self.pop::<u64>() }) {
+            let tag = aligned_tag.to_inner();
+            if (tag & 0xFFFFFFFF) as u32 == ValueType::Float as u32 {
+                Ok(f64::from_bits(aligned_data.to_inner()))
+            } else {
+                Err(())
+            }
+        } else {
+            Err(())
+        }
+    }
+
+} 
 
 
 #[test]

@@ -1,6 +1,6 @@
 // Main function for performance testing the Value stack
 
-use faeyne_lang::value::{IRValue, ValueStack};
+use faeyne_lang::value::{IRValue, ValuePushStack,ValuePopStack};
 use faeyne_lang::stack::Stack;
 use std::time::Instant;
 

@@ -329,6 +329,23 @@ impl<'a> StackView<'a> {
 
     /// # Safety
     ///
+    /// The caller must ensure that the alignment and size are correct when reading the data.
+    #[inline]
+    pub unsafe fn pop_raw(&mut self, size: usize) -> Option<Vec<u8>> {
+        if (self.idx+1) as usize>= size {
+            self.idx -= size as isize;
+            let start = self.idx as usize;
+
+            let bytes = &self.data[start..start+size];
+
+            Some(bytes.to_vec())
+        } else {
+            None
+        }
+    }
+
+    /// # Safety
+    ///
     /// The caller must ensure that the data being popped matches the expected type.
     #[inline]
     pub unsafe fn peak<T: Sized + Clone>(&mut self) -> Option<Aligned<T>> {
@@ -336,6 +353,30 @@ impl<'a> StackView<'a> {
         self.idx+=8;
         ans
     }
+}
+
+pub trait PopStack{
+    /// # Safety
+    ///
+    /// The caller must ensure that the alignment and size are correct when reading the data.
+     unsafe fn pop_raw(&mut self, size: usize) -> Option<Vec<u8>>;
+
+    /// # Safety
+    ///
+    /// The caller must ensure that the data being popped matches the expected type.
+    unsafe fn pop<T: Sized + Clone>(&mut self) -> Option<Aligned<T>>; 
+}
+
+impl PopStack for Stack {
+
+    unsafe fn pop_raw(&mut self, i: usize) -> Option<Vec<u8>> { self.pop_raw(i) }
+    unsafe fn pop<T>(&mut self) -> Option<Aligned<T>> where T: Clone { self.pop() }
+}
+
+impl PopStack for StackView<'_> {
+
+    unsafe fn pop_raw(&mut self, i: usize) -> Option<Vec<u8>> { self.pop_raw(i) }
+    unsafe fn pop<T>(&mut self) -> Option<Aligned<T>> where T: Clone { self.pop() }
 }
 
 #[test]

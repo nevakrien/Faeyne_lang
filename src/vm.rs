@@ -1,3 +1,4 @@
+use crate::value::{ValuePushStack,ValuePopStack};
 use crate::stack::StackView;
 use crate::basic_ops::handle_bin;
 use crate::basic_ops::BinOp;
@@ -5,7 +6,6 @@ use crate::value::StringRegistry;
 use crate::value::Registry;
 use crate::reporting::Error;
 use crate::reporting::ErrList;
-use crate::value::ValueStack;
 use crate::stack::Stack;
 use crate::value::Scope;
 use ast::ast::StringTable;
@@ -20,6 +20,7 @@ pub type FunctionRegistry<'code>=Registry<Function<'code>>;
 
 // #[repr(C)] //want to orgenize by importance
 pub struct Context<'ctx,'code> {
+    // pub pos:usize,
     pub code: StackView<'code>,//we need a varible length stack for these...
     pub scope: Scope<'ctx>,
     static_ids: &'ctx[u32], //these ids should not be GCed
