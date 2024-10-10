@@ -1,5 +1,6 @@
+use std::sync::Arc;
 use crate::value::Value;
-use crate::stack::{ValueStack};
+// use crate::stack::{ValueStack};
 
 
 use crate::vm::Context;
@@ -32,39 +33,27 @@ pub enum BinOp {
     DoubleXor,
 }
 
+
 pub fn handle_bin(context:&mut Context,op:BinOp) -> Result<(),ErrList>{
-    todo!()
+    match op {
+        BinOp::Equal => {
+            let value = is_equal(context)?;
+            context.stack.push_bool(value).map_err(|_|{Error::StackOverflow.to_list()})?;
+            Ok(())
+        },
+
+        BinOp::NotEqual => {
+            let value = !is_equal(context)?;
+            context.stack.push_bool(value).map_err(|_|{Error::StackOverflow.to_list()})?;
+            Ok(())
+        },
+        _ => todo!()
+    }
 }
-// pub fn handle_bin(context:&mut Context,op:BinOp) -> Result<(),ErrList>{
-//     match op {
-//         BinOp::Equal => {
-//             let value = is_equal(context)?;
-//             context.stack.push_bool(value).map_err(|_|{Error::StackOverflow.to_list()})?;
-//             Ok(())
-//         },
 
-//         BinOp::NotEqual => {
-//             let value = !is_equal(context)?;
-//             context.stack.push_bool(value).map_err(|_|{Error::StackOverflow.to_list()})?;
-//             Ok(())
-//         },
-//         _ => todo!()
-//     }
-// }
+pub fn is_equal(context: &mut Context) -> Result<bool, ErrList> {
+    let a = context.stack.pop_value().ok_or_else(|| Error::Bug("over popping").to_list())?;
+    let b = context.stack.pop_value().ok_or_else(|| Error::Bug("over popping").to_list())?;
+    Ok(a==b)
+}
 
-// pub fn is_equal(context:&mut Context) -> Result<bool,ErrList>{
-//     let a = context.stack.pop_value().ok_or_else(||Error::Bug("over poping").to_list())? ;
-//     let b = context.stack.pop_value().ok_or_else(||Error::Bug("over poping").to_list())? ;
-//     match (a,b){
-//         (Value::String(a),Value::String(b)) => {
-//             if a==b {
-//                 return Ok(true);
-//             }
-//             let a = context.strings.get(a).ok_or_else(|| {Error::Bug("non existent id").to_list()})?;
-//             let b = context.strings.get(b).ok_or_else(|| {Error::Bug("non existent id").to_list()})?;
-
-//             Ok(a==b)
-//         },
-//         (a,b) => Ok(a==b)
-//     }
-// }

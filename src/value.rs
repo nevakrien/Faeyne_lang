@@ -24,6 +24,47 @@ pub enum Value {
     
 }
 
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Value::WeakFunc(weak_a), Value::WeakFunc(weak_b)) => weak_a.ptr_eq(weak_b),
+            (Value::WeakFunc(weak), Value::Func(func)) | (Value::Func(func), Value::WeakFunc(weak)) => weak.ptr_eq(&Arc::downgrade(func)),
+            (Value::Nil, Value::Nil) => true,
+            (Value::Bool(a), Value::Bool(b)) => a == b,
+            (Value::Int(a), Value::Int(b)) => a == b,
+            (Value::Float(a), Value::Float(b)) => a == b,
+            (Value::Atom(a), Value::Atom(b)) => a == b,
+            (Value::String(a), Value::String(b)) => Arc::ptr_eq(&a, &b) || *a == *b,
+            (Value::Func(a), Value::Func(b)) => Arc::ptr_eq(&a, &b),
+            _ => false,
+        }
+    }
+}
+
+#[test]
+fn test_value_partial_eq() {
+    let value_nil = Value::Nil;
+    let value_bool_true = Value::Bool(true);
+    let value_bool_false = Value::Bool(false);
+    let value_int_42 = Value::Int(42);
+    let value_float = Value::Float(3.14);
+    let value_atom = Value::Atom(123);
+    let value_string = Value::String(Arc::new(String::from("Hello")));
+    let func = Arc::new(NativeFunction{});
+    let value_func = Value::Func(func.clone());
+    let value_weak_func = Value::WeakFunc(Arc::downgrade(&func));
+
+    assert_eq!(value_nil, Value::Nil);
+    assert_ne!(value_bool_true, value_bool_false);
+    assert_eq!(value_int_42, Value::Int(42));
+    assert_ne!(value_float, Value::Float(2.71));
+    assert_eq!(value_atom, Value::Atom(123));
+    assert_eq!(value_string, Value::String(Arc::new(String::from("Hello"))));
+    assert_eq!(value_func, Value::Func(func.clone()));
+    assert_eq!(value_weak_func, Value::WeakFunc(Arc::downgrade(&func)));
+    assert_eq!(value_weak_func, value_func);
+}
+
 
 
 pub struct VarTable {
