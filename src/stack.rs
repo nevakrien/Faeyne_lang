@@ -502,8 +502,8 @@ fn test_stack_operations() {
     value_stack.push_value(Value::Float(6.9)).unwrap();
 
     // Pop a few values and verify them
-    assert!(matches!(value_stack.pop_value(), Some(Value::Float(_))));
-    assert!(matches!(value_stack.pop_value(), Some(Value::Int(_))));
+    assert_eq!(value_stack.pop_value(), Some(Value::Float(6.9)));
+    assert_eq!(value_stack.pop_value(), Some(Value::Int(123)));
 
     // Push a few more values
     value_stack.push_value(Value::Atom(42)).unwrap();
@@ -531,8 +531,8 @@ fn test_stack_operations() {
     value_stack.push_value(Value::Float(6.9)).unwrap();
 
     // Pop a few values and verify them
-    assert!(matches!(value_stack.pop_value(), Some(Value::Float(6.9))));
-    assert!(matches!(value_stack.pop_value(), Some(Value::Int(123))));
+    assert_eq!(value_stack.pop_value(), Some(Value::Float(6.9)));
+    assert_eq!(value_stack.pop_value(), Some(Value::Int(123)));
 
     // Push a few more values
     value_stack.push_value(Value::Atom(42)).unwrap();
