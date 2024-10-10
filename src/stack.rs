@@ -1,3 +1,6 @@
+use std::sync::Weak;
+use crate::value::NativeFunction;
+use std::sync::Arc;
 use crate::value::Value;
 use core::ptr;
 use std::mem::{MaybeUninit, size_of};
@@ -102,7 +105,7 @@ impl<const STACK_CAPACITY:usize> Stack<STACK_CAPACITY> {
     ///
     /// The caller must ensure that the data being popped matches the expected type.
     #[inline]
-    pub unsafe fn peak<T>(&mut self) -> Option<&Aligned<T>> {
+    pub unsafe fn peak<'a, T>(&'a self) -> Option<&'a Aligned<T>> {
         if self.len >= size_of::<Aligned<T>>() {
             let start = self.len -size_of::<Aligned<T>>();
 
@@ -113,6 +116,8 @@ impl<const STACK_CAPACITY:usize> Stack<STACK_CAPACITY> {
             None
         }
     }
+
+
 }
 
 #[test]
@@ -295,7 +300,162 @@ impl<const STACK_CAPACITY:usize> ValueStack<STACK_CAPACITY> {
     pub fn push_terminator(&mut self) -> Result<(), StackOverflow> {
         unsafe { self.stack.push(&Aligned::new(ValueTag::Terminator)) }
     }
+
+    //Typed Pops
+
+    #[inline]
+    pub fn push_nil(&mut self) -> Result<(), StackOverflow> {
+        unsafe { self.stack.push(&Aligned::new(ValueTag::Nil)) }
+    }
+
+    #[inline]
+    pub fn pop_nil(&mut self) -> Option<()> {
+        if self.peak_tag()? == ValueTag::Nil {
+            self.stack.len -= std::mem::size_of::<Aligned<ValueTag>>();
+            Some(())
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    pub fn push_bool(&mut self, b: bool) -> Result<(), StackOverflow> {
+        unsafe {
+            let tag = if b { ValueTag::BoolTrue } else { ValueTag::BoolFalse };
+            self.stack.push(&Aligned::new(tag))
+        }
+    }
+
+    #[inline]
+    pub fn pop_bool(&mut self) -> Option<bool> {
+        match self.peak_tag()? {
+            ValueTag::BoolTrue => {
+                self.stack.len -= std::mem::size_of::<Aligned<ValueTag>>();
+                Some(true)
+            }
+            ValueTag::BoolFalse => {
+                self.stack.len -= std::mem::size_of::<Aligned<ValueTag>>();
+                Some(false)
+            }
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn push_int(&mut self, i: i64) -> Result<(), StackOverflow> {
+        unsafe {
+            let aligned_value = Aligned::new(i);
+            self.stack.push(&aligned_value)?;
+            self.stack.push(&Aligned::new(ValueTag::Int))
+        }
+    }
+
+    #[inline]
+    pub fn pop_int(&mut self) -> Option<i64> {
+        if self.peak_tag()? == ValueTag::Int {
+            self.stack.len -= std::mem::size_of::<Aligned<ValueTag>>();
+            Some(unsafe { self.stack.pop::<i64>()?.to_inner() })
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    pub fn push_float(&mut self, f: f64) -> Result<(), StackOverflow> {
+        unsafe {
+            let aligned_value = Aligned::new(f);
+            self.stack.push(&aligned_value)?;
+            self.stack.push(&Aligned::new(ValueTag::Float))
+        }
+    }
+
+    #[inline]
+    pub fn pop_float(&mut self) -> Option<f64> {
+        if self.peak_tag()? == ValueTag::Float {
+            self.stack.len -= std::mem::size_of::<Aligned<ValueTag>>();
+            Some(unsafe { self.stack.pop::<f64>()?.to_inner() })
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    pub fn push_atom(&mut self, id: u32) -> Result<(), StackOverflow> {
+        unsafe { self.stack.push(&Aligned::new(ValueTag::Atom(id))) }
+    }
+
+    #[inline]
+    pub fn pop_atom(&mut self) -> Option<u32> {
+        if let ValueTag::Atom(id) = self.peak_tag()? {
+            self.stack.len -= std::mem::size_of::<Aligned<ValueTag>>();
+            Some(id)
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    pub fn push_string(&mut self, s: Arc<String>) -> Result<(), StackOverflow> {
+        unsafe {
+            let aligned_value = Aligned::new(s);
+            self.stack.push(&aligned_value)?;
+            std::mem::forget(aligned_value);
+            self.stack.push(&Aligned::new(ValueTag::String))
+        }
+    }
+
+    #[inline]
+    pub fn pop_string(&mut self) -> Option<Arc<String>> {
+        if self.peak_tag()? == ValueTag::String {
+            self.stack.len -= std::mem::size_of::<Aligned<ValueTag>>();
+            Some(unsafe { self.stack.pop::<Arc<String>>()?.to_inner() })
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    pub fn push_func(&mut self, f: Arc<NativeFunction>) -> Result<(), StackOverflow> {
+        unsafe {
+            let aligned_value = Aligned::new(f);
+            self.stack.push(&aligned_value)?;
+            std::mem::forget(aligned_value);
+            self.stack.push(&Aligned::new(ValueTag::Func))
+        }
+    }
+
+    #[inline]
+    pub fn pop_func(&mut self) -> Option<Arc<NativeFunction>> {
+        if self.peak_tag()? == ValueTag::Func {
+            self.stack.len -= std::mem::size_of::<Aligned<ValueTag>>();
+            Some(unsafe { self.stack.pop::<Arc<NativeFunction>>()?.to_inner() })
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    pub fn push_weak_func(&mut self, wf: Weak<NativeFunction>) -> Result<(), StackOverflow> {
+        unsafe {
+            let aligned_value = Aligned::new(wf);
+            self.stack.push(&aligned_value)?;
+            std::mem::forget(aligned_value);
+            self.stack.push(&Aligned::new(ValueTag::WeakFunc))
+        }
+    }
+
+    #[inline]
+    pub fn pop_weak_func(&mut self) -> Option<Weak<NativeFunction>> {
+        if self.peak_tag()? == ValueTag::WeakFunc {
+            self.stack.len -= std::mem::size_of::<Aligned<ValueTag>>();
+            Some(unsafe { self.stack.pop::<Weak<NativeFunction>>()?.to_inner() })
+        } else {
+            None
+        }
+    }
 }
+
+
 
 impl<const STACK_CAPACITY: usize> Drop for ValueStack<STACK_CAPACITY> {
     fn drop(&mut self) {
@@ -405,4 +565,37 @@ fn test_stack_operations() {
     std::mem::drop(value_stack);
 
     assert!(weak_value.upgrade().is_none(), "Weak pointer should not be able to upgrade after stack is dropped");
+}
+
+
+#[test]
+fn test_typed_stack_operations() {
+    const STACK_CAPACITY: usize = 1024;
+    let mut stack = ValueStack::<STACK_CAPACITY>::new();
+
+    // Push all values
+    stack.push_nil().unwrap();
+    stack.push_bool(true).unwrap();
+    stack.push_int(42).unwrap();
+    stack.push_float(3.14).unwrap();
+    stack.push_atom(123).unwrap();
+    let s = Arc::new(String::from("Hello"));
+    stack.push_string(s.clone()).unwrap();
+    let f = Arc::new(NativeFunction{});
+    stack.push_func(f.clone()).unwrap();
+    let wf = Arc::downgrade(&f);
+    stack.push_weak_func(wf.clone()).unwrap();
+
+    // Pop all values in reverse order
+    assert!(matches!(stack.pop_weak_func(), Some(_))); // WeakFunc
+    assert!(matches!(stack.pop_func(), Some(func) if Arc::ptr_eq(&func, &f))); // Func
+    assert_eq!(stack.pop_string(), Some(s)); // String
+    assert_eq!(stack.pop_atom(), Some(123)); // Atom
+    assert_eq!(stack.pop_float(), Some(3.14)); // Float
+    assert_eq!(stack.pop_int(), Some(42)); // Int
+    assert_eq!(stack.pop_bool(), Some(true)); // Bool
+    assert_eq!(stack.pop_nil(), Some(())); // Nil
+
+    // Stack should now be empty
+    assert!(stack.pop_value().is_none());
 }
