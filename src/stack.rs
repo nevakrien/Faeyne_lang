@@ -1,11 +1,11 @@
 use crate::value::Value;
-use core::slice;
 use core::ptr;
 use std::mem::{MaybeUninit, size_of};
 
 // Aligned to 8 bytes for any generic type.
 #[derive(Debug, PartialEq)]
-#[repr(align(8))]
+#[repr(align(8))] //both options work we can really do as we wish
+// #[repr(transparent)]
 pub struct Aligned<T> {
     pub inner: T,
 }
@@ -14,13 +14,6 @@ impl<T: Sized> Aligned<T> {
     pub fn new(value: T) -> Self {
         assert!(std::mem::align_of::<T>() <= 8, "T must have alignment of 8 bytes or lower");
         Aligned { inner: value }
-    }
-    // Method that returns an 8-byte slice of the inner value, padded with zeros if necessary.
-    pub fn as_u8_slice(&self) -> &[MaybeUninit<u8>] {
-        unsafe {
-            let ptr = self as *const _ as *const MaybeUninit<u8>;
-            slice::from_raw_parts(ptr, size_of::<Self>())
-        }
     }
 
     pub fn to_inner(self) -> T {
@@ -36,6 +29,13 @@ impl<T: Sized> Aligned<T> {
     }
 }
 
+impl<T:Clone> Clone for Aligned<T> {
+
+    fn clone(&self) -> Self { Aligned::new(self.inner.clone()) }
+} 
+
+impl<T:Copy> Copy for Aligned<T> {}
+ 
 // Stack that stores bytes using a statically allocated aligned buffer.
 pub struct Stack<const STACK_CAPACITY:usize =1_000_000> {
     len: usize,
@@ -65,12 +65,13 @@ impl<const STACK_CAPACITY:usize> Stack<STACK_CAPACITY> {
         let end = self.len + size_of::<Aligned<T>>();
 
         if end <= STACK_CAPACITY {
-            let bytes = aligned.as_u8_slice();
+            // let bytes = aligned.as_u8_slice();
+            let ptr = aligned as *const _ as *const MaybeUninit<u8>;
 
             // Write the bytes into the stack
             unsafe {
                 let data_ptr = self.data.as_mut_ptr().add(self.len);
-                ptr::copy_nonoverlapping(bytes.as_ptr(), data_ptr, bytes.len());
+                ptr::copy_nonoverlapping(ptr, data_ptr, size_of::<Aligned<T>>());
             }
 
             self.len = end;
@@ -184,7 +185,8 @@ pub struct ValueStack<const STACK_CAPACITY:usize =1_000_000>{
 }
 
 #[repr(u32)]
-enum ValueTag{
+#[derive(Debug, PartialEq,Clone,Copy)]
+pub enum ValueTag{
 
     Terminator=16,
     BoolFalse=0,
@@ -283,6 +285,10 @@ impl<const STACK_CAPACITY:usize> ValueStack<STACK_CAPACITY> {
                 _ => None,
             }
         }
+    }
+
+    pub fn peak_tag(&mut self) -> Option<ValueTag>{
+        unsafe{ self.stack.peak()?.to_inner()}
     }
 
     #[inline]
