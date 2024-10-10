@@ -11,11 +11,10 @@ pub struct Aligned<T> {
 }
 
 impl<T: Sized> Aligned<T> {
-    // Constructor ensures that T is less than or equal to 8 bytes in size.
     pub fn new(value: T) -> Self {
+        assert!(std::mem::align_of::<T>() <= 8, "T must have alignment of 8 bytes or lower");
         Aligned { inner: value }
     }
-
     // Method that returns an 8-byte slice of the inner value, padded with zeros if necessary.
     pub fn as_u8_slice(&self) -> &[MaybeUninit<u8>] {
         unsafe {
@@ -146,6 +145,19 @@ fn test_stack() {
         println!("Moved out inner value: {}", inner_value);
     }
 
+    // #[repr(align(16))]
+    // #[derive(Debug,PartialEq,Clone)]
+    // struct Dumb{
+    //     inner: u8
+    // }
+
+    // unsafe{
+    //     let dumb = Dumb{inner:2};
+    //     stack.push(&Aligned::new(dumb.clone())).unwrap();
+    //     let d = stack.pop().unwrap().to_inner();
+    //     assert_eq!(dumb,d);
+    // }
+
     // Create an aligned value with tuple (usize, usize)
     let aligned_value2 = Aligned::new((3usize, 2usize));
 
@@ -172,16 +184,17 @@ pub struct ValueStack{
 
 #[repr(u32)]
 enum ValueTag{
-    Terminator=0,
-    Nil=1,
-    BoolTrue=2,
-    BoolFalse=3,
-    Int,
-    Float,
-    String,
-    Atom(u32),
-    Func,
-    WeakFunc,
+
+    Terminator=16,
+    BoolFalse=0,
+    BoolTrue=1,
+    Nil=2,
+    Int=3,
+    Float=4,
+    Atom(u32)=5,
+    String=6,
+    Func=7,
+    WeakFunc=8,
     
 }
 
@@ -230,26 +243,30 @@ impl ValueStack {
                     let aligned_value = Aligned::new(s);
                     self.stack.push(&aligned_value)?;
 
-                    std::mem::forget(aligned_value); //stack has sucessfully took ownership on the value
+                    std::mem::forget(aligned_value); //stack has sucessfully took ownership of the value
                     self.stack.push(&Aligned::new(ValueTag::String))
                 }
                 Value::Func(f) => {
                     let aligned_value = Aligned::new(f);
                     self.stack.push(&aligned_value)?;
-                    std::mem::forget(aligned_value); //stack has sucessfully took ownership on the value
+                    std::mem::forget(aligned_value); //stack has sucessfully took ownership of the value
                     self.stack.push(&Aligned::new(ValueTag::Func))
                 }
                 Value::WeakFunc(wf) => {
                     let aligned_value = Aligned::new(wf);
                     self.stack.push(&aligned_value)?;
-                    std::mem::forget(aligned_value); //stack has sucessfully took ownership on the value
+                    std::mem::forget(aligned_value); //stack has sucessfully took ownership of the value
                     self.stack.push(&Aligned::new(ValueTag::WeakFunc))
                 }
             }
         }
     }
 
-    #[inline(always)] //what we are inlining here is PURELY checking the tag which when used correctly can remove the type check later
+    //what we are inlining here is PURELY checking the tag which when used correctly can remove the type check later
+    //its also worth noting that 99% of the time we are poping and matching on the poped value
+    //in those cases we SHOULD see an optimization where we never create Value.
+    //for things such as bool this is a huge win
+    #[inline(always)] 
     pub fn pop_value(&mut self) -> Option<Value> {
         unsafe {
             match self.stack.pop()?.to_inner() {
@@ -307,7 +324,7 @@ fn test_weak_pointer_drop() {
 fn test_stack_operations() {
     use crate::value::NativeFunction;
 
-    use std::sync::{Arc, Weak};
+    use std::sync::{Arc};
 
     let mut value_stack = ValueStack::new();
 

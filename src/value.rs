@@ -12,14 +12,14 @@ pub struct NativeFunction{
 #[derive(Clone,Debug)]
 #[repr(u32)] //optimized for 64bit architctures
 pub enum Value {
-    Nil=1,
-    Bool(bool)=3,
-    Int(i64),
-    Float(f64),
-    Atom(u32),
-    String(Arc<String>),
-    Func(Arc<NativeFunction>),
-    WeakFunc(Weak<NativeFunction>),
+    Nil=2,
+    Bool(bool)=0,
+    Int(i64)=3,
+    Float(f64)=4,
+    Atom(u32)=5,
+    String(Arc<String>)=6,
+    Func(Arc<NativeFunction>)=7,
+    WeakFunc(Weak<NativeFunction>)=8,
     
 }
 
