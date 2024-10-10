@@ -333,7 +333,7 @@ fn test_stack_operations() {
     value_stack.push_value(Value::Nil).unwrap();
     value_stack.push_value(Value::Bool(true)).unwrap();
     value_stack.push_value(Value::Int(123)).unwrap();
-    value_stack.push_value(Value::Float(3.14)).unwrap();
+    value_stack.push_value(Value::Float(6.9)).unwrap();
 
     // Pop a few values and verify them
     assert!(matches!(value_stack.pop_value(), Some(Value::Float(_))));
@@ -345,7 +345,7 @@ fn test_stack_operations() {
 
     // Push and pop a terminator
     value_stack.push_terminator().unwrap();
-    assert!(matches!(value_stack.pop_value(), None)); // Terminator should be Nil
+    assert!(value_stack.pop_value().is_none()); // Terminator should be Nil
 
     // Test with Weak pointer
     let arc_value = Arc::new(NativeFunction {}); 
@@ -362,10 +362,10 @@ fn test_stack_operations() {
     value_stack.push_value(Value::Nil).unwrap();
     value_stack.push_value(Value::Bool(true)).unwrap();
     value_stack.push_value(Value::Int(123)).unwrap();
-    value_stack.push_value(Value::Float(3.14)).unwrap();
+    value_stack.push_value(Value::Float(6.9)).unwrap();
 
     // Pop a few values and verify them
-    assert!(matches!(value_stack.pop_value(), Some(Value::Float(3.14))));
+    assert!(matches!(value_stack.pop_value(), Some(Value::Float(6.9))));
     assert!(matches!(value_stack.pop_value(), Some(Value::Int(123))));
 
     // Push a few more values
@@ -374,7 +374,7 @@ fn test_stack_operations() {
 
     // Push and pop a terminator
     value_stack.push_terminator().unwrap();
-    assert!(matches!(value_stack.pop_value(), None)); // Terminator should be Nil
+    assert!(value_stack.pop_value().is_none()); // Terminator should be Nil
 
     // Test with Weak pointer
     let arc_value = Arc::new(NativeFunction {});
