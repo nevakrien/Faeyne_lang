@@ -166,10 +166,24 @@ enum ValueTag{
 }
 
 
+impl Default for ValueStack {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ValueStack {
     #[inline]
     pub fn new() -> Self {
         ValueStack { stack: Stack::new() }
+    }
+
+    pub fn len(&self) -> usize {
+        self.stack.len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.stack.len==0
     }
 
     #[inline]
@@ -183,40 +197,39 @@ impl ValueStack {
                 }
                 Value::Int(i) => {
                     let aligned_value = Aligned::new(i);
-                    let result = self.stack.push(&aligned_value);
-                    std::mem::forget(aligned_value);
-                    result.and_then(|_| self.stack.push(&Aligned::new(ValueTag::Int)))
+                    self.stack.push(&aligned_value)?;
+                    self.stack.push(&Aligned::new(ValueTag::Int))
                 }
                 Value::Float(f) => {
                     let aligned_value = Aligned::new(f);
-                    let result = self.stack.push(&aligned_value);
-                    std::mem::forget(aligned_value);
-                    result.and_then(|_| self.stack.push(&Aligned::new(ValueTag::Float)))
+                    self.stack.push(&aligned_value)?;
+                    self.stack.push(&Aligned::new(ValueTag::Float))
                 }
                 Value::Atom(id) => self.stack.push(&Aligned::new(ValueTag::Atom(id))),
                 Value::String(s) => {
                     let aligned_value = Aligned::new(s);
-                    let result = self.stack.push(&aligned_value);
-                    std::mem::forget(aligned_value);
-                    result.and_then(|_| self.stack.push(&Aligned::new(ValueTag::String)))
+                    self.stack.push(&aligned_value)?;
+
+                    std::mem::forget(aligned_value); //stack has sucessfully took ownership on the value
+                    self.stack.push(&Aligned::new(ValueTag::String))
                 }
                 Value::Func(f) => {
                     let aligned_value = Aligned::new(f);
-                    let result = self.stack.push(&aligned_value);
-                    std::mem::forget(aligned_value);
-                    result.and_then(|_| self.stack.push(&Aligned::new(ValueTag::Func)))
+                    self.stack.push(&aligned_value)?;
+                    std::mem::forget(aligned_value); //stack has sucessfully took ownership on the value
+                    self.stack.push(&Aligned::new(ValueTag::Func))
                 }
                 Value::WeakFunc(wf) => {
                     let aligned_value = Aligned::new(wf);
-                    let result = self.stack.push(&aligned_value);
-                    std::mem::forget(aligned_value);
-                    result.and_then(|_| self.stack.push(&Aligned::new(ValueTag::WeakFunc)))
+                    self.stack.push(&aligned_value)?;
+                    std::mem::forget(aligned_value); //stack has sucessfully took ownership on the value
+                    self.stack.push(&Aligned::new(ValueTag::WeakFunc))
                 }
             }
         }
     }
 
-    #[inline]
+    #[inline(always)] //what we are inlining here is PURELY checking the tag which when used correctly can remove the type check later
     pub fn pop_value(&mut self) -> Option<Value> {
         unsafe {
             match self.stack.pop()?.to_inner() {
