@@ -105,7 +105,7 @@ impl<const STACK_CAPACITY:usize> Stack<STACK_CAPACITY> {
     ///
     /// The caller must ensure that the data being popped matches the expected type.
     #[inline]
-    pub unsafe fn peak<'a, T>(&'a self) -> Option<&'a Aligned<T>> {
+    pub unsafe fn peak<T>(&self) -> Option<&Aligned<T>> {
         if self.len >= size_of::<Aligned<T>>() {
             let start = self.len -size_of::<Aligned<T>>();
 
@@ -577,7 +577,7 @@ fn test_typed_stack_operations() {
     stack.push_nil().unwrap();
     stack.push_bool(true).unwrap();
     stack.push_int(42).unwrap();
-    stack.push_float(3.14).unwrap();
+    stack.push_float(6.9).unwrap();
     stack.push_atom(123).unwrap();
     let s = Arc::new(String::from("Hello"));
     stack.push_string(s.clone()).unwrap();
@@ -587,11 +587,11 @@ fn test_typed_stack_operations() {
     stack.push_weak_func(wf.clone()).unwrap();
 
     // Pop all values in reverse order
-    assert!(matches!(stack.pop_weak_func(), Some(_))); // WeakFunc
+    assert!(stack.pop_weak_func().is_some()); // WeakFunc
     assert!(matches!(stack.pop_func(), Some(func) if Arc::ptr_eq(&func, &f))); // Func
     assert_eq!(stack.pop_string(), Some(s)); // String
     assert_eq!(stack.pop_atom(), Some(123)); // Atom
-    assert_eq!(stack.pop_float(), Some(3.14)); // Float
+    assert_eq!(stack.pop_float(), Some(6.9)); // Float
     assert_eq!(stack.pop_int(), Some(42)); // Int
     assert_eq!(stack.pop_bool(), Some(true)); // Bool
     assert_eq!(stack.pop_nil(), Some(())); // Nil

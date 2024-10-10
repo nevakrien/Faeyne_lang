@@ -29,13 +29,13 @@ impl PartialEq for Value {
         match (self, other) {
             (Value::WeakFunc(weak_a), Value::WeakFunc(weak_b)) => weak_a.ptr_eq(weak_b),
             (Value::WeakFunc(weak), Value::Func(func)) | (Value::Func(func), Value::WeakFunc(weak)) => weak.ptr_eq(&Arc::downgrade(func)),
-            (Value::Func(a), Value::Func(b)) => Arc::ptr_eq(&a, &b),
+            (Value::Func(a), Value::Func(b)) => Arc::ptr_eq(a, b),
             (Value::Nil, Value::Nil) => true,
             (Value::Bool(a), Value::Bool(b)) => a == b,
             (Value::Int(a), Value::Int(b)) => a == b,
             (Value::Float(a), Value::Float(b)) => a == b,
             (Value::Atom(a), Value::Atom(b)) => a == b,
-            (Value::String(a), Value::String(b)) => Arc::ptr_eq(&a, &b) || *a == *b,
+            (Value::String(a), Value::String(b)) => Arc::ptr_eq(a, b) || *a == *b,
             _ => false,
         }
     }
