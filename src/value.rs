@@ -4,11 +4,12 @@
 use std::sync::Weak;
 use std::sync::Arc;
 
+#[derive(Clone,PartialEq,Debug)]
 pub struct NativeFunction{
     //holds raw code
 }
 
-#[derive(Clone)]
+#[derive(Clone,Debug)]
 #[repr(u32)] //optimized for 64bit architctures
 pub enum Value {
     Nil=1,

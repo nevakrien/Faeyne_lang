@@ -97,6 +97,22 @@ impl Stack {
             None
         }
     }
+
+    /// # Safety
+    ///
+    /// The caller must ensure that the data being popped matches the expected type.
+    #[inline]
+    pub unsafe fn peak<T>(&mut self) -> Option<&Aligned<T>> {
+        if self.len >= size_of::<Aligned<T>>() {
+            let start = self.len -size_of::<Aligned<T>>();
+
+            let ptr = self.data.as_ptr().add(start) as *const Aligned<T>;
+
+            Some(&*ptr)
+        } else {
+            None
+        }
+    }
 }
 
 #[test]
@@ -110,6 +126,10 @@ fn test_stack() {
     unsafe { stack.push(&aligned_value).unwrap(); }
 
     // Pop the value back (unsafe because we assume we know the type)
+
+    let ref_value = unsafe { stack.peak() };
+    assert_eq!(ref_value, Some(&aligned_value));
+    
     let value: Option<Aligned<i32>> = unsafe { stack.pop() };
 
     // Compare with the original i32 value inside Aligned.
@@ -267,6 +287,88 @@ fn test_weak_pointer_drop() {
     use crate::value::NativeFunction;
 
     use std::sync::{Arc};
+
+    let mut value_stack = ValueStack::new();
+    let arc_value = Arc::new(NativeFunction {});
+    let weak_value = Arc::downgrade(&arc_value);
+
+    
+    value_stack.push_value(Value::Func(arc_value)).unwrap();
+    
+
+    std::mem::drop(value_stack);
+
+    assert!(weak_value.upgrade().is_none(), "Weak pointer should not be able to upgrade after stack is dropped");
+}
+
+
+
+#[test]
+fn test_stack_operations() {
+    use crate::value::NativeFunction;
+
+    use std::sync::{Arc, Weak};
+
+    let mut value_stack = ValueStack::new();
+
+    // Push Nil, Bool, Int, and Float values
+    value_stack.push_value(Value::Nil).unwrap();
+    value_stack.push_value(Value::Bool(true)).unwrap();
+    value_stack.push_value(Value::Int(123)).unwrap();
+    value_stack.push_value(Value::Float(3.14)).unwrap();
+
+    // Pop a few values and verify them
+    assert!(matches!(value_stack.pop_value(), Some(Value::Float(_))));
+    assert!(matches!(value_stack.pop_value(), Some(Value::Int(_))));
+
+    // Push a few more values
+    value_stack.push_value(Value::Atom(42)).unwrap();
+    value_stack.push_value(Value::Bool(false)).unwrap();
+
+    // Push and pop a terminator
+    value_stack.push_terminator().unwrap();
+    assert!(matches!(value_stack.pop_value(), None)); // Terminator should be Nil
+
+    // Test with Weak pointer
+    let arc_value = Arc::new(NativeFunction {}); 
+    let weak_value= Arc::downgrade(&arc_value);
+
+    value_stack.push_value(Value::Func(arc_value)).unwrap();
+
+    drop(value_stack);
+
+    assert!(weak_value.upgrade().is_none(), "Weak pointer should not be able to upgrade after stack is dropped");
+    let mut value_stack = ValueStack::new();
+
+    // Push Nil, Bool, Int, and Float values
+    value_stack.push_value(Value::Nil).unwrap();
+    value_stack.push_value(Value::Bool(true)).unwrap();
+    value_stack.push_value(Value::Int(123)).unwrap();
+    value_stack.push_value(Value::Float(3.14)).unwrap();
+
+    // Pop a few values and verify them
+    assert!(matches!(value_stack.pop_value(), Some(Value::Float(3.14))));
+    assert!(matches!(value_stack.pop_value(), Some(Value::Int(123))));
+
+    // Push a few more values
+    value_stack.push_value(Value::Atom(42)).unwrap();
+    value_stack.push_value(Value::Bool(false)).unwrap();
+
+    // Push and pop a terminator
+    value_stack.push_terminator().unwrap();
+    assert!(matches!(value_stack.pop_value(), None)); // Terminator should be Nil
+
+    // Test with Weak pointer
+    let arc_value = Arc::new(NativeFunction {});
+    let weak_value = Arc::downgrade(&arc_value);
+    
+    value_stack.push_value(Value::Func(arc_value)).unwrap();
+    
+
+    drop(value_stack);
+
+    assert!(weak_value.upgrade().is_none(), "Weak pointer should not be able to upgrade after stack is dropped");
+
 
     let mut value_stack = ValueStack::new();
     let arc_value = Arc::new(NativeFunction {});
