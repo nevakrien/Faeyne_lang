@@ -37,14 +37,14 @@ impl<T: Sized> Aligned<T> {
 }
 
 // Stack that stores bytes using a statically allocated aligned buffer.
-pub struct Stack {
+pub struct Stack<const STACK_CAPACITY:usize =1_000_000> {
     len: usize,
     data: [MaybeUninit<u8>; STACK_CAPACITY], // Static array for aligned memory
 }
 
 #[derive(Debug)]
 pub struct StackOverflow;
-const STACK_CAPACITY: usize = 1_000_000; // Fixed stack capacity
+// const STACK_CAPACITY: usize = 1_000_000; // Fixed stack capacity
 
 impl Default for Stack {
     fn default() -> Self {
@@ -52,7 +52,7 @@ impl Default for Stack {
     }
 }
 
-impl Stack {
+impl<const STACK_CAPACITY:usize> Stack<STACK_CAPACITY> {
     pub fn new() -> Self {
         Self { len: 0, data: [MaybeUninit::uninit(); STACK_CAPACITY] }
     }
@@ -116,7 +116,7 @@ impl Stack {
 
 #[test]
 fn test_stack() {
-    let mut stack = Stack::new();
+    let mut stack: Stack<1_000_000> = Stack::new();
 
     // Create an aligned value with i32 (which is 4 bytes)
     let aligned_value = Aligned::new(42i32);
@@ -151,6 +151,7 @@ fn test_stack() {
     //     inner: u8
     // }
 
+    //should either panic or be safe
     // unsafe{
     //     let dumb = Dumb{inner:2};
     //     stack.push(&Aligned::new(dumb.clone())).unwrap();
@@ -178,8 +179,8 @@ fn test_stack() {
 }
 
 #[repr(transparent)]
-pub struct ValueStack{
-    stack:Stack
+pub struct ValueStack<const STACK_CAPACITY:usize =1_000_000>{
+    stack:Stack<STACK_CAPACITY>
 }
 
 #[repr(u32)]
@@ -205,7 +206,7 @@ impl Default for ValueStack {
     }
 }
 
-impl ValueStack {
+impl<const STACK_CAPACITY:usize> ValueStack<STACK_CAPACITY> {
     #[inline]
     pub fn new() -> Self {
         ValueStack { stack: Stack::new() }
@@ -290,7 +291,7 @@ impl ValueStack {
     }
 }
 
-impl Drop for ValueStack {
+impl<const STACK_CAPACITY: usize> Drop for ValueStack<STACK_CAPACITY> {
     fn drop(&mut self) {
         //calling destrutors
         while self.stack.len != 0 {
@@ -305,7 +306,7 @@ fn test_weak_pointer_drop() {
 
     use std::sync::{Arc};
 
-    let mut value_stack = ValueStack::new();
+    let mut value_stack = ValueStack::<1_000_000>::new();
     let arc_value = Arc::new(NativeFunction {});
     let weak_value = Arc::downgrade(&arc_value);
 
@@ -326,7 +327,7 @@ fn test_stack_operations() {
 
     use std::sync::{Arc};
 
-    let mut value_stack = ValueStack::new();
+    let mut value_stack = ValueStack::<1_000_000>::new();
 
     // Push Nil, Bool, Int, and Float values
     value_stack.push_value(Value::Nil).unwrap();
@@ -355,7 +356,7 @@ fn test_stack_operations() {
     drop(value_stack);
 
     assert!(weak_value.upgrade().is_none(), "Weak pointer should not be able to upgrade after stack is dropped");
-    let mut value_stack = ValueStack::new();
+    let mut value_stack = ValueStack::<1_000_000>::new();
 
     // Push Nil, Bool, Int, and Float values
     value_stack.push_value(Value::Nil).unwrap();
@@ -387,7 +388,7 @@ fn test_stack_operations() {
     assert!(weak_value.upgrade().is_none(), "Weak pointer should not be able to upgrade after stack is dropped");
 
 
-    let mut value_stack = ValueStack::new();
+    let mut value_stack = ValueStack::<1_000_000>::new();
     let arc_value = Arc::new(NativeFunction {});
     let weak_value = Arc::downgrade(&arc_value);
 

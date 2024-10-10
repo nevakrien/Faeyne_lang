@@ -12,8 +12,9 @@ pub struct NativeFunction{
 #[derive(Clone,Debug)]
 #[repr(u32)] //optimized for 64bit architctures
 pub enum Value {
+    //these indecies are made to match with the ValueTag
     Nil=2,
-    Bool(bool)=0,
+    Bool(bool)=0,//bool is 0/1 to make loading a bool type easier on registers.
     Int(i64)=3,
     Float(f64)=4,
     Atom(u32)=5,

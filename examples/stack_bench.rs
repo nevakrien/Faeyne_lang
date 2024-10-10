@@ -5,7 +5,7 @@ use faeyne_lang::value::Value;
 use std::time::Instant;
 
 fn main() {
-    let mut stack = Box::new(ValueStack::new());
+    let mut stack = Box::new(ValueStack::<1_000_000>::new());
 
     let start = Instant::now();
 
@@ -42,8 +42,6 @@ fn main() {
             stack.pop_value().unwrap();
         }
 
-        std::mem::drop(stack);
-        stack = Box::new(ValueStack::new());
     }
 
      // Stop the timer and print the elapsed time
