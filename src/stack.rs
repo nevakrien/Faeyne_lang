@@ -35,16 +35,16 @@ impl<T:Clone> Clone for Aligned<T> {
 } 
 
 impl<T:Copy> Copy for Aligned<T> {}
- 
+
 // Stack that stores bytes using a statically allocated aligned buffer.
-pub struct Stack<const STACK_CAPACITY:usize =1_000_000> {
+struct Stack<const STACK_CAPACITY:usize =1_000> {
     len: usize,
     data: [MaybeUninit<u8>; STACK_CAPACITY], // Static array for aligned memory
 }
 
 #[derive(Debug)]
 pub struct StackOverflow;
-// const STACK_CAPACITY: usize = 1_000_000; // Fixed stack capacity
+// const STACK_CAPACITY: usize = 1_000; // Fixed stack capacity
 
 impl Default for Stack {
     fn default() -> Self {
@@ -117,7 +117,7 @@ impl<const STACK_CAPACITY:usize> Stack<STACK_CAPACITY> {
 
 #[test]
 fn test_stack() {
-    let mut stack: Stack<1_000_000> = Stack::new();
+    let mut stack: Stack<1_000> = Stack::new();
 
     // Create an aligned value with i32 (which is 4 bytes)
     let aligned_value = Aligned::new(42i32);
@@ -180,7 +180,7 @@ fn test_stack() {
 }
 
 #[repr(transparent)]
-pub struct ValueStack<const STACK_CAPACITY:usize =1_000_000>{
+pub struct ValueStack<const STACK_CAPACITY:usize =1_000>{
     stack:Stack<STACK_CAPACITY>
 }
 
@@ -312,7 +312,7 @@ fn test_weak_pointer_drop() {
 
     use std::sync::{Arc};
 
-    let mut value_stack = ValueStack::<1_000_000>::new();
+    let mut value_stack = ValueStack::<100>::new();
     let arc_value = Arc::new(NativeFunction {});
     let weak_value = Arc::downgrade(&arc_value);
 
@@ -333,7 +333,7 @@ fn test_stack_operations() {
 
     use std::sync::{Arc};
 
-    let mut value_stack = ValueStack::<1_000_000>::new();
+    let mut value_stack = Box::new(ValueStack::<1_000>::new());
 
     // Push Nil, Bool, Int, and Float values
     value_stack.push_value(Value::Nil).unwrap();
@@ -362,7 +362,7 @@ fn test_stack_operations() {
     drop(value_stack);
 
     assert!(weak_value.upgrade().is_none(), "Weak pointer should not be able to upgrade after stack is dropped");
-    let mut value_stack = ValueStack::<1_000_000>::new();
+    let mut value_stack = Box::new(ValueStack::<1_000>::new());
 
     // Push Nil, Bool, Int, and Float values
     value_stack.push_value(Value::Nil).unwrap();
@@ -394,7 +394,7 @@ fn test_stack_operations() {
     assert!(weak_value.upgrade().is_none(), "Weak pointer should not be able to upgrade after stack is dropped");
 
 
-    let mut value_stack = ValueStack::<1_000_000>::new();
+    let mut value_stack = Box::new(ValueStack::<1_000>::new());
     let arc_value = Arc::new(NativeFunction {});
     let weak_value = Arc::downgrade(&arc_value);
 

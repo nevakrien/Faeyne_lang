@@ -1,38 +1,40 @@
-// use crate::value::Value;
-// use crate::value::{ValuePushStack,ValuePopStack};
+use crate::value::Value;
+use crate::stack::{ValueStack};
 
 
-// use crate::vm::Context;
-// use crate::reporting::{ErrList,Error};
+use crate::vm::Context;
+use crate::reporting::{ErrList,Error};
 
-// #[derive(Debug,PartialEq,Clone,Copy)]
-// #[repr(u32)]
-// pub enum BinOp {
-//     Add,
-//     Sub,
-//     Mul,
-//     Div,
-//     IntDiv,
-//     Modulo,
-//     Pow,
+#[derive(Debug,PartialEq,Clone,Copy)]
+#[repr(u32)]
+pub enum BinOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    IntDiv,
+    Modulo,
+    Pow,
 
-//     Equal,
-//     NotEqual,
-//     Smaller,
-//     Bigger,
-//     SmallerEq,
-//     BiggerEq,
+    Equal,
+    NotEqual,
+    Smaller,
+    Bigger,
+    SmallerEq,
+    BiggerEq,
 
-//     And,
-//     Or,
-//     Xor,
+    And,
+    Or,
+    Xor,
 
-//     DoubleAnd,
-//     DoubleOr,
-//     DoubleXor,
-// }
+    DoubleAnd,
+    DoubleOr,
+    DoubleXor,
+}
 
-
+pub fn handle_bin(context:&mut Context,op:BinOp) -> Result<(),ErrList>{
+    todo!()
+}
 // pub fn handle_bin(context:&mut Context,op:BinOp) -> Result<(),ErrList>{
 //     match op {
 //         BinOp::Equal => {
@@ -51,10 +53,10 @@
 // }
 
 // pub fn is_equal(context:&mut Context) -> Result<bool,ErrList>{
-//     let a = context.stack.pop_value().map_err(|_|Error::Bug("over poping").to_list())? ;
-//     let b = context.stack.pop_value().map_err(|_|Error::Bug("over poping").to_list())? ;
+//     let a = context.stack.pop_value().ok_or_else(||Error::Bug("over poping").to_list())? ;
+//     let b = context.stack.pop_value().ok_or_else(||Error::Bug("over poping").to_list())? ;
 //     match (a,b){
-//         (IRValue::String(a),IRValue::String(b)) => {
+//         (Value::String(a),Value::String(b)) => {
 //             if a==b {
 //                 return Ok(true);
 //             }
