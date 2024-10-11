@@ -1,3 +1,7 @@
+
+use smallvec::SmallVec;
+
+use std::sync::Arc;
 use crate::reporting::RecursionError;
 use crate::stack::StackOverflow;
 use crate::value::Value;
@@ -15,6 +19,49 @@ use arrayvec::ArrayVec;
 
 pub type Code<'code> = &'code[Operation];
 
+// #[derive(Default)]
+// #[repr(C)]
+pub struct FuncData {
+    pub vars: VarTable,
+    pub code: SmallVec<[Operation;16]>,
+}
+
+
+
+
+impl FuncData {
+    pub fn new(vars: VarTable, operations: &[Operation]) -> FuncData {
+        FuncData {
+            vars,
+            code: SmallVec::from_slice(operations),
+        }
+    }
+
+    pub fn new_box(vars: VarTable, operations: &[Operation]) -> Box<FuncData> {
+        Box::new(FuncData {
+            vars,
+            code: SmallVec::from_slice(operations),
+        })
+    }
+
+    pub fn new_arc(vars: VarTable, operations: &[Operation]) -> Arc<FuncData> {
+        Arc::new(FuncData {
+            vars,
+            code: SmallVec::from_slice(operations),
+        })
+    }
+}
+
+
+
+
+#[test]
+fn func_data() {
+    let f = FuncData::new_arc(VarTable::default(),&[NoOp]);
+    assert_eq!(f.code[0],NoOp);
+    assert_eq!(f.vars,VarTable::default());
+}
+
 #[derive(Clone)]
 pub enum Function<'code> {
     Native(Code<'code>),
@@ -24,6 +71,7 @@ pub enum Function<'code> {
 pub struct RetData<'code> {
     ret:usize,
     code:Code<'code>,
+    closure_vars:Arc<VarTable>,
     vars:Box<VarTable>,
 }
 
@@ -66,6 +114,8 @@ pub struct Context<'ctx,'code> {
     local_call_stack: &'ctx mut ArrayVec<RetData<'code>,MAX_LOCAL_SCOPES>,
     vars:Box<VarTable>,
     global_vars:&'ctx VarTable,
+    closure_vars:Arc<VarTable>,
+
     pub inputs: FuncInputs<'ctx,'code>,
 
 
@@ -73,18 +123,13 @@ pub struct Context<'ctx,'code> {
 }
 
 impl<'ctx,'code> Context<'ctx,'code> {
-    /// # Safety
-    ///
-    /// code must never tell us to pop the wrong type from stack.
-    /// as long as code allways pops any non value type on stack that it pushed
-    /// the code is safe
-    pub unsafe fn new(
+    pub fn new(
         
         table: &'ctx StringTable<'code>,
         code: Code<'code>,vars:Box<VarTable>,
         
         stack: &'ctx mut ValueStack,
-        global_vars: &'ctx VarTable,
+        global_vars: &'ctx VarTable, closure_vars:Arc<VarTable>,
         call_stack:  &'ctx mut ArrayVec<RetData<'code>,MAX_RECURSION>,
         local_call_stack: &'ctx mut ArrayVec<RetData<'code>,MAX_LOCAL_SCOPES>,
         
@@ -92,7 +137,7 @@ impl<'ctx,'code> Context<'ctx,'code> {
         let inputs = FuncInputs{stack,table};
         Context{
             pos:0,vars,
-            global_vars,
+            global_vars,closure_vars,
             inputs,code,call_stack,local_call_stack,
         }
     }
@@ -147,6 +192,8 @@ impl<'ctx,'code> Context<'ctx,'code> {
 
         self.local_call_stack.clear();
         self.vars=ret_data.vars;
+        self.closure_vars=ret_data.closure_vars;
+
         Ok(())
     }
 
@@ -166,17 +213,23 @@ impl<'ctx,'code> Context<'ctx,'code> {
 
         self.inputs.push_value(value).map_err(|_|{Error::StackOverflow.to_list()})?;
         self.vars=ret_data.vars;
+        self.closure_vars=ret_data.closure_vars;
 
         Ok(())
     }
 
     fn call(&mut self) -> Result<(),ErrList> {
         let mut new_vars = Box::new(VarTable::default());
+        let mut new_closure_vars = Arc::new(VarTable::default()); //would need to be modified
+
         std::mem::swap(&mut self.vars,&mut new_vars);
+        std::mem::swap(&mut self.closure_vars,&mut new_closure_vars);
+
         let ret = RetData{
             code:self.code,
             ret:self.pos,
             vars:new_vars,
+            closure_vars:new_closure_vars,
         };
 
         self.call_stack.try_push(ret)
@@ -231,6 +284,7 @@ pub enum Operation {
 
     Match,//pops a value to match aginst then returns the result (not quite sure about the detais)
     CaptureClosure,//pops the data off the stack and creates a new function returning it as an IRValue to the stack
+    NoOp,
 }
 
 use Operation::*;
