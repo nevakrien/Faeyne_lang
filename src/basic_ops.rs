@@ -1,7 +1,7 @@
 // use crate::stack::{ValueStack};
 
 
-use crate::vm::Context;
+use crate::vm::FuncInputs;
 use crate::reporting::{ErrList,Error};
 
 #[derive(Debug,PartialEq,Clone,Copy)]
@@ -32,26 +32,26 @@ pub enum BinOp {
 }
 
 
-pub fn handle_bin(context:&mut Context,op:BinOp) -> Result<(),ErrList>{
+pub fn handle_bin(inputs:&mut FuncInputs,op:BinOp) -> Result<(),ErrList>{
     match op {
         BinOp::Equal => {
-            let value = is_equal(context)?;
-            context.stack.push_bool(value).map_err(|_|{Error::StackOverflow.to_list()})?;
+            let value = is_equal(inputs)?;
+            inputs.stack.push_bool(value).map_err(|_|{Error::StackOverflow.to_list()})?;
             Ok(())
         },
 
         BinOp::NotEqual => {
-            let value = !is_equal(context)?;
-            context.stack.push_bool(value).map_err(|_|{Error::StackOverflow.to_list()})?;
+            let value = !is_equal(inputs)?;
+            inputs.stack.push_bool(value).map_err(|_|{Error::StackOverflow.to_list()})?;
             Ok(())
         },
         _ => todo!()
     }
 }
 
-pub fn is_equal(context: &mut Context) -> Result<bool, ErrList> {
-    let a = context.stack.pop_value().ok_or_else(|| Error::Bug("over popping").to_list())?;
-    let b = context.stack.pop_value().ok_or_else(|| Error::Bug("over popping").to_list())?;
+pub fn is_equal(inputs: &mut FuncInputs) -> Result<bool, ErrList> {
+    let a = inputs.stack.pop_value().ok_or_else(|| Error::Bug("over popping").to_list())?;
+    let b = inputs.stack.pop_value().ok_or_else(|| Error::Bug("over popping").to_list())?;
     Ok(a==b)
 }
 

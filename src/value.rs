@@ -66,7 +66,12 @@ fn test_value_partial_eq() {
 }
 
 
+impl Default for VarTable{
 
+    fn default() -> Self { VarTable{data:Vec::new(),names:Vec::new()} }
+}
+
+#[derive(Clone,Debug,PartialEq)]
 pub struct VarTable {
     data: Vec<Option<Value>>,
     pub names: Vec<u32>,

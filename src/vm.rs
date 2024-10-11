@@ -1,3 +1,6 @@
+use crate::reporting::RecursionError;
+use crate::stack::StackOverflow;
+use crate::value::Value;
 use crate::value::VarTable;
 
 use crate::basic_ops::handle_bin;
@@ -21,7 +24,34 @@ pub enum Function<'code> {
 pub struct RetData<'code> {
     ret:usize,
     code:Code<'code>,
-    // scope:Scope<'ctx>
+    vars:Box<VarTable>,
+}
+
+pub struct FuncInputs<'ctx,'code>{
+    pub stack: &'ctx mut ValueStack,    
+    pub table: &'ctx StringTable<'code>,//for errors only
+}
+
+impl FuncInputs<'_, '_>{
+    #[inline(always)]
+    pub fn pop_value(&mut self) -> Option<Value> {
+        self.stack.pop_value()
+    }
+
+    #[inline(always)]
+    pub fn push_value(&mut self,value : Value) -> Result<(),StackOverflow> {
+        self.stack.push_value(value)
+    }
+
+    #[inline(always)]
+    pub fn len(&self) -> usize {
+        self.stack.len()
+    }
+
+    #[inline(always)]
+    pub fn is_empty(&self) -> bool {
+        self.stack.is_empty()
+    }
 }
 
 pub const MAX_LOCAL_SCOPES: usize = 1000;
@@ -34,13 +64,12 @@ pub struct Context<'ctx,'code> {
     pub code: Code<'code>,//we need a varible length stack for these...
     call_stack:  &'ctx mut ArrayVec<RetData<'code>,MAX_RECURSION>,
     local_call_stack: &'ctx mut ArrayVec<RetData<'code>,MAX_LOCAL_SCOPES>,
-    vars:&'ctx mut VarTable,
+    vars:Box<VarTable>,
+    global_vars:&'ctx VarTable,
+    pub inputs: FuncInputs<'ctx,'code>,
 
-    pub stack: &'ctx mut ValueStack,
+
     
-    //pub constants: &'code[IRValue],
-    
-    pub table: &'ctx StringTable<'code>,//for errors only
 }
 
 impl<'ctx,'code> Context<'ctx,'code> {
@@ -52,22 +81,25 @@ impl<'ctx,'code> Context<'ctx,'code> {
     pub unsafe fn new(
         
         table: &'ctx StringTable<'code>,
-        code: Code<'code>,//constants: &'code[IRValue],
+        code: Code<'code>,vars:Box<VarTable>,
         
-        stack: &'ctx mut ValueStack,vars: &'ctx mut VarTable,
+        stack: &'ctx mut ValueStack,
+        global_vars: &'ctx VarTable,
         call_stack:  &'ctx mut ArrayVec<RetData<'code>,MAX_RECURSION>,
         local_call_stack: &'ctx mut ArrayVec<RetData<'code>,MAX_LOCAL_SCOPES>,
         
     ) -> Self{
-        
+        let inputs = FuncInputs{stack,table};
         Context{
-            pos:0,table,code,stack,call_stack,local_call_stack,vars
+            pos:0,vars,
+            global_vars,
+            inputs,code,call_stack,local_call_stack,
         }
     }
 
 
     fn pop_to(&mut self,id:u32) -> Result<(),ErrList>{
-        match self.stack.pop_value(){
+        match self.inputs.pop_value(){
             Some(x) => self.vars.set(id as usize,x)
                 .map_err(|_| Error::Bug("tried seting a non existent id").to_list()),
             
@@ -78,80 +110,93 @@ impl<'ctx,'code> Context<'ctx,'code> {
     fn push_from(&mut self,id:u32) -> Result<(),ErrList>{
         let value = self.vars.get(id as usize)
             .ok_or_else(|| Error::Bug("tried seting a non existent id").to_list())?;
-        self.stack.push_value(value).map_err(|_|{Error::StackOverflow.to_list()})?;
+        self.inputs.push_value(value).map_err(|_|{Error::StackOverflow.to_list()})?;
         Ok(())
     }
 
-    fn push_constant(&mut self) -> Result<(),ErrList>{
-        todo!()
-        // let res = unsafe{self.code.pop()};
-        // let val = res.ok_or_else(|| Error::Bug("over pop").to_list())?;
-        // self.stack.push_value(&val.to_inner()).map_err(|_|{Error::StackOverflow.to_list()})
+    fn push_const(&mut self,id:u32) -> Result<(),ErrList>{
+        let value = self.global_vars.get(id as usize)
+            .ok_or_else(|| Error::Bug("tried seting a non existent id").to_list())?;
+        self.inputs.push_value(value).map_err(|_|{Error::StackOverflow.to_list()})?;
+        Ok(())
     }
 
     pub fn curent_var_names(&self) -> Vec<&'code str> {
         self.vars.names.iter()
-        .map(|id| self.table.get_raw_str(*id))
+        .map(|id| self.inputs.table.get_raw_str(*id))
         .collect()
     } 
 
     fn big_ret(&mut self) -> Result<(),ErrList> {
         let ret_data = self.call_stack.pop().ok_or_else(|| Error::Bug("over pop call stack").to_list())?;
-        let value = self.stack.pop_value().ok_or_else(|| Error::Bug("over pop value stack").to_list())?;
+        let value = self.inputs.pop_value().ok_or_else(|| Error::Bug("over pop value stack").to_list())?;
 
         self.code = ret_data.code;
+        self.pos = ret_data.ret;
+
         
         //unwind the stack
-        while self.stack.len()>ret_data.ret {
-            self.stack.pop_value();
+        while self.inputs.len()>ret_data.ret {
+            self.inputs.pop_value();
         }
-        assert_eq!(ret_data.ret,self.stack.len());
+        assert_eq!(ret_data.ret,self.inputs.len());
         
 
-        self.stack.push_value(value).map_err(|_|{Error::StackOverflow.to_list()})?;
+        self.inputs.push_value(value).map_err(|_|{Error::StackOverflow.to_list()})?;
         
 
-        // self.scope = ret_data.scope;
         self.local_call_stack.clear();
-
-        todo!()
+        self.vars=ret_data.vars;
+        Ok(())
     }
 
     fn small_ret(&mut self) -> Result<(),ErrList> {
         let ret_data = self.local_call_stack.pop().ok_or_else(|| Error::Bug("over pop call stack").to_list())?;
-        let value = self.stack.pop_value().ok_or_else(|| Error::Bug("over pop value stack").to_list())?;
+        let value = self.inputs.pop_value().ok_or_else(|| Error::Bug("over pop value stack").to_list())?;
 
         self.code = ret_data.code;
+        self.pos = ret_data.ret;
+
         //unwind the stack
-        while self.stack.len()>ret_data.ret {
-            self.stack.pop_value();
+        while self.inputs.len()>ret_data.ret {
+            self.inputs.pop_value();
         }
-        assert_eq!(ret_data.ret,self.stack.len());
+        assert_eq!(ret_data.ret,self.inputs.len());
         
 
-        self.stack.push_value(value).map_err(|_|{Error::StackOverflow.to_list()})?;
+        self.inputs.push_value(value).map_err(|_|{Error::StackOverflow.to_list()})?;
+        self.vars=ret_data.vars;
 
-        // self.scope = ret_data.scope;
+        Ok(())
+    }
+
+    fn call(&mut self) -> Result<(),ErrList> {
+        let mut new_vars = Box::new(VarTable::default());
+        std::mem::swap(&mut self.vars,&mut new_vars);
+        let ret = RetData{
+            code:self.code,
+            ret:self.pos,
+            vars:new_vars,
+        };
+
+        self.call_stack.try_push(ret)
+            .map_err(|_| Error::Recursion(
+                RecursionError{depth:MAX_RECURSION}
+            ).to_list())?;
 
         todo!()
     }
 
-    // fn push_scope(&mut self,code:StackView<'code>,ret:StackRet) -> Result<(),ErrList> {
-    //     let mut ret = RetData{scope:self.scope,code,ret};
-    //     self.scope = ret.scope.add_scope(&[]);
-    //     Ok(())
-    // }
-
-
     fn handle_op(&mut self,op:Operation) -> Result<(),ErrList> {
         match op {
-            BinOp(b) => handle_bin(self,b),
+            BinOp(b) => handle_bin(&mut self.inputs,b),
             PopTo(id) => self.pop_to(id),
             PushFrom(id) => self.push_from(id),
-            PushConst => self.push_constant(),
+            PushConst(id) => self.push_const(id),
 
             RetSmall => self.small_ret(),
             RetBig => self.big_ret(),
+            Call => self.call(),
 
             _ => todo!(),
         }
@@ -180,7 +225,7 @@ pub enum Operation {
 
     PopTo(u32),
     PushFrom(u32),
-    PushConst,
+    PushConst(u32),
 
     BinOp(BinOp),
 
@@ -189,3 +234,56 @@ pub enum Operation {
 }
 
 use Operation::*;
+
+
+#[test]
+fn test_is_equal() {
+    // Step 1: Setup the stack
+    let mut value_stack = ValueStack::new();
+    let string_table = StringTable::new(); // Assuming `StringTable` has a `new` method.
+
+    // Step 2: Create function inputs
+    let mut func_inputs = FuncInputs {
+        stack: &mut value_stack,
+        table: &string_table,
+    };
+
+    // Step 3: Push two atoms (represented by u32 ids) onto the stack
+    let atom_a = Value::Atom(1); // Assuming Atom takes a u32 id
+    let atom_b = Value::Atom(1); // Same id for equality test
+    func_inputs.push_value(atom_a).expect("Failed to push value onto stack");
+    func_inputs.push_value(atom_b).expect("Failed to push value onto stack");
+
+    // Step 4: Perform is_equal operation
+    handle_bin(&mut func_inputs, BinOp::Equal).expect("Failed to perform equality operation");
+
+    // Step 5: Pop the result and verify
+    let result = func_inputs.stack.pop_bool().expect("Failed to pop bool from stack");
+    assert!(result, "Equality check failed when it should have passed");
+
+    // Step 3: Push two atoms (represented by u32 ids) onto the stack
+    let atom_a = Value::Atom(2); // Assuming Atom takes a u32 id
+    let atom_b = Value::Atom(1); // Same id for equality test
+    func_inputs.push_value(atom_a).expect("Failed to push value onto stack");
+    func_inputs.push_value(atom_b).expect("Failed to push value onto stack");
+
+    // Step 4: Perform is_equal operation
+    handle_bin(&mut func_inputs, BinOp::Equal).expect("Failed to perform equality operation");
+
+    // Step 5: Pop the result and verify
+    let result = func_inputs.stack.pop_bool().expect("Failed to pop bool from stack");
+    assert!(!result, "Equality check passed when it should have Failed");
+
+    // Step 3: Push two atoms (represented by u32 ids) onto the stack
+    let atom_a = Value::Atom(2); // Assuming Atom takes a u32 id
+    let nil = Value::Nil; // Same id for equality test
+    func_inputs.push_value(atom_a).expect("Failed to push value onto stack");
+    func_inputs.push_value(nil).expect("Failed to push value onto stack");
+
+    // Step 4: Perform is_equal operation
+    handle_bin(&mut func_inputs, BinOp::Equal).expect("Failed to perform equality operation");
+
+    // Step 5: Pop the result and verify
+    let result = func_inputs.stack.pop_bool().expect("Failed to pop bool from stack");
+    assert!(!result, "Equality check passed when it should have Failed");
+}
