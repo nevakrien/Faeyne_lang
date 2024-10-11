@@ -47,7 +47,7 @@ fn test_value_partial_eq() {
     let value_bool_true = Value::Bool(true);
     let value_bool_false = Value::Bool(false);
     let value_int_42 = Value::Int(42);
-    let value_float = Value::Float(3.14);
+    let value_float = Value::Float(6.9);
     let value_atom = Value::Atom(123);
     let value_string = Value::String(Arc::new(String::from("Hello")));
     let func = Arc::new(NativeFunction{});
@@ -66,12 +66,9 @@ fn test_value_partial_eq() {
 }
 
 
-impl Default for VarTable{
-
-    fn default() -> Self { VarTable{data:Vec::new(),names:Vec::new()} }
-}
 
 #[derive(Clone,Debug,PartialEq)]
+#[derive(Default)]
 pub struct VarTable {
     data: Vec<Option<Value>>,
     pub names: Vec<u32>,
