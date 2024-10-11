@@ -292,6 +292,7 @@ impl<const STACK_CAPACITY:usize> ValueStack<STACK_CAPACITY> {
         }
     }
 
+    #[inline]
     pub fn peak_tag(&mut self) -> Option<ValueTag>{
         unsafe{ self.stack.peak()?.to_inner()}
     }
@@ -299,6 +300,18 @@ impl<const STACK_CAPACITY:usize> ValueStack<STACK_CAPACITY> {
     #[inline]
     pub fn push_terminator(&mut self) -> Result<(), StackOverflow> {
         unsafe { self.stack.push(&Aligned::new(ValueTag::Terminator)) }
+    }
+
+     #[inline]
+    pub fn pop_terminator(&mut self) -> Option<()> {
+        match self.peak_tag() {
+            None => Some(()),
+            Some(t) => if t==ValueTag::Terminator {
+                self.stack.len-= std::mem::size_of::<Aligned<ValueTag>>();
+                Some(())
+            }
+            else {None},
+        }
     }
 
     //Typed Pops

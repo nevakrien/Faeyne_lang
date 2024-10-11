@@ -238,52 +238,65 @@ use Operation::*;
 
 #[test]
 fn test_is_equal() {
-    // Step 1: Setup the stack
-    let mut value_stack = ValueStack::new();
-    let string_table = StringTable::new(); // Assuming `StringTable` has a `new` method.
 
-    // Step 2: Create function inputs
+    let mut value_stack = ValueStack::new();
+    let string_table = StringTable::new();
+
+
     let mut func_inputs = FuncInputs {
         stack: &mut value_stack,
         table: &string_table,
     };
 
-    // Step 3: Push two atoms (represented by u32 ids) onto the stack
-    let atom_a = Value::Atom(1); // Assuming Atom takes a u32 id
-    let atom_b = Value::Atom(1); // Same id for equality test
-    func_inputs.push_value(atom_a).expect("Failed to push value onto stack");
-    func_inputs.push_value(atom_b).expect("Failed to push value onto stack");
+    //equal explictly terminated atoms
+    let atom_a = Value::Atom(1); 
+    let atom_b = Value::Atom(1); 
 
-    // Step 4: Perform is_equal operation
-    handle_bin(&mut func_inputs, BinOp::Equal).expect("Failed to perform equality operation");
+    func_inputs.stack.push_terminator().unwrap(); //with a terminator
+    func_inputs.push_value(atom_a).unwrap();
+    func_inputs.push_value(atom_b).unwrap();
 
-    // Step 5: Pop the result and verify
-    let result = func_inputs.stack.pop_bool().expect("Failed to pop bool from stack");
-    assert!(result, "Equality check failed when it should have passed");
+    handle_bin(&mut func_inputs, BinOp::Equal).unwrap();
 
-    // Step 3: Push two atoms (represented by u32 ids) onto the stack
-    let atom_a = Value::Atom(2); // Assuming Atom takes a u32 id
-    let atom_b = Value::Atom(1); // Same id for equality test
-    func_inputs.push_value(atom_a).expect("Failed to push value onto stack");
-    func_inputs.push_value(atom_b).expect("Failed to push value onto stack");
+    let result = func_inputs.stack.pop_bool().unwrap();
+    assert!(result);
 
-    // Step 4: Perform is_equal operation
-    handle_bin(&mut func_inputs, BinOp::Equal).expect("Failed to perform equality operation");
 
-    // Step 5: Pop the result and verify
-    let result = func_inputs.stack.pop_bool().expect("Failed to pop bool from stack");
-    assert!(!result, "Equality check passed when it should have Failed");
+    //non equal implictly terminated atoms
 
-    // Step 3: Push two atoms (represented by u32 ids) onto the stack
-    let atom_a = Value::Atom(2); // Assuming Atom takes a u32 id
-    let nil = Value::Nil; // Same id for equality test
-    func_inputs.push_value(atom_a).expect("Failed to push value onto stack");
-    func_inputs.push_value(nil).expect("Failed to push value onto stack");
+    let atom_a = Value::Atom(2);
+    let atom_b = Value::Atom(1); 
+    func_inputs.push_value(atom_a).unwrap();
+    func_inputs.push_value(atom_b).unwrap();
 
-    // Step 4: Perform is_equal operation
-    handle_bin(&mut func_inputs, BinOp::Equal).expect("Failed to perform equality operation");
+    handle_bin(&mut func_inputs, BinOp::Equal).unwrap();
 
-    // Step 5: Pop the result and verify
-    let result = func_inputs.stack.pop_bool().expect("Failed to pop bool from stack");
-    assert!(!result, "Equality check passed when it should have Failed");
+    let result = func_inputs.stack.pop_bool().unwrap();
+    assert!(!result);
+
+    //atom and nil
+
+    let atom_a = Value::Atom(2); 
+    let nil = Value::Nil; 
+    func_inputs.push_value(atom_a).unwrap();
+    func_inputs.push_value(nil).unwrap();
+
+    handle_bin(&mut func_inputs, BinOp::Equal).unwrap();
+
+    let result = func_inputs.stack.pop_bool().unwrap();
+    assert!(!result);
+
+    //too many values
+    func_inputs.push_value(Value::Nil).unwrap();
+    func_inputs.push_value(Value::Nil).unwrap();
+    func_inputs.push_value(Value::Nil).unwrap();
+
+    let res = handle_bin(&mut func_inputs, BinOp::Equal);
+    assert!(res.is_err());
+
+    //to few values
+    func_inputs.stack.push_terminator().unwrap();
+    let res = handle_bin(&mut func_inputs, BinOp::Equal);
+    assert!(res.is_err());
+
 }

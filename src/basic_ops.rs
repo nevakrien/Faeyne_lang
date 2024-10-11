@@ -50,8 +50,9 @@ pub fn handle_bin(inputs:&mut FuncInputs,op:BinOp) -> Result<(),ErrList>{
 }
 
 pub fn is_equal(inputs: &mut FuncInputs) -> Result<bool, ErrList> {
-    let a = inputs.stack.pop_value().ok_or_else(|| Error::Bug("over popping").to_list())?;
-    let b = inputs.stack.pop_value().ok_or_else(|| Error::Bug("over popping").to_list())?;
+    let a = inputs.pop_value().ok_or_else(|| Error::Bug("over popping").to_list())?;
+    let b = inputs.pop_value().ok_or_else(|| Error::Bug("over popping").to_list())?;
+    inputs.stack.pop_terminator().ok_or_else(|| Error::Bug("failed to pop terminator").to_list())?;
     Ok(a==b)
 }
 
