@@ -83,7 +83,7 @@ fn test_is_equal() {
 
     let mut func_inputs = FuncInputs {
         stack: value_stack,
-        table: string_table,
+        table: &string_table,
     };
 
     //equal explictly terminated atoms

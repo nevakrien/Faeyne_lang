@@ -56,7 +56,7 @@ pub struct RetData {
 
 pub struct FuncInputs<'code>{
     pub stack: ValueStack,    
-    pub table: StringTable<'code>,//for errors only
+    pub table: &'code StringTable<'code>,//for errors only
 }
 
 impl FuncInputs<'_, >{
@@ -92,7 +92,7 @@ pub struct Context<'code> {
     call_stack:  ArrayVec<RetData,MAX_RECURSION>,
     local_call_stack: ArrayVec<RetData,MAX_LOCAL_SCOPES>,
     vars:Box<VarTable>,
-    global_vars:VarTable,
+    global_vars:&'code VarTable,
 
     pub inputs: FuncInputs<'code>,
 
@@ -103,11 +103,11 @@ pub struct Context<'code> {
 impl<'code> Context<'code> {
     pub fn new(
         
-        table: StringTable<'code>,
+        table:&'code StringTable<'code>,
         func:Arc<FuncData>,
         
         // stack: &'ctx mut ValueStack,
-        global_vars: VarTable,
+        global_vars:&'code VarTable,
         // call_stack:  &'ctx mut ArrayVec<RetData,MAX_RECURSION>,
         // local_call_stack: &'ctx mut ArrayVec<RetData,MAX_LOCAL_SCOPES>,
         
