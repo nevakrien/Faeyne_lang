@@ -123,7 +123,7 @@ impl VarTable {
 
 #[derive(Debug)]
 pub struct VarTableView<'a> {
-    names: &'a [u32],
+    pub names: &'a [u32],
     data: Vec<Option<Value>>,
 }
 

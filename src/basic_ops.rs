@@ -77,13 +77,13 @@ pub fn is_equal_wraped(inputs: &mut FuncInputs) -> Result<(), ErrList> {
 #[test]
 fn test_is_equal() {
 
-    let mut value_stack = ValueStack::new();
+    let value_stack = ValueStack::new();
     let string_table = StringTable::new();
 
 
     let mut func_inputs = FuncInputs {
-        stack: &mut value_stack,
-        table: &string_table,
+        stack: value_stack,
+        table: string_table,
     };
 
     //equal explictly terminated atoms

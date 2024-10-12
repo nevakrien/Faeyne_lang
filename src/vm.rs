@@ -54,12 +54,12 @@ pub struct RetData {
     vars:Box<VarTable>,
 }
 
-pub struct FuncInputs<'ctx,'code>{
-    pub stack: &'ctx mut ValueStack,    
-    pub table: &'ctx StringTable<'code>,//for errors only
+pub struct FuncInputs<'code>{
+    pub stack: ValueStack,    
+    pub table: StringTable<'code>,//for errors only
 }
 
-impl FuncInputs<'_, '_>{
+impl FuncInputs<'_, >{
     #[inline(always)]
     pub fn pop_value(&mut self) -> Option<Value> {
         self.stack.pop_value()
@@ -85,38 +85,38 @@ pub const MAX_LOCAL_SCOPES: usize = 1000;
 pub const MAX_RECURSION :usize=2_500;
 
 // #[repr(C)] //want to orgenize by importance
-pub struct Context<'ctx,'code> {
+pub struct Context<'code> {
     // pub pos:usize,
     pos:usize,
     func:Arc<FuncData>,
-    call_stack:  &'ctx mut ArrayVec<RetData,MAX_RECURSION>,
-    local_call_stack: &'ctx mut ArrayVec<RetData,MAX_LOCAL_SCOPES>,
+    call_stack:  ArrayVec<RetData,MAX_RECURSION>,
+    local_call_stack: ArrayVec<RetData,MAX_LOCAL_SCOPES>,
     vars:Box<VarTable>,
-    global_vars:&'ctx VarTable,
+    global_vars:VarTable,
 
-    pub inputs: FuncInputs<'ctx,'code>,
+    pub inputs: FuncInputs<'code>,
 
 
     
 }
 
-impl<'ctx,'code> Context<'ctx,'code> {
+impl<'code> Context<'code> {
     pub fn new(
         
-        table: &'ctx StringTable<'code>,
+        table: StringTable<'code>,
         func:Arc<FuncData>,
         
-        stack: &'ctx mut ValueStack,
-        global_vars: &'ctx VarTable,
-        call_stack:  &'ctx mut ArrayVec<RetData,MAX_RECURSION>,
-        local_call_stack: &'ctx mut ArrayVec<RetData,MAX_LOCAL_SCOPES>,
+        // stack: &'ctx mut ValueStack,
+        global_vars: VarTable,
+        // call_stack:  &'ctx mut ArrayVec<RetData,MAX_RECURSION>,
+        // local_call_stack: &'ctx mut ArrayVec<RetData,MAX_LOCAL_SCOPES>,
         
     ) -> Self{
-        let inputs = FuncInputs{stack,table};
+        let inputs = FuncInputs{stack:ValueStack::default(),table};
         Context{
             pos:0,vars:Box::new(VarTable::default()),
             func,global_vars,
-            inputs,call_stack,local_call_stack,
+            inputs,call_stack:ArrayVec::new(),local_call_stack:ArrayVec::new(),
         }
     }
 
@@ -187,7 +187,19 @@ impl<'ctx,'code> Context<'ctx,'code> {
     }
 
     fn call(&mut self) -> Result<(),ErrList> {
-        let mut new_vars = Box::new(VarTable::default());
+        let called = self.inputs.pop_value()
+            .ok_or_else(||{Error::Bug("over poping").to_list()}
+            )?;
+
+        let func = match called {
+            Value::Func(f) => f,
+            Value::WeakFunc(wf) => wf.upgrade().ok_or_else(||{Error::Bug("weak function failed to upgrade").to_list()}
+            )?,
+            _ => todo!()
+
+        };
+
+        let mut new_vars = Box::new(func.vars.clone());
 
         std::mem::swap(&mut self.vars,&mut new_vars);
 
