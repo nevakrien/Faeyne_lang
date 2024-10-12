@@ -18,7 +18,7 @@ use ast::ast::StringTable;
 use arrayvec::ArrayVec;
 
 pub type Code<'a> = &'a [Operation];
-pub type DynFFI = dyn Fn(&mut FuncInputs) -> Result<(),ErrList>;
+// pub type DynFFI = dyn Fn(&mut FuncInputs) -> Result<(),ErrList>;
 pub type StaticFunc = fn(&mut FuncInputs) -> Result<(),ErrList>;
 
 
@@ -27,14 +27,11 @@ pub type StaticFunc = fn(&mut FuncInputs) -> Result<(),ErrList>;
 // #[repr(C)]
 pub struct FuncData {
     pub vars: VarTable,
-    pub code: Vec<Operation>,
+    pub code: Box<[Operation]>,
 }
 
-
-
-
 impl FuncData {
-    pub fn new(vars: VarTable, code: Vec<Operation>) -> FuncData {
+    pub fn new(vars: VarTable, code: Box<[Operation]>) -> Self {
         FuncData {
             vars,
             code,
@@ -43,21 +40,17 @@ impl FuncData {
 
 }
 
-
-
-
 #[test]
 fn func_data() {
-    let f = Arc::new(FuncData::new(VarTable::default(),vec![NoOp]));
+    let f = Arc::new(FuncData::new(VarTable::default(),Box::new([NoOp])));
     assert_eq!(f.code[0],NoOp);
     assert_eq!(f.vars,VarTable::default());
 }
 
 
-pub struct RetData<'code> {
-    ret:usize,
-    code:Code<'code>,
-    closure_vars:Arc<VarTable>,
+pub struct RetData {
+    pos:usize,
+    func:Arc<FuncData>,
     vars:Box<VarTable>,
 }
 
@@ -95,12 +88,11 @@ pub const MAX_RECURSION :usize=2_500;
 pub struct Context<'ctx,'code> {
     // pub pos:usize,
     pos:usize,
-    pub code: Code<'code>,//we need a varible length stack for these...
-    call_stack:  &'ctx mut ArrayVec<RetData<'code>,MAX_RECURSION>,
-    local_call_stack: &'ctx mut ArrayVec<RetData<'code>,MAX_LOCAL_SCOPES>,
+    func:Arc<FuncData>,
+    call_stack:  &'ctx mut ArrayVec<RetData,MAX_RECURSION>,
+    local_call_stack: &'ctx mut ArrayVec<RetData,MAX_LOCAL_SCOPES>,
     vars:Box<VarTable>,
     global_vars:&'ctx VarTable,
-    closure_vars:Arc<VarTable>,
 
     pub inputs: FuncInputs<'ctx,'code>,
 
@@ -112,19 +104,19 @@ impl<'ctx,'code> Context<'ctx,'code> {
     pub fn new(
         
         table: &'ctx StringTable<'code>,
-        code: Code<'code>,vars:Box<VarTable>,
+        func:Arc<FuncData>,
         
         stack: &'ctx mut ValueStack,
-        global_vars: &'ctx VarTable, closure_vars:Arc<VarTable>,
-        call_stack:  &'ctx mut ArrayVec<RetData<'code>,MAX_RECURSION>,
-        local_call_stack: &'ctx mut ArrayVec<RetData<'code>,MAX_LOCAL_SCOPES>,
+        global_vars: &'ctx VarTable,
+        call_stack:  &'ctx mut ArrayVec<RetData,MAX_RECURSION>,
+        local_call_stack: &'ctx mut ArrayVec<RetData,MAX_LOCAL_SCOPES>,
         
     ) -> Self{
         let inputs = FuncInputs{stack,table};
         Context{
-            pos:0,vars,
-            global_vars,closure_vars,
-            inputs,code,call_stack,local_call_stack,
+            pos:0,vars:Box::new(VarTable::default()),
+            func,global_vars,
+            inputs,call_stack,local_call_stack,
         }
     }
 
@@ -162,15 +154,11 @@ impl<'ctx,'code> Context<'ctx,'code> {
         let ret_data = self.call_stack.pop().ok_or_else(|| Error::Bug("over pop call stack").to_list())?;
         let value = self.inputs.pop_value().ok_or_else(|| Error::Bug("over pop value stack").to_list())?;
 
-        self.code = ret_data.code;
-        self.pos = ret_data.ret;
+        self.func = ret_data.func.clone();
+        self.pos = ret_data.pos;
 
         
-        //unwind the stack
-        while self.inputs.len()>ret_data.ret {
-            self.inputs.pop_value();
-        }
-        assert_eq!(ret_data.ret,self.inputs.len());
+
         
 
         self.inputs.push_value(value).map_err(|_|{Error::StackOverflow.to_list()})?;
@@ -178,7 +166,6 @@ impl<'ctx,'code> Context<'ctx,'code> {
 
         self.local_call_stack.clear();
         self.vars=ret_data.vars;
-        self.closure_vars=ret_data.closure_vars;
 
         Ok(())
     }
@@ -187,35 +174,27 @@ impl<'ctx,'code> Context<'ctx,'code> {
         let ret_data = self.local_call_stack.pop().ok_or_else(|| Error::Bug("over pop call stack").to_list())?;
         let value = self.inputs.pop_value().ok_or_else(|| Error::Bug("over pop value stack").to_list())?;
 
-        self.code = ret_data.code;
-        self.pos = ret_data.ret;
+        self.func = ret_data.func.clone();
+        self.pos = ret_data.pos;
 
-        //unwind the stack
-        while self.inputs.len()>ret_data.ret {
-            self.inputs.pop_value();
-        }
-        assert_eq!(ret_data.ret,self.inputs.len());
+
         
 
         self.inputs.push_value(value).map_err(|_|{Error::StackOverflow.to_list()})?;
         self.vars=ret_data.vars;
-        self.closure_vars=ret_data.closure_vars;
 
         Ok(())
     }
 
     fn call(&mut self) -> Result<(),ErrList> {
         let mut new_vars = Box::new(VarTable::default());
-        let mut new_closure_vars = Arc::new(VarTable::default()); //would need to be modified
 
         std::mem::swap(&mut self.vars,&mut new_vars);
-        std::mem::swap(&mut self.closure_vars,&mut new_closure_vars);
 
         let ret = RetData{
-            code:self.code,
-            ret:self.pos,
+            func:self.func.clone(),
+            pos:self.pos,
             vars:new_vars,
-            closure_vars:new_closure_vars,
         };
 
         self.call_stack.try_push(ret)
@@ -225,7 +204,7 @@ impl<'ctx,'code> Context<'ctx,'code> {
 
         todo!()
     }
-
+    
     fn handle_op(&mut self,op:Operation) -> Result<(),ErrList> {
         match op {
             BinOp(b) => handle_bin(&mut self.inputs,b),
@@ -243,9 +222,9 @@ impl<'ctx,'code> Context<'ctx,'code> {
 
     //returns true if we should keep going
     pub fn next_op(&mut self) -> Result<bool,ErrList>{
-        if self.pos>=self.code.len() {return Ok(false);}
+        if self.pos>=self.func.code.len() {return Ok(false);}
         self.pos+=1;
-        let op = self.code[self.pos];
+        let op = self.func.code[self.pos];
         self.handle_op(op).map(|_| true)
     }
 

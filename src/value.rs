@@ -1,4 +1,4 @@
-#![allow(clippy::result_unit_err)]
+// #![allow(clippy::result_unit_err)]
 
 
 use crate::vm::StaticFunc;
@@ -70,7 +70,8 @@ fn test_value_partial_eq() {
     assert_eq!(value_weak_func, value_func);
 }
 
-
+#[derive(Clone,Debug,PartialEq,Copy)]
+pub struct MissingID;
 
 #[derive(Clone,Debug,PartialEq)]
 #[derive(Default)]
@@ -102,12 +103,12 @@ impl VarTable {
         self.data.extend(ids.iter().map(|_| None));
     }
 
-    pub fn set(&mut self, id: usize, val: Value) -> Result<(), ()> {
+    pub fn set(&mut self, id: usize, val: Value) -> Result<(), MissingID> {
         if let Some(elem) = self.data.get_mut(id) {
             *elem = Some(val);
             Ok(())
         } else {
-            Err(())
+            Err(MissingID)
         }
     }
 
@@ -120,3 +121,38 @@ impl VarTable {
     }
 }
 
+#[derive(Debug)]
+pub struct VarTableView<'a> {
+    names: &'a [u32],
+    data: Vec<Option<Value>>,
+}
+
+impl<'a> VarTableView<'a> {
+    pub fn new(var_table: &'a VarTable) -> Self {
+        VarTableView {
+            names: &var_table.names,
+            data: var_table.data.clone()
+        }
+    }
+
+    pub fn set(&mut self, id: usize, val: Value) -> Result<(), MissingID> {
+        if let Some(elem) = self.data.get_mut(id) {
+            *elem = Some(val);
+            Ok(())
+        } else {
+            Err(MissingID)
+        }
+    }
+
+    pub fn get(&self, id: usize) -> Option<Value> {
+        self.data.get(id)?.clone()
+    }
+
+    pub fn get_debug_id(&self, id: usize) -> Option<u32> {
+        self.names.get(id).copied()
+    }
+
+    pub fn reset_data(&mut self) {
+        self.data.iter_mut().for_each(|x| *x = None);
+    }
+}
