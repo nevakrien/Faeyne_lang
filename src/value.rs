@@ -1,13 +1,16 @@
 #![allow(clippy::result_unit_err)]
 
 
+use crate::vm::StaticFunc;
+use crate::vm::FuncData;
 use std::sync::Weak;
 use std::sync::Arc;
 
-#[derive(Clone,PartialEq,Debug)]
-pub struct NativeFunction{
-    //holds raw code
-}
+// #[derive(Clone,PartialEq,Debug)]
+// pub struct FuncData{
+//     //holds raw code
+// }
+
 
 #[derive(Clone,Debug)]
 #[repr(u32)] //optimized for 64bit architctures
@@ -19,8 +22,9 @@ pub enum Value {
     Float(f64)=4,
     Atom(u32)=5,
     String(Arc<String>)=6,
-    Func(Arc<NativeFunction>)=7,
-    WeakFunc(Weak<NativeFunction>)=8,
+    Func(Arc<FuncData>)=7,
+    WeakFunc(Weak<FuncData>)=8,
+    StaticFunc(StaticFunc)=9,
     
 }
 
@@ -30,6 +34,7 @@ impl PartialEq for Value {
             (Value::WeakFunc(weak_a), Value::WeakFunc(weak_b)) => weak_a.ptr_eq(weak_b),
             (Value::WeakFunc(weak), Value::Func(func)) | (Value::Func(func), Value::WeakFunc(weak)) => weak.ptr_eq(&Arc::downgrade(func)),
             (Value::Func(a), Value::Func(b)) => Arc::ptr_eq(a, b),
+            (Value::StaticFunc(a),Value::StaticFunc(b)) => a==b,
             (Value::Nil, Value::Nil) => true,
             (Value::Bool(a), Value::Bool(b)) => a == b,
             (Value::Int(a), Value::Int(b)) => a == b,
@@ -50,7 +55,7 @@ fn test_value_partial_eq() {
     let value_float = Value::Float(6.9);
     let value_atom = Value::Atom(123);
     let value_string = Value::String(Arc::new(String::from("Hello")));
-    let func = Arc::new(NativeFunction{});
+    let func = Arc::new(FuncData::default());
     let value_func = Value::Func(func.clone());
     let value_weak_func = Value::WeakFunc(Arc::downgrade(&func));
 

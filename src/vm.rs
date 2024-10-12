@@ -1,5 +1,5 @@
 
-use smallvec::SmallVec;
+// use smallvec::SmallVec;
 
 use std::sync::Arc;
 use crate::reporting::RecursionError;
@@ -17,39 +17,30 @@ use ast::ast::StringTable;
 
 use arrayvec::ArrayVec;
 
-pub type Code<'code> = &'code[Operation];
+pub type Code<'a> = &'a [Operation];
+pub type DynFFI = dyn Fn(&mut FuncInputs) -> Result<(),ErrList>;
+pub type StaticFunc = fn(&mut FuncInputs) -> Result<(),ErrList>;
 
-// #[derive(Default)]
+
+#[derive(Clone,PartialEq,Debug)]
+#[derive(Default)]
 // #[repr(C)]
 pub struct FuncData {
     pub vars: VarTable,
-    pub code: SmallVec<[Operation;16]>,
+    pub code: Vec<Operation>,
 }
 
 
 
 
 impl FuncData {
-    pub fn new(vars: VarTable, operations: &[Operation]) -> FuncData {
+    pub fn new(vars: VarTable, code: Vec<Operation>) -> FuncData {
         FuncData {
             vars,
-            code: SmallVec::from_slice(operations),
+            code,
         }
     }
 
-    pub fn new_box(vars: VarTable, operations: &[Operation]) -> Box<FuncData> {
-        Box::new(FuncData {
-            vars,
-            code: SmallVec::from_slice(operations),
-        })
-    }
-
-    pub fn new_arc(vars: VarTable, operations: &[Operation]) -> Arc<FuncData> {
-        Arc::new(FuncData {
-            vars,
-            code: SmallVec::from_slice(operations),
-        })
-    }
 }
 
 
@@ -57,16 +48,11 @@ impl FuncData {
 
 #[test]
 fn func_data() {
-    let f = FuncData::new_arc(VarTable::default(),&[NoOp]);
+    let f = Arc::new(FuncData::new(VarTable::default(),vec![NoOp]));
     assert_eq!(f.code[0],NoOp);
     assert_eq!(f.vars,VarTable::default());
 }
 
-#[derive(Clone)]
-pub enum Function<'code> {
-    Native(Code<'code>),
-    FFI,
-}
 
 pub struct RetData<'code> {
     ret:usize,

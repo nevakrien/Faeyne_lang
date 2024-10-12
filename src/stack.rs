@@ -1,5 +1,5 @@
 use std::sync::Weak;
-use crate::value::NativeFunction;
+use crate::vm::FuncData;
 use std::sync::Arc;
 use crate::value::Value;
 use core::ptr;
@@ -203,6 +203,7 @@ pub enum ValueTag{
     String=6,
     Func=7,
     WeakFunc=8,
+    StaticFunc=9,
     
 }
 
@@ -265,6 +266,12 @@ impl<const STACK_CAPACITY:usize> ValueStack<STACK_CAPACITY> {
                     self.stack.push(&aligned_value)?;
                     std::mem::forget(aligned_value); //stack has sucessfully took ownership of the value
                     self.stack.push(&Aligned::new(ValueTag::WeakFunc))
+                },
+                Value::StaticFunc(f) => {
+                    let aligned_value = Aligned::new(f);
+                    self.stack.push(&aligned_value)?;
+                    // std::mem::forget(aligned_value); //stack has sucessfully took ownership of the value
+                    self.stack.push(&Aligned::new(ValueTag::StaticFunc))
                 }
             }
         }
@@ -287,7 +294,11 @@ impl<const STACK_CAPACITY:usize> ValueStack<STACK_CAPACITY> {
                 ValueTag::String => Some(Value::String(self.stack.pop()?.to_inner())),
                 ValueTag::Func => Some(Value::Func(self.stack.pop()?.to_inner())),
                 ValueTag::WeakFunc => Some(Value::WeakFunc(self.stack.pop()?.to_inner())),
-                _ => None,
+                
+                ValueTag::StaticFunc => Some(Value::StaticFunc(self.stack.pop()?.to_inner())),
+
+
+                ValueTag::Terminator => None,
             }
         }
     }
@@ -428,7 +439,7 @@ impl<const STACK_CAPACITY:usize> ValueStack<STACK_CAPACITY> {
     }
 
     #[inline]
-    pub fn push_func(&mut self, f: Arc<NativeFunction>) -> Result<(), StackOverflow> {
+    pub fn push_func(&mut self, f: Arc<FuncData>) -> Result<(), StackOverflow> {
         unsafe {
             let aligned_value = Aligned::new(f);
             self.stack.push(&aligned_value)?;
@@ -438,17 +449,17 @@ impl<const STACK_CAPACITY:usize> ValueStack<STACK_CAPACITY> {
     }
 
     #[inline]
-    pub fn pop_func(&mut self) -> Option<Arc<NativeFunction>> {
+    pub fn pop_func(&mut self) -> Option<Arc<FuncData>> {
         if self.peak_tag()? == ValueTag::Func {
             self.stack.len -= std::mem::size_of::<Aligned<ValueTag>>();
-            Some(unsafe { self.stack.pop::<Arc<NativeFunction>>()?.to_inner() })
+            Some(unsafe { self.stack.pop::<Arc<FuncData>>()?.to_inner() })
         } else {
             None
         }
     }
 
     #[inline]
-    pub fn push_weak_func(&mut self, wf: Weak<NativeFunction>) -> Result<(), StackOverflow> {
+    pub fn push_weak_func(&mut self, wf: Weak<FuncData>) -> Result<(), StackOverflow> {
         unsafe {
             let aligned_value = Aligned::new(wf);
             self.stack.push(&aligned_value)?;
@@ -458,10 +469,10 @@ impl<const STACK_CAPACITY:usize> ValueStack<STACK_CAPACITY> {
     }
 
     #[inline]
-    pub fn pop_weak_func(&mut self) -> Option<Weak<NativeFunction>> {
+    pub fn pop_weak_func(&mut self) -> Option<Weak<FuncData>> {
         if self.peak_tag()? == ValueTag::WeakFunc {
             self.stack.len -= std::mem::size_of::<Aligned<ValueTag>>();
-            Some(unsafe { self.stack.pop::<Weak<NativeFunction>>()?.to_inner() })
+            Some(unsafe { self.stack.pop::<Weak<FuncData>>()?.to_inner() })
         } else {
             None
         }
@@ -481,12 +492,11 @@ impl<const STACK_CAPACITY: usize> Drop for ValueStack<STACK_CAPACITY> {
 
 #[test]
 fn test_weak_pointer_drop() {
-    use crate::value::NativeFunction;
 
     use std::sync::{Arc};
 
     let mut value_stack = ValueStack::<100>::new();
-    let arc_value = Arc::new(NativeFunction {});
+    let arc_value = Arc::new(FuncData::default());
     let weak_value = Arc::downgrade(&arc_value);
 
     
@@ -502,11 +512,15 @@ fn test_weak_pointer_drop() {
 
 #[test]
 fn test_stack_operations() {
-    use crate::value::NativeFunction;
 
     use std::sync::{Arc};
+    use crate::basic_ops::is_equal_wraped;
 
     let mut value_stack = Box::new(ValueStack::<1_000>::new());
+
+    let static_func = Value::StaticFunc(is_equal_wraped);
+    value_stack.push_value(static_func.clone()).unwrap();
+    assert_eq!(value_stack.pop_value(),Some(static_func));
 
     // Push Nil, Bool, Int, and Float values
     value_stack.push_value(Value::Nil).unwrap();
@@ -527,7 +541,7 @@ fn test_stack_operations() {
     assert!(value_stack.pop_value().is_none()); // Terminator should be Nil
 
     // Test with Weak pointer
-    let arc_value = Arc::new(NativeFunction {}); 
+    let arc_value = Arc::new(FuncData::default()); 
     let weak_value= Arc::downgrade(&arc_value);
 
     value_stack.push_value(Value::Func(arc_value)).unwrap();
@@ -556,7 +570,7 @@ fn test_stack_operations() {
     assert!(value_stack.pop_value().is_none()); // Terminator should be Nil
 
     // Test with Weak pointer
-    let arc_value = Arc::new(NativeFunction {});
+    let arc_value = Arc::new(FuncData::default());
     let weak_value = Arc::downgrade(&arc_value);
     
     value_stack.push_value(Value::Func(arc_value)).unwrap();
@@ -568,7 +582,7 @@ fn test_stack_operations() {
 
 
     let mut value_stack = Box::new(ValueStack::<1_000>::new());
-    let arc_value = Arc::new(NativeFunction {});
+    let arc_value = Arc::new(FuncData::default());
     let weak_value = Arc::downgrade(&arc_value);
 
     
@@ -594,7 +608,7 @@ fn test_typed_stack_operations() {
     stack.push_atom(123).unwrap();
     let s = Arc::new(String::from("Hello"));
     stack.push_string(s.clone()).unwrap();
-    let f = Arc::new(NativeFunction{});
+    let f = Arc::new(FuncData::default());
     stack.push_func(f.clone()).unwrap();
     let wf = Arc::downgrade(&f);
     stack.push_weak_func(wf.clone()).unwrap();
