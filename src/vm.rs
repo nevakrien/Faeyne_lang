@@ -49,6 +49,7 @@ fn func_data() {
 
 
 pub struct RetData {
+    ret:usize,
     pos:usize,
     func:Arc<FuncData>,
     vars:Box<VarTable>,
@@ -154,15 +155,17 @@ impl<'code> Context<'code> {
         let ret_data = self.call_stack.pop().ok_or_else(|| Error::Bug("over pop call stack").to_list())?;
         let value = self.inputs.pop_value().ok_or_else(|| Error::Bug("over pop value stack").to_list())?;
 
-        self.func = ret_data.func.clone();
-        self.pos = ret_data.pos;
+        assert!(self.inputs.stack.len()>=ret_data.ret);
+        while self.inputs.stack.len()>ret_data.ret {
+            self.inputs.pop_value().ok_or_else(|| Error::Bug("impossible").to_list())?;
+        }
+        assert!(self.inputs.stack.len()==ret_data.ret);
 
-        
-
-        
 
         self.inputs.push_value(value).map_err(|_|{Error::StackOverflow.to_list()})?;
         
+        self.func = ret_data.func.clone();
+        self.pos = ret_data.pos;
 
         self.local_call_stack.clear();
         self.vars=ret_data.vars;
@@ -174,11 +177,14 @@ impl<'code> Context<'code> {
         let ret_data = self.local_call_stack.pop().ok_or_else(|| Error::Bug("over pop call stack").to_list())?;
         let value = self.inputs.pop_value().ok_or_else(|| Error::Bug("over pop value stack").to_list())?;
 
+        assert!(self.inputs.stack.len()>=ret_data.ret);
+        while self.inputs.stack.len()>ret_data.ret {
+            self.inputs.pop_value().ok_or_else(|| Error::Bug("impossible").to_list())?;
+        }
+        assert!(self.inputs.stack.len()==ret_data.ret);
+        
         self.func = ret_data.func.clone();
         self.pos = ret_data.pos;
-
-
-        
 
         self.inputs.push_value(value).map_err(|_|{Error::StackOverflow.to_list()})?;
         self.vars=ret_data.vars;
@@ -204,6 +210,7 @@ impl<'code> Context<'code> {
         std::mem::swap(&mut self.vars,&mut new_vars);
 
         let ret = RetData{
+            ret:self.inputs.stack.len(),
             func:self.func.clone(),
             pos:self.pos,
             vars:new_vars,
@@ -235,8 +242,8 @@ impl<'code> Context<'code> {
     //returns true if we should keep going
     pub fn next_op(&mut self) -> Result<bool,ErrList>{
         if self.pos>=self.func.code.len() {return Ok(false);}
-        self.pos+=1;
         let op = self.func.code[self.pos];
+        self.pos+=1;
         self.handle_op(op).map(|_| true)
     }
 
@@ -265,5 +272,46 @@ pub enum Operation {
 }
 
 use Operation::*;
+
+
+#[test]
+fn test_vm_push_pop() {
+    // Step 1: Setup the StringTable
+    let mut string_table = StringTable::new();
+    let atom_a_id = string_table.get_id(":a");
+    let atom_b_id = string_table.get_id(":b");
+
+    let a_id = string_table.get_id("var_a");
+    let b_id = string_table.get_id("var_b");
+
+    //make function
+    let vars = VarTable::default();
+    let code = vec![
+        Operation::PushConst(0),
+        Operation::PushConst(1),
+    ]
+    .into_boxed_slice(); // Box the slice for FuncData
+
+    let func_data = Arc::new(FuncData::new(vars, code));
+
+    //global vars
+    let mut global_vars = VarTable::default();
+    global_vars.add_ids(&[a_id, b_id]);
+    global_vars.set(0, Value::Atom(atom_a_id)).unwrap(); 
+    global_vars.set(1, Value::Atom(atom_b_id)).unwrap();
+
+    let mut context = Context::new(&string_table, func_data.clone(), &global_vars);
+
+    // Step 5: Execute operations using next_op
+    let mut keep_running = true;
+    while keep_running {
+        keep_running = context.next_op().unwrap();
+    }
+
+    // Step 6: Assert the results
+    // After executing PushConst(atom_a_id), PushConst(atom_b_id), BinOp::Add, the result should be 15 on the stack
+    let result = context.inputs.stack.pop_value().unwrap();
+    assert_eq!(result, Value::Atom(atom_b_id));
+}
 
 
