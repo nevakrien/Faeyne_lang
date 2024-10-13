@@ -248,7 +248,9 @@ impl<'code> Context<'code> {
                 self.pos=pos;
                 Ok(())
             },
+            
             Operation::CaptureClosure => todo!(),
+
             Operation::PushBool(b) => self.stack.push_bool(b)
                 .map_err(|_| Error::StackOverflow.to_list()),
             
@@ -441,6 +443,10 @@ fn test_not_gate_match() {
     context.stack.push_bool(false).unwrap();
     let result = context.run().unwrap();
     assert_eq!(result, Value::Bool(true)); // Should return true
+
+    context.stack.push_bool(true).unwrap();
+    let result = context.run().unwrap();
+    assert_eq!(result, Value::Bool(false)); // Should return true
 
     // Test Match Error
     let mut error_context = Context::new(func_data.clone(), &global_vars, &string_table);
