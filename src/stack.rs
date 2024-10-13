@@ -1,3 +1,4 @@
+use core::marker::PhantomData;
 use std::sync::Weak;
 use crate::vm::FuncData;
 use std::sync::Arc;
@@ -185,8 +186,10 @@ fn test_stack() {
 }
 
 #[repr(transparent)]
-pub struct ValueStack<const STACK_CAPACITY:usize =1_000>{
-    stack:Stack<STACK_CAPACITY>
+pub struct ValueStack<'code, const STACK_CAPACITY: usize = 1_000>{
+    phantom: PhantomData<Value<'code>>,
+    
+    stack:Stack<STACK_CAPACITY>,
 }
 
 #[repr(u32)]
@@ -208,16 +211,16 @@ pub enum ValueTag{
 }
 
 
-impl Default for ValueStack {
+impl Default for ValueStack<'_> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<const STACK_CAPACITY:usize> ValueStack<STACK_CAPACITY> {
+impl<'code,const STACK_CAPACITY:usize> ValueStack<'code, STACK_CAPACITY> {
     #[inline]
     pub fn new() -> Self {
-        ValueStack { stack: Stack::new() }
+        ValueStack { stack: Stack::new(),phantom:PhantomData }
     }
 
     pub fn len(&self) -> usize {
@@ -229,7 +232,7 @@ impl<const STACK_CAPACITY:usize> ValueStack<STACK_CAPACITY> {
     }
 
     #[inline]
-    pub fn push_value(&mut self, x: Value) -> Result<(), StackOverflow> {
+    pub fn push_value(&mut self, x: Value<'code>) -> Result<(), StackOverflow> {
         unsafe {
             match x {
                 Value::Nil => self.stack.push(&Aligned::new(ValueTag::Nil)),
@@ -282,7 +285,7 @@ impl<const STACK_CAPACITY:usize> ValueStack<STACK_CAPACITY> {
     //in those cases we SHOULD see an optimization where we never create Value.
     //for things such as bool this is a huge win
     #[inline(always)] 
-    pub fn pop_value(&mut self) -> Option<Value> {
+    pub fn pop_value(&mut self) -> Option<Value<'code>> {
         unsafe {
             match self.stack.pop()?.to_inner() {
                 ValueTag::Nil => Some(Value::Nil),
@@ -439,7 +442,7 @@ impl<const STACK_CAPACITY:usize> ValueStack<STACK_CAPACITY> {
     }
 
     #[inline]
-    pub fn push_func(&mut self, f: Arc<FuncData>) -> Result<(), StackOverflow> {
+    pub fn push_func(&mut self, f: Arc<FuncData<'code>>) -> Result<(), StackOverflow> {
         unsafe {
             let aligned_value = Aligned::new(f);
             self.stack.push(&aligned_value)?;
@@ -449,7 +452,7 @@ impl<const STACK_CAPACITY:usize> ValueStack<STACK_CAPACITY> {
     }
 
     #[inline]
-    pub fn pop_func(&mut self) -> Option<Arc<FuncData>> {
+    pub fn pop_func(&mut self) -> Option<Arc<FuncData<'code>>> {
         if self.peak_tag()? == ValueTag::Func {
             self.stack.len -= std::mem::size_of::<Aligned<ValueTag>>();
             Some(unsafe { self.stack.pop::<Arc<FuncData>>()?.to_inner() })
@@ -459,7 +462,7 @@ impl<const STACK_CAPACITY:usize> ValueStack<STACK_CAPACITY> {
     }
 
     #[inline]
-    pub fn push_weak_func(&mut self, wf: Weak<FuncData>) -> Result<(), StackOverflow> {
+    pub fn push_weak_func(&mut self, wf: Weak<FuncData<'code>>) -> Result<(), StackOverflow> {
         unsafe {
             let aligned_value = Aligned::new(wf);
             self.stack.push(&aligned_value)?;
@@ -469,7 +472,7 @@ impl<const STACK_CAPACITY:usize> ValueStack<STACK_CAPACITY> {
     }
 
     #[inline]
-    pub fn pop_weak_func(&mut self) -> Option<Weak<FuncData>> {
+    pub fn pop_weak_func(&mut self) -> Option<Weak<FuncData<'code>>> {
         if self.peak_tag()? == ValueTag::WeakFunc {
             self.stack.len -= std::mem::size_of::<Aligned<ValueTag>>();
             Some(unsafe { self.stack.pop::<Weak<FuncData>>()?.to_inner() })
@@ -481,7 +484,7 @@ impl<const STACK_CAPACITY:usize> ValueStack<STACK_CAPACITY> {
 
 
 
-impl<const STACK_CAPACITY: usize> Drop for ValueStack<STACK_CAPACITY> {
+impl<const STACK_CAPACITY: usize> Drop for ValueStack<'_, STACK_CAPACITY> {
     fn drop(&mut self) {
         //calling destrutors
         while self.stack.len != 0 {

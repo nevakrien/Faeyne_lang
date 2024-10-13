@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 #[derive(Clone,Debug)]
 #[repr(u32)] //optimized for 64bit architctures
-pub enum Value {
+pub enum Value<'code> {
     //these indecies are made to match with the ValueTag
     Nil=2,
     Bool(bool)=0,//bool is 0/1 to make loading a bool type easier on registers.
@@ -22,13 +22,13 @@ pub enum Value {
     Float(f64)=4,
     Atom(u32)=5,
     String(Arc<String>)=6,
-    Func(Arc<FuncData>)=7,
-    WeakFunc(Weak<FuncData>)=8,
-    StaticFunc(StaticFunc)=9,
+    Func(Arc<FuncData<'code>>)=7,
+    WeakFunc(Weak<FuncData<'code>>)=8,
+    StaticFunc(StaticFunc<'code>)=9,
     
 }
 
-impl PartialEq for Value {
+impl PartialEq for Value<'_> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Value::WeakFunc(weak_a), Value::WeakFunc(weak_b)) => weak_a.ptr_eq(weak_b),
@@ -75,12 +75,12 @@ pub struct MissingID;
 
 #[derive(Clone,Debug,PartialEq)]
 #[derive(Default)]
-pub struct VarTable {
-    data: Vec<Option<Value>>,
+pub struct VarTable<'code> {
+    data: Vec<Option<Value<'code>>>,
     pub names: Vec<u32>,
 }
 
-impl VarTable {
+impl<'code> VarTable<'code>  {
     pub fn clear(&mut self) {
         self.data.clear();
         self.names.clear();
@@ -103,7 +103,7 @@ impl VarTable {
         self.data.extend(ids.iter().map(|_| None));
     }
 
-    pub fn set(&mut self, id: usize, val: Value) -> Result<(), MissingID> {
+    pub fn set(&mut self, id: usize, val: Value<'code>) -> Result<(), MissingID> {
         if let Some(elem) = self.data.get_mut(id) {
             *elem = Some(val);
             Ok(())
@@ -112,7 +112,7 @@ impl VarTable {
         }
     }
 
-    pub fn get(&self, id: usize) -> Option<Value> {
+    pub fn get(&self, id: usize) -> Option<Value<'code>> {
         self.data.get(id)?.clone()
     }
 
@@ -121,38 +121,3 @@ impl VarTable {
     }
 }
 
-#[derive(Debug)]
-pub struct VarTableView<'a> {
-    pub names: &'a [u32],
-    data: Vec<Option<Value>>,
-}
-
-impl<'a> VarTableView<'a> {
-    pub fn new(var_table: &'a VarTable) -> Self {
-        VarTableView {
-            names: &var_table.names,
-            data: var_table.data.clone()
-        }
-    }
-
-    pub fn set(&mut self, id: usize, val: Value) -> Result<(), MissingID> {
-        if let Some(elem) = self.data.get_mut(id) {
-            *elem = Some(val);
-            Ok(())
-        } else {
-            Err(MissingID)
-        }
-    }
-
-    pub fn get(&self, id: usize) -> Option<Value> {
-        self.data.get(id)?.clone()
-    }
-
-    pub fn get_debug_id(&self, id: usize) -> Option<u32> {
-        self.names.get(id).copied()
-    }
-
-    pub fn reset_data(&mut self) {
-        self.data.iter_mut().for_each(|x| *x = None);
-    }
-}

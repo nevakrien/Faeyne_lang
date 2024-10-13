@@ -3,7 +3,6 @@
 
 use std::sync::Arc;
 use crate::reporting::RecursionError;
-use crate::stack::StackOverflow;
 use crate::value::Value;
 use crate::value::VarTable;
 
@@ -17,21 +16,22 @@ use ast::ast::StringTable;
 
 use arrayvec::ArrayVec;
 
-pub type Code<'a> = &'a [Operation];
+
+// pub type Code<'code> = &'code [Operation];
 // pub type DynFFI = dyn Fn(&mut FuncInputs) -> Result<(),ErrList>;
-pub type StaticFunc = fn(&mut FuncInputs) -> Result<(),ErrList>;
+pub type StaticFunc<'code> = fn(&mut ValueStack,&StringTable<'code>) -> Result<(),ErrList>;
 
 
 #[derive(Clone,PartialEq,Debug)]
 #[derive(Default)]
 // #[repr(C)]
-pub struct FuncData {
-    pub vars: VarTable,
-    pub code: Box<[Operation]>,
+pub struct FuncData<'code> {
+    pub vars: VarTable<'code>,
+    pub code: &'code [Operation],
 }
 
-impl FuncData {
-    pub fn new(vars: VarTable, code: Box<[Operation]>) -> Self {
+impl<'code> FuncData<'code> {
+    pub fn new(vars: VarTable<'code>, code: &'code [Operation]) -> Self {
         FuncData {
             vars,
             code,
@@ -42,44 +42,17 @@ impl FuncData {
 
 #[test]
 fn func_data() {
-    let f = Arc::new(FuncData::new(VarTable::default(),Box::new([NoOp])));
+    let f = Arc::new(FuncData::new(VarTable::default(),&[NoOp]));
     assert_eq!(f.code[0],NoOp);
     assert_eq!(f.vars,VarTable::default());
 }
 
 
-pub struct RetData {
+pub struct RetData<'code> {
     ret:usize,
     pos:usize,
-    func:Arc<FuncData>,
-    vars:Box<VarTable>,
-}
-
-pub struct FuncInputs<'code>{
-    pub stack: ValueStack,    
-    pub table: &'code StringTable<'code>,//for errors only
-}
-
-impl FuncInputs<'_, >{
-    #[inline(always)]
-    pub fn pop_value(&mut self) -> Option<Value> {
-        self.stack.pop_value()
-    }
-
-    #[inline(always)]
-    pub fn push_value(&mut self,value : Value) -> Result<(),StackOverflow> {
-        self.stack.push_value(value)
-    }
-
-    #[inline(always)]
-    pub fn len(&self) -> usize {
-        self.stack.len()
-    }
-
-    #[inline(always)]
-    pub fn is_empty(&self) -> bool {
-        self.stack.is_empty()
-    }
+    func:Arc<FuncData<'code>>,
+    vars:Box<VarTable<'code>>,
 }
 
 pub const MAX_LOCAL_SCOPES: usize = 1000;
@@ -89,13 +62,15 @@ pub const MAX_RECURSION :usize=2_500;
 pub struct Context<'code> {
     // pub pos:usize,
     pos:usize,
-    func:Arc<FuncData>,
-    call_stack:  ArrayVec<RetData,MAX_RECURSION>,
-    local_call_stack: ArrayVec<RetData,MAX_LOCAL_SCOPES>,
-    vars:Box<VarTable>,
-    global_vars:&'code VarTable,
+    func:Arc<FuncData<'code>>,
+    call_stack:  ArrayVec<RetData<'code>,MAX_RECURSION>,
+    local_call_stack: ArrayVec<RetData<'code>,MAX_LOCAL_SCOPES>,
+    vars:Box<VarTable<'code>>,
+    global_vars:&'code VarTable<'code>,
 
-    pub inputs: FuncInputs<'code>,
+    // pub inputs: FuncInputs<'code>,
+    pub stack: ValueStack<'code>,    
+    pub table: &'code StringTable<'code>,//for errors only
 
 
     
@@ -104,26 +79,28 @@ pub struct Context<'code> {
 impl<'code> Context<'code> {
     pub fn new(
         
-        table:&'code StringTable<'code>,
-        func:Arc<FuncData>,
+        func:Arc<FuncData<'code>>,
         
         // stack: &'ctx mut ValueStack,
-        global_vars:&'code VarTable,
+        global_vars:&'code VarTable<'code>,
+        table: &'code StringTable<'code>,//for errors only
+
         // call_stack:  &'ctx mut ArrayVec<RetData,MAX_RECURSION>,
         // local_call_stack: &'ctx mut ArrayVec<RetData,MAX_LOCAL_SCOPES>,
         
     ) -> Self{
-        let inputs = FuncInputs{stack:ValueStack::default(),table};
+        // let inputs = FuncInputs{stack:ValueStack::default(),table};
         Context{
             pos:0,vars:Box::new(VarTable::default()),
+            stack:ValueStack::default(),
             func,global_vars,
-            inputs,call_stack:ArrayVec::new(),local_call_stack:ArrayVec::new(),
+            table,call_stack:ArrayVec::new(),local_call_stack:ArrayVec::new(),
         }
     }
 
 
     fn pop_to(&mut self,id:u32) -> Result<(),ErrList>{
-        match self.inputs.pop_value(){
+        match self.stack.pop_value(){
             Some(x) => self.vars.set(id as usize,x)
                 .map_err(|_| Error::Bug("tried seting a non existent id").to_list()),
             
@@ -134,35 +111,42 @@ impl<'code> Context<'code> {
     fn push_from(&mut self,id:u32) -> Result<(),ErrList>{
         let value = self.vars.get(id as usize)
             .ok_or_else(|| Error::Bug("tried seting a non existent id").to_list())?;
-        self.inputs.push_value(value).map_err(|_|{Error::StackOverflow.to_list()})?;
+        self.stack.push_value(value).map_err(|_|{Error::StackOverflow.to_list()})?;
         Ok(())
     }
 
     fn push_const(&mut self,id:u32) -> Result<(),ErrList>{
         let value = self.global_vars.get(id as usize)
             .ok_or_else(|| Error::Bug("tried seting a non existent id").to_list())?;
-        self.inputs.push_value(value).map_err(|_|{Error::StackOverflow.to_list()})?;
+        self.stack.push_value(value).map_err(|_|{Error::StackOverflow.to_list()})?;
+        Ok(())
+    }
+
+    fn push_closure(&mut self,id:u32) -> Result<(),ErrList>{
+        let value = self.func.vars.get(id as usize)
+            .ok_or_else(|| Error::Bug("tried seting a non existent id").to_list())?;
+        self.stack.push_value(value).map_err(|_|{Error::StackOverflow.to_list()})?;
         Ok(())
     }
 
     pub fn curent_var_names(&self) -> Vec<&'code str> {
         self.vars.names.iter()
-        .map(|id| self.inputs.table.get_raw_str(*id))
+        .map(|id| self.table.get_raw_str(*id))
         .collect()
     } 
 
     fn big_ret(&mut self) -> Result<(),ErrList> {
         let ret_data = self.call_stack.pop().ok_or_else(|| Error::Bug("over pop call stack").to_list())?;
-        let value = self.inputs.pop_value().ok_or_else(|| Error::Bug("over pop value stack").to_list())?;
+        let value = self.stack.pop_value().ok_or_else(|| Error::Bug("over pop value stack").to_list())?;
 
-        assert!(self.inputs.stack.len()>=ret_data.ret);
-        while self.inputs.stack.len()>ret_data.ret {
-            self.inputs.pop_value().ok_or_else(|| Error::Bug("impossible").to_list())?;
+        assert!(self.stack.len()>=ret_data.ret);
+        while self.stack.len()>ret_data.ret {
+            self.stack.pop_value().ok_or_else(|| Error::Bug("impossible").to_list())?;
         }
-        assert!(self.inputs.stack.len()==ret_data.ret);
+        assert!(self.stack.len()==ret_data.ret);
 
 
-        self.inputs.push_value(value).map_err(|_|{Error::StackOverflow.to_list()})?;
+        self.stack.push_value(value).map_err(|_|{Error::StackOverflow.to_list()})?;
         
         self.func = ret_data.func.clone();
         self.pos = ret_data.pos;
@@ -175,25 +159,25 @@ impl<'code> Context<'code> {
 
     fn small_ret(&mut self) -> Result<(),ErrList> {
         let ret_data = self.local_call_stack.pop().ok_or_else(|| Error::Bug("over pop call stack").to_list())?;
-        let value = self.inputs.pop_value().ok_or_else(|| Error::Bug("over pop value stack").to_list())?;
+        let value = self.stack.pop_value().ok_or_else(|| Error::Bug("over pop value stack").to_list())?;
 
-        assert!(self.inputs.stack.len()>=ret_data.ret);
-        while self.inputs.stack.len()>ret_data.ret {
-            self.inputs.pop_value().ok_or_else(|| Error::Bug("impossible").to_list())?;
+        assert!(self.stack.len()>=ret_data.ret);
+        while self.stack.len()>ret_data.ret {
+            self.stack.pop_value().ok_or_else(|| Error::Bug("impossible").to_list())?;
         }
-        assert!(self.inputs.stack.len()==ret_data.ret);
+        assert!(self.stack.len()==ret_data.ret);
         
         self.func = ret_data.func.clone();
         self.pos = ret_data.pos;
 
-        self.inputs.push_value(value).map_err(|_|{Error::StackOverflow.to_list()})?;
+        self.stack.push_value(value).map_err(|_|{Error::StackOverflow.to_list()})?;
         self.vars=ret_data.vars;
 
         Ok(())
     }
 
     fn call(&mut self) -> Result<(),ErrList> {
-        let called = self.inputs.pop_value()
+        let called = self.stack.pop_value()
             .ok_or_else(||{Error::Bug("over poping").to_list()}
             )?;
 
@@ -210,7 +194,7 @@ impl<'code> Context<'code> {
         std::mem::swap(&mut self.vars,&mut new_vars);
 
         let ret = RetData{
-            ret:self.inputs.stack.len(),
+            ret:self.stack.len(),
             func:self.func.clone(),
             pos:self.pos,
             vars:new_vars,
@@ -226,10 +210,11 @@ impl<'code> Context<'code> {
     
     fn handle_op(&mut self,op:Operation) -> Result<(),ErrList> {
         match op {
-            BinOp(b) => handle_bin(&mut self.inputs,b),
+            BinOp(b) => handle_bin(&mut self.stack,self.table,b),
             PopTo(id) => self.pop_to(id),
             PushFrom(id) => self.push_from(id),
             PushConst(id) => self.push_const(id),
+            PushClosure(id) => self.push_closure(id),
 
             RetSmall => self.small_ret(),
             RetBig => self.big_ret(),
@@ -263,6 +248,7 @@ pub enum Operation {
     PopTo(u32),
     PushFrom(u32),
     PushConst(u32),
+    PushClosure(u32),
 
     BinOp(BinOp),
 
@@ -285,14 +271,19 @@ fn test_vm_push_pop() {
     let b_id = string_table.get_id("var_b");
 
     //make function
-    let vars = VarTable::default();
+    let mut vars = VarTable::default();
+    vars.add_ids(&[a_id, b_id]);
+    vars.set(0, Value::Atom(atom_a_id)).unwrap(); 
+    vars.set(1, Value::Atom(atom_b_id)).unwrap();
+
     let code = vec![
         Operation::PushConst(0),
         Operation::PushConst(1),
+        Operation::PushClosure(1),
     ]
     .into_boxed_slice(); // Box the slice for FuncData
 
-    let func_data = Arc::new(FuncData::new(vars, code));
+    let func_data = Arc::new(FuncData::new(vars, &code));
 
     //global vars
     let mut global_vars = VarTable::default();
@@ -300,7 +291,7 @@ fn test_vm_push_pop() {
     global_vars.set(0, Value::Atom(atom_a_id)).unwrap(); 
     global_vars.set(1, Value::Atom(atom_b_id)).unwrap();
 
-    let mut context = Context::new(&string_table, func_data.clone(), &global_vars);
+    let mut context = Context::new(func_data.clone(), &global_vars, &string_table);
 
     // Step 5: Execute operations using next_op
     let mut keep_running = true;
@@ -310,7 +301,7 @@ fn test_vm_push_pop() {
 
     // Step 6: Assert the results
     // After executing PushConst(atom_a_id), PushConst(atom_b_id), BinOp::Add, the result should be 15 on the stack
-    let result = context.inputs.stack.pop_value().unwrap();
+    let result = context.stack.pop_value().unwrap();
     assert_eq!(result, Value::Atom(atom_b_id));
 }
 
