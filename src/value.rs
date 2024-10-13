@@ -1,6 +1,8 @@
 // #![allow(clippy::result_unit_err)]
 
 
+use core::hash::Hasher;
+use core::hash::Hash;
 use crate::vm::StaticFunc;
 use crate::vm::FuncData;
 use std::sync::Weak;
@@ -29,19 +31,60 @@ pub enum Value<'code> {
 }
 
 impl PartialEq for Value<'_> {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Value::WeakFunc(weak_a), Value::WeakFunc(weak_b)) => weak_a.ptr_eq(weak_b),
-            (Value::WeakFunc(weak), Value::Func(func)) | (Value::Func(func), Value::WeakFunc(weak)) => weak.ptr_eq(&Arc::downgrade(func)),
+            (Value::WeakFunc(weak), Value::Func(func)) | (Value::Func(func), Value::WeakFunc(weak)) => weak.as_ptr()==Arc::as_ptr(func),
             (Value::Func(a), Value::Func(b)) => Arc::ptr_eq(a, b),
             (Value::StaticFunc(a),Value::StaticFunc(b)) => a==b,
             (Value::Nil, Value::Nil) => true,
             (Value::Bool(a), Value::Bool(b)) => a == b,
             (Value::Int(a), Value::Int(b)) => a == b,
-            (Value::Float(a), Value::Float(b)) => a == b,
+            (Value::Float(a), Value::Float(b)) => a == b || a.is_nan() && b.is_nan(),
             (Value::Atom(a), Value::Atom(b)) => a == b,
             (Value::String(a), Value::String(b)) => Arc::ptr_eq(a, b) || *a == *b,
             _ => false,
+        }
+    }
+}
+
+
+impl Eq for Value<'_> {}
+
+impl Hash for Value<'_> {
+    #[inline]
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            Value::Nil => state.write_u8(0),
+            Value::Bool(b) => b.hash(state),
+            Value::Int(i) => i.hash(state),
+            Value::Float(f) => {
+                let normalized = if f.is_nan() {
+                    f64::NAN.to_bits()
+                } else {
+                    if *f==0.0 {
+                        0
+                    } else{
+                        f.to_bits()
+                    }
+                };
+                state.write_u64(normalized);
+            }
+            Value::Atom(a) => a.hash(state),
+            Value::String(arc) => {
+                let ptr = Arc::as_ptr(arc);
+                state.write_usize(ptr as usize);
+            }
+            Value::Func(arc) => {
+                let ptr = Arc::as_ptr(arc);
+                state.write_usize(ptr as usize);
+            }
+            Value::WeakFunc(weak) => {
+                let ptr = weak.as_ptr();
+                state.write_usize(ptr as usize);
+            }
+            Value::StaticFunc(func) => func.hash(state),
         }
     }
 }
