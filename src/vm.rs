@@ -272,7 +272,7 @@ impl<'code> Context<'code> {
         self.handle_op(op).map(|_| true)
     }
 
-    pub fn run(&mut self) -> Result<Value<'code>,ErrList> {
+    pub fn finish(&mut self) -> Result<Value<'code>,ErrList> {
         let mut keep_running = true;
         while keep_running {
             keep_running = self.next_op()?;
@@ -280,6 +280,11 @@ impl<'code> Context<'code> {
         self.stack.pop_value()
             .ok_or_else(||{Error::Bug("over poping").to_list()}
             )
+    }
+
+    pub fn run(&mut self) -> Result<Value<'code>,ErrList> {
+        self.pos=0;
+        self.finish()
     }
 
 }
@@ -403,8 +408,9 @@ fn test_vm_push_pop() {
 // }
 
 #[test]
+// #[no_mangle]
 fn test_not_gate_match() {
-    let mut string_table = StringTable::new();
+    let string_table = StringTable::new();
 
     let mut match_map = HashMap::new();
     match_map.insert(Value::Bool(false), 3); // false => true
