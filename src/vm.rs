@@ -306,3 +306,27 @@ fn test_vm_push_pop() {
 }
 
 
+// #[test]
+// fn test_invalid_lifetime_with_context() {
+//     // Setup the StringTable and create a global context
+//     let mut string_table = StringTable::new();
+//     let atom_local_id = string_table.get_id(":local_atom");
+
+//     let func_data = Arc::new(FuncData::new(VarTable::default(), &[]));
+//     let global_vars = VarTable::default();
+//     let mut context = Context::new(func_data.clone(), &global_vars, &string_table);
+
+//     // Create a local context with a shorter lifetime and push a value from it
+//     {
+//         let a = [NoOp];
+//         let dead_func = Arc::new(FuncData::new(VarTable::default(), &a));
+//         let mut local_context = Context::new(dead_func.clone(), &global_vars, &string_table);
+        
+//         let local_value = Value::Atom(atom_local_id);
+//         local_context.stack.push_value(local_value).unwrap(); // Invalid push
+//     } // `local_value` goes out of scope here, making it invalid
+
+//     // Attempt to pop the value, which should be a dangling reference
+//     let result = context.stack.pop_value().unwrap();
+//     println!("{:?}", result);
+// }

@@ -187,9 +187,9 @@ fn test_stack() {
 
 #[repr(transparent)]
 pub struct ValueStack<'code, const STACK_CAPACITY: usize = 1_000>{
-    phantom: PhantomData<Value<'code>>,
-    
     stack:Stack<STACK_CAPACITY>,
+    phantom: PhantomData<Value<'code>>,
+
 }
 
 #[repr(u32)]
