@@ -64,12 +64,10 @@ impl Hash for Value<'_> {
             Value::Float(f) => {
                 let normalized = if f.is_nan() {
                     f64::NAN.to_bits()
-                } else {
-                    if *f==0.0 {
-                        0
-                    } else{
-                        f.to_bits()
-                    }
+                } else if *f==0.0 {
+                    0
+                } else{
+                    f.to_bits()
                 };
                 state.write_u64(normalized);
             }

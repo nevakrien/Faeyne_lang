@@ -107,7 +107,7 @@ impl<'code> Context<'code> {
 
     fn pop_to(&mut self,id:usize) -> Result<(),ErrList>{
         match self.stack.pop_value(){
-            Some(x) => self.mut_vars.set(id as usize,x)
+            Some(x) => self.mut_vars.set(id,x)
                 .map_err(|_| Error::Bug("tried seting a non existent id").to_list()),
             
             None  => Err(Error::Bug("over poping").to_list()),
@@ -115,21 +115,21 @@ impl<'code> Context<'code> {
     }
 
     fn push_from(&mut self,id:usize) -> Result<(),ErrList>{
-        let value = self.mut_vars.get(id as usize)
+        let value = self.mut_vars.get(id)
             .ok_or_else(|| Error::Bug("tried seting a non existent id").to_list())?;
         self.stack.push_value(value).map_err(|_|{Error::StackOverflow.to_list()})?;
         Ok(())
     }
 
     fn push_const(&mut self,id:usize) -> Result<(),ErrList>{
-        let value = self.global_vars.get(id as usize)
+        let value = self.global_vars.get(id)
             .ok_or_else(|| Error::Bug("tried seting a non existent id").to_list())?;
         self.stack.push_value(value).map_err(|_|{Error::StackOverflow.to_list()})?;
         Ok(())
     }
 
     fn push_closure(&mut self,id:usize) -> Result<(),ErrList>{
-        let value = self.func.vars.get(id as usize)
+        let value = self.func.vars.get(id)
             .ok_or_else(|| Error::Bug("tried seting a non existent id").to_list())?;
         self.stack.push_value(value).map_err(|_|{Error::StackOverflow.to_list()})?;
         Ok(())
