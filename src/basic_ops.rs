@@ -2,12 +2,13 @@
 
 
 
+use crate::reporting::stacked_error;
 use crate::reporting::NoneCallble;
 use crate::reporting::overflow_error;
 use crate::reporting::bug_error;
 use codespan::Span;
 use std::sync::Arc;
-use crate::reporting::{ErrList,Error,InternalError};
+use crate::reporting::{ErrList,Error};
 
 use crate::value::Value;
 
@@ -30,13 +31,15 @@ fn _is_equal<'code>(stack:&mut ValueStack<'code>,_table:&StringTable<'code>) -> 
 #[inline(always)]
 pub fn is_equal<'code>(stack:&mut ValueStack<'code>,table:&StringTable<'code>,span:Span) -> Result<bool, ErrList> {
     _is_equal(stack,table).map_err(|err|{
-        Error::Stacked(InternalError{
-            message:"while using is equal",
-            err,
-            span:span,
-        }).to_list()
+        stacked_error("while using is equal",err,span)
+        // Error::Stacked(InternalError{
+        //     message:"while using is equal",
+        //     err,
+        //     span:span,
+        // }).to_list()
     })
 }
+
 
 pub fn is_equal_value<'code>(stack:&mut ValueStack<'code>,table:&StringTable<'code>,span:Span) -> Result<(), ErrList> {
     match is_equal(stack,table,span){

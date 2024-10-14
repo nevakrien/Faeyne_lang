@@ -96,6 +96,18 @@ pub fn match_error(span:Span) -> ErrList {
     Error::Match(MatchError{span}).to_list()
 }
 
+#[cold]
+#[inline(never)]
+pub fn stacked_error(message:&'static str,err:ErrList,span:Span) -> ErrList {
+    Error::Stacked(InternalError{
+            message,
+            err,
+            span:span,
+        }).to_list()
+}
+
+
+
 #[derive(Debug,PartialEq)]
 pub struct RecursionError{
     pub depth:usize
