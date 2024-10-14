@@ -3,6 +3,8 @@
 
 
 
+// use std::collections::LinkedList;
+use std::collections::LinkedList;
 use crate::reporting::InternalError;
 use crate::reporting::SigError;
 use crate::basic_ops::to_string_debug;
@@ -15,8 +17,7 @@ use crate::reporting::RecursionError;
 use crate::value::Value;
 use crate::value::VarTable;
 
-use crate::basic_ops::handle_bin;
-use crate::basic_ops::BinOp;
+use crate::basic_ops;
 
 
 use crate::reporting::{Error,MatchError,ErrList};
@@ -25,6 +26,7 @@ use crate::stack::ValueStack;
 use ast::ast::StringTable;
 
 use arrayvec::ArrayVec;
+
 
 #[cfg(test)]
 use ast::id::ERR_ID;
@@ -71,7 +73,8 @@ pub struct RetData<'code> {
     pos:usize,
     func:Arc<FuncData<'code>>,
     mut_vars:Box<VarTable<'code>>,
-    pub span: Span
+    // pub span: Span,
+    pub spans:LinkedList<Span>,
 
 }
 
@@ -83,6 +86,8 @@ pub struct Context<'code> {
     pos:usize,
     func:Arc<FuncData<'code>>,
     call_stack:  ArrayVec<RetData<'code>,MAX_RECURSION>,
+    
+
     mut_vars:Box<VarTable<'code>>,
     global_vars:&'code VarTable<'code>,
 
@@ -108,11 +113,22 @@ impl<'code> Context<'code> {
         
     ) -> Self{
         // let inputs = FuncInputs{stack:ValueStack::default(),table};
+        
+        let ret = RetData{
+            func:func.clone(),
+            pos:func.code.len(),
+            ret:0,
+            mut_vars:Box::new(VarTable::default()),
+            spans:LinkedList::new(),
+        };
+        let mut call_stack = ArrayVec::new();
+        call_stack.push(ret);
+
         Context{
             pos:0,mut_vars:Box::new(VarTable::default()),
             stack:ValueStack::default(),
             func,global_vars,
-            table,call_stack:ArrayVec::new(),
+            table,call_stack,
         }
     }
 
@@ -140,14 +156,14 @@ impl<'code> Context<'code> {
         Ok(())
     }
 
-    fn push_const(&mut self,id:usize) -> Result<(),ErrList>{
+    fn push_global(&mut self,id:usize) -> Result<(),ErrList>{
         let value = self.global_vars.get(id)
             .ok_or_else(|| Error::Bug("tried seting a non existent id").to_list())?;
         self.stack.push_value(value).map_err(|_|{Error::StackOverflow.to_list()})?;
         Ok(())
     }
 
-    fn push_closure(&mut self,id:usize) -> Result<(),ErrList>{
+    fn push_local(&mut self,id:usize) -> Result<(),ErrList>{
         let value = self.func.vars.get(id)
             .ok_or_else(|| Error::Bug("tried seting a non existent id").to_list())?;
         self.stack.push_value(value).map_err(|_|{Error::StackOverflow.to_list()})?;
@@ -204,7 +220,7 @@ impl<'code> Context<'code> {
         Ok(())
     }
 
-    fn pop_function(&mut self,span:&'code Span) -> Result<Arc<FuncData<'code>>,ErrList> {
+    fn pop_function(&mut self,span:Span) -> Result<Arc<FuncData<'code>>,ErrList> {
         let called = self.stack.pop_value()
             .ok_or_else(||{Error::Bug("over poping").to_list()}
             )?;
@@ -217,14 +233,14 @@ impl<'code> Context<'code> {
             _ =>{
                     let debug = to_string_debug(&called,self.table);
                     return Err(Error::NoneCallble(
-                    NoneCallble{span:*span,value:debug})
+                    NoneCallble{span:span,value:debug})
                     .to_list());
                 }
 
         }
     } 
 
-    fn call(&mut self,span:&'code Span) -> Result<(),ErrList> {
+    fn call(&mut self,span:Span) -> Result<(),ErrList> {
         
 
         let func = self.pop_function(span)?;
@@ -235,12 +251,15 @@ impl<'code> Context<'code> {
 
         std::mem::swap(&mut self.mut_vars,&mut new_vars);
 
+        let mut spans = LinkedList::new();
+        spans.push_front(span);
+
         let ret = RetData{
             ret:self.stack.len(),
             func:self.func.clone(),
             pos:self.pos,
             mut_vars:new_vars,
-            span: *span,
+            spans,
         };
 
         self.call_stack.try_push(ret)
@@ -253,15 +272,22 @@ impl<'code> Context<'code> {
         Ok(())
     }
 
-    fn tail_call(&mut self,span:&'code Span) -> Result<(),ErrList> {
+    fn tail_call(&mut self,span:Span) -> Result<(),ErrList> {
 
         //get function
         let func = self.pop_function(span)?;
 
         self.mut_vars = Box::new(func.mut_vars.clone());
 
+        self.call_stack.last_mut().unwrap().spans.push_front(span);
 
         self.func = func;
+        self.pos = 0;
+        Ok(())
+    }
+
+    fn call_this(&mut self) -> Result<(),ErrList> {
+        self.mut_vars = Box::new(self.func.mut_vars.clone());
         self.pos = 0;
         Ok(())
     }
@@ -303,36 +329,40 @@ impl<'code> Context<'code> {
     }
     
 
-    fn handle_op(&mut self,op:Operation<'code>) -> Result<(),ErrList> {
+    pub fn handle_op(&mut self,op:Operation<'code>) -> Result<(),ErrList> {
         match op {
             NoOp => Ok(()),
 
-            BinOp(b) => handle_bin(&mut self.stack,self.table,b),//probably needs span as well...
+            // BinOp{op,span} => handle_bin(&mut self.stack,self.table,op,span),//probably needs span as well...
             PopTo(id) => self.pop_to(id),
             PushFrom(id) => self.push_from(id),
-            PushConst(id) => self.push_const(id),
-            PushClosure(id) => self.push_closure(id),
+            PushGlobal(id) => self.push_global(id),
+            PushLocal(id) => self.push_local(id),
 
             Return => self.big_ret(),
+            
             Call(span) => self.call(span),
             TailCall(span) => self.tail_call(span),
+            Operation::CallThis => self.call_this(),
+
+
             MatchJump(map) => self.match_jump(map),
             Jump(pos) => {
                 self.pos=pos;
                 Ok(())
             },
             
-            Operation::CaptureClosure(maker) => self.capture_closure(maker),
+            CaptureClosure(maker) => self.capture_closure(maker),
 
             //some utils for small funcs
 
-            Operation::PushBool(b) => self.stack.push_bool(b)
+            PushBool(b) => self.stack.push_bool(b)
                 .map_err(|_| Error::StackOverflow.to_list()),
             
-            Operation::PushAtom(a) => self.stack.push_atom(a)
+            PushAtom(a) => self.stack.push_atom(a)
                 .map_err(|_| Error::StackOverflow.to_list()),
             
-            Operation::PushNil => self.stack.push_nil()
+            PushNil => self.stack.push_nil()
                 .map_err(|_| Error::StackOverflow.to_list()),
 
             
@@ -340,11 +370,16 @@ impl<'code> Context<'code> {
             PopArgTo(id) => self.pop_arg_to(id),
             PopExtraArgs(num) => self.pop_extra_arg(num),
 
-            Operation::PushTerminator => self.stack.push_terminator()
+            PushTerminator => self.stack.push_terminator()
                 .map_err(|_| Error::StackOverflow.to_list()),
             
-            Operation::PopTerminator => self.stack.pop_terminator()
+            PopTerminator => self.stack.pop_terminator()
                 .ok_or_else(|| Error::Sig(SigError{}).to_list()),
+            
+            //basic ops
+            Equal(span) => basic_ops::is_equal_value(&mut self.stack,self.table,span),
+            NotEqual(span) => basic_ops::is_not_equal_value(&mut self.stack,self.table,span),
+            _ => todo!(),
 
         }
     }
@@ -352,7 +387,10 @@ impl<'code> Context<'code> {
     #[inline(never)]
     fn trace_error(&self,mut err:ErrList) -> ErrList {
         for ret in self.call_stack.iter().rev() {
-            err = Error::Stacked(InternalError{span:ret.span,err,message:"while calling function"}).to_list();
+            for span in &ret.spans {
+                err = Error::Stacked(InternalError{span: *span,err,message:"while calling function"}).to_list();
+
+            }
         }
 
         err
@@ -387,18 +425,18 @@ impl<'code> Context<'code> {
 
 }
 
-
 #[derive(Debug,PartialEq,Clone,Copy)]
 pub enum Operation<'code> {
 
-    Call(&'code Span),//calls a function args are passed through the stack and a single return value is left at the end (args are consumed)
-    TailCall(&'code Span),//similar to call but does not push its own vars. instead it drops
+    Call(Span),//calls a function args are passed through the stack and a single return value is left at the end (args are consumed)
+    TailCall(Span),//similar to call but does not push its own vars. instead it drops
+    CallThis, //tail call!!! unlike other call methods this one does not apear in the reporting stack
     Return,//returns out of the function scope. 
 
     PopTo(usize),
     PushFrom(usize),
-    PushConst(usize),
-    PushClosure(usize),
+    PushGlobal(usize),
+    PushLocal(usize),
 
 
     PopArgTo(usize),
@@ -410,7 +448,7 @@ pub enum Operation<'code> {
     PushAtom(u32),
     PushNil,
 
-    BinOp(BinOp),
+    
 
     MatchJump(&'code StaticMatch<'code>),//pops a value to match aginst then jumps to a position based on it
     Jump(usize), //jumps to a position usually outside of a match case
@@ -420,9 +458,35 @@ pub enum Operation<'code> {
 
     CaptureClosure(&'code FuncMaker<'code>),//pops the data off the stack and creates a new function returning it as an IRValue to the stack
     NoOp,
+
+    // BinOp{op:basic_ops::BinOp,span: Span},//too fat
+    Add(Span),
+    Sub(Span),
+    Mul(Span),
+    Div(Span),
+    IntDiv(Span),
+    Modulo(Span),
+    Pow(Span),
+
+    Equal(Span),
+    NotEqual(Span),
+    Smaller(Span),
+    Bigger(Span),
+    SmallerEq(Span),
+    BiggerEq(Span),
+
+    And(Span),
+    Or(Span),
+    Xor(Span),
+
+    DoubleAnd(Span),
+    DoubleOr(Span),
+    DoubleXor(Span),
 }
 
 use Operation::*;
+
+
 
 #[derive(PartialEq,Debug,Clone)]
 #[repr(C)] //static match should probably hold the map first because its acessed first
@@ -462,9 +526,9 @@ fn test_vm_push_pop() {
     vars.set(1, Value::Atom(atom_b_id)).unwrap();
 
     let code = vec![
-        Operation::PushConst(0),
-        Operation::PushConst(1),
-        Operation::PushClosure(1),
+        Operation::PushGlobal(0),
+        Operation::PushGlobal(1),
+        Operation::PushLocal(1),
     ]
     .into_boxed_slice(); // Box the slice for FuncData
 
@@ -591,7 +655,7 @@ fn test_string_match() {
         Operation::MatchJump(&string_match), // Perform the string match
         Operation::PushAtom(string_table.get_id(":err")),             // Push constant (dummy operation)
         Operation::Jump(4),
-        Operation::PushConst(0),             // Dummy result operation
+        Operation::PushGlobal(0),             // Dummy result operation
     ]
     .into_boxed_slice();
 
@@ -692,7 +756,7 @@ fn test_call_function() {
 
     // Step 5: Push the function onto the stack and call it
     context.stack.push_value(Value::Func(func_data.clone())).unwrap();
-    context.call(&span).unwrap();
+    context.call(span).unwrap();
 
     // Step 6: Run the function and verify the result
     let result = context.run().unwrap();

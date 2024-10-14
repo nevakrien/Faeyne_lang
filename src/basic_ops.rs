@@ -2,8 +2,9 @@
 
 
 
+use codespan::Span;
 use std::sync::Arc;
-use crate::reporting::{ErrList,Error};
+use crate::reporting::{ErrList,Error,InternalError};
 
 use crate::value::Value;
 
@@ -12,51 +13,57 @@ use crate::stack::ValueStack;
 
 
 
-#[derive(Debug,PartialEq,Clone,Copy)]
-#[repr(u32)]
-pub enum BinOp {
-    Add,
-    Sub,
-    Mul,
-    Div,
-    IntDiv,
-    Modulo,
-    Pow,
+// #[derive(Debug,PartialEq,Clone,Copy)]
+// // #[repr(u32)]
+// pub enum BinOp {
+//     Add,
+//     Sub,
+//     Mul,
+//     Div,
+//     IntDiv,
+//     Modulo,
+//     Pow,
 
-    Equal,
-    NotEqual,
-    Smaller,
-    Bigger,
-    SmallerEq,
-    BiggerEq,
+//     Equal,
+//     NotEqual,
+//     Smaller,
+//     Bigger,
+//     SmallerEq,
+//     BiggerEq,
 
-    And,
-    Or,
-    Xor,
+//     And,
+//     Or,
+//     Xor,
 
-    DoubleAnd,
-    DoubleOr,
-    DoubleXor,
-}
+//     DoubleAnd,
+//     DoubleOr,
+//     DoubleXor,
+// }
 
-pub fn handle_bin<'code>(stack:&mut ValueStack<'code>,table:&StringTable<'code>,op:BinOp) -> Result<(),ErrList>{
-    match op {
-        BinOp::Equal => {
-            let value = is_equal(stack,table)?;
-            stack.push_bool(value).map_err(|_|{Error::StackOverflow.to_list()})?;
-            Ok(())
-        },
+// pub fn handle_bin<'code>(stack:&mut ValueStack<'code>,table:&StringTable<'code>,op:BinOp,span:Span) -> Result<(),ErrList>{
+//     match op {
+//         BinOp::Equal => {
+//             let value = is_equal(stack,table)?;
+//             stack.push_bool(value).map_err(|_|{Error::StackOverflow.to_list()})?;
+//             Ok(())
+//         },
 
-        BinOp::NotEqual => {
-            let value = !is_equal(stack,table)?;
-            stack.push_bool(value).map_err(|_|{Error::StackOverflow.to_list()})?;
-            Ok(())
-        },
-        _ => todo!()
-    }
-}
+//         BinOp::NotEqual => {
+//             let value = !is_equal(stack,table)?;
+//             stack.push_bool(value).map_err(|_|{Error::StackOverflow.to_list()})?;
+//             Ok(())
+//         },
+//         _ => todo!()
+//     }.map_err(|err|{
+//         Error::Stacked(InternalError{
+//             message:"while using a buildin op",
+//             err,
+//             span:span,
+//         }).to_list()
+//     })
+// }
 
-pub fn is_equal<'code>(stack:&mut ValueStack<'code>,_table:&StringTable<'code>) -> Result<bool, ErrList> {
+fn _is_equal<'code>(stack:&mut ValueStack<'code>,_table:&StringTable<'code>) -> Result<bool, ErrList> {
     let a = stack.pop_value().ok_or_else(|| Error::Bug("over popping").to_list())?;
     let b = stack.pop_value().ok_or_else(|| Error::Bug("over popping").to_list())?;
 
@@ -64,6 +71,34 @@ pub fn is_equal<'code>(stack:&mut ValueStack<'code>,_table:&StringTable<'code>) 
     stack.pop_terminator().ok_or_else(|| Error::Bug("failed to pop terminator").to_list())?;
     
     Ok(a==b)
+}
+
+pub fn is_equal<'code>(stack:&mut ValueStack<'code>,table:&StringTable<'code>,span:Span) -> Result<bool, ErrList> {
+    _is_equal(stack,table).map_err(|err|{
+        Error::Stacked(InternalError{
+            message:"while using is equal",
+            err,
+            span:span,
+        }).to_list()
+    })
+}
+
+pub fn is_equal_value<'code>(stack:&mut ValueStack<'code>,table:&StringTable<'code>,span:Span) -> Result<(), ErrList> {
+    match is_equal(stack,table,span){
+        Ok(b) => {
+            stack.push_bool(b).map_err(|_| Error::StackOverflow.to_list())
+        },
+        Err(e) => Err(e),
+    }
+}
+
+pub fn is_not_equal_value<'code>(stack:&mut ValueStack<'code>,table:&StringTable<'code>,span:Span) -> Result<(), ErrList> {
+    match is_equal(stack,table,span){
+        Ok(b) => {
+            stack.push_bool(!b).map_err(|_| Error::StackOverflow.to_list())
+        },
+        Err(e) => Err(e),
+    }
 }
 
 //can never ever fail because that would imply we can fail reporting an error
@@ -95,6 +130,8 @@ fn test_is_equal() {
     let mut value_stack = ValueStack::new();
     let string_table = StringTable::new();
 
+    let mock_span = Span::default();
+
 
     // let mut func_inputs = FuncInputs {
     //     stack: value_stack,
@@ -110,7 +147,7 @@ fn test_is_equal() {
     value_stack.push_value(atom_a).unwrap();
     value_stack.push_value(atom_b).unwrap();
 
-    handle_bin(&mut value_stack,&string_table, BinOp::Equal).unwrap();
+    is_equal_value(&mut value_stack,&string_table,mock_span).unwrap();
 
     let result = value_stack.pop_bool().unwrap();
     assert!(result);
@@ -123,7 +160,8 @@ fn test_is_equal() {
     value_stack.push_value(atom_a).unwrap();
     value_stack.push_value(atom_b).unwrap();
 
-    handle_bin(&mut value_stack,&string_table, BinOp::Equal).unwrap();
+    is_equal_value(&mut value_stack,&string_table,mock_span).unwrap();
+    
 
     let result = value_stack.pop_bool().unwrap();
     assert!(!result);
@@ -135,7 +173,8 @@ fn test_is_equal() {
     value_stack.push_value(atom_a).unwrap();
     value_stack.push_value(nil).unwrap();
 
-    handle_bin(&mut value_stack,&string_table, BinOp::Equal).unwrap();
+    is_equal_value(&mut value_stack,&string_table,mock_span).unwrap();
+    
 
     #[cfg(feature = "debug_terminators")]{
         let result = value_stack.pop_bool().unwrap();
@@ -146,12 +185,12 @@ fn test_is_equal() {
         value_stack.push_value(Value::Nil).unwrap();
         value_stack.push_value(Value::Nil).unwrap();
 
-        let res = handle_bin(&mut value_stack,&string_table, BinOp::Equal);
+        let res = is_equal_value(&mut value_stack,&string_table,mock_span);
         assert!(res.is_err());
 
         //to few values
         value_stack.push_terminator().unwrap();
-        let res = handle_bin(&mut value_stack,&string_table, BinOp::Equal);
+        let res = is_equal_value(&mut value_stack,&string_table,mock_span);
         assert!(res.is_err());
     }
 
