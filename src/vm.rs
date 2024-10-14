@@ -3,6 +3,7 @@
 
 
 
+use crate::reporting::SigError;
 use crate::basic_ops::to_string_debug;
 use crate::reporting::NoneCallble;
 
@@ -113,6 +114,13 @@ impl<'code> Context<'code> {
         }
     }
 
+    pub fn curent_var_names(&self) -> Vec<&'code str> {
+        self.mut_vars.names.iter()
+        .chain(self.func.vars.names.iter())
+        .chain(self.global_vars.names.iter())
+        .map(|id| self.table.get_raw_str(*id))
+        .collect()
+    } 
 
     fn pop_to(&mut self,id:usize) -> Result<(),ErrList>{
         match self.stack.pop_value(){
@@ -144,13 +152,31 @@ impl<'code> Context<'code> {
         Ok(())
     }
 
-    pub fn curent_var_names(&self) -> Vec<&'code str> {
-        self.mut_vars.names.iter()
-        .chain(self.func.vars.names.iter())
-        .chain(self.global_vars.names.iter())
-        .map(|id| self.table.get_raw_str(*id))
-        .collect()
-    } 
+    
+
+    fn pop_arg_to(&mut self,id:usize) -> Result<(),ErrList>{
+        match self.stack.pop_value(){
+            None  => Err(Error::Sig(SigError {}).to_list()),
+
+            Some(x) => self.mut_vars.set(id,x)
+                .map_err(|_| Error::Bug("tried seting a non existent id")
+                .to_list()),
+            
+        }
+    }
+
+    fn pop_extra_arg(&mut self,num:usize) -> Result<(),ErrList>{
+        for _ in 0..num {
+            match self.stack.pop_value(){
+                None  => {return Err(Error::Sig(SigError {}).to_list());},
+
+                Some(_) => {},
+                
+            }
+        }
+        Ok(())
+    }
+    
 
     fn big_ret(&mut self) -> Result<(),ErrList> {
         let Some(ret_data) = self.call_stack.pop() else { 
@@ -176,19 +202,15 @@ impl<'code> Context<'code> {
         Ok(())
     }
 
-    
-
-    fn call(&mut self,span:&'code Span) -> Result<(),ErrList> {
-        //get function code
-
+    fn pop_function(&mut self,span:&'code Span) -> Result<Arc<FuncData<'code>>,ErrList> {
         let called = self.stack.pop_value()
             .ok_or_else(||{Error::Bug("over poping").to_list()}
             )?;
 
-        let func = match called {
-            Value::Func(f) => f,
-            Value::WeakFunc(wf) => wf.upgrade().ok_or_else(||{Error::Bug("weak function failed to upgrade").to_list()}
-            )?,
+        match called {
+            Value::Func(f) => Ok(f),
+            Value::WeakFunc(wf) => Ok(wf.upgrade().ok_or_else(||{Error::Bug("weak function failed to upgrade").to_list()}
+            )?),
             Value::String(_) => todo!(),
             _ =>{
                     let debug = to_string_debug(&called,self.table);
@@ -197,7 +219,13 @@ impl<'code> Context<'code> {
                     .to_list());
                 }
 
-        };
+        }
+    } 
+
+    fn call(&mut self,span:&'code Span) -> Result<(),ErrList> {
+        
+
+        let func = self.pop_function(span)?;
 
         let mut new_vars = Box::new(func.mut_vars.clone());
 
@@ -225,24 +253,7 @@ impl<'code> Context<'code> {
     fn tail_call(&mut self,span:&'code Span) -> Result<(),ErrList> {
 
         //get function
-
-        let called = self.stack.pop_value()
-            .ok_or_else(||{Error::Bug("over poping").to_list()}
-            )?;
-
-        let func = match called {
-            Value::Func(f) => f,
-            Value::WeakFunc(wf) => wf.upgrade().ok_or_else(||{Error::Bug("weak function failed to upgrade").to_list()}
-            )?,
-            Value::String(_) => todo!(),
-            _ =>{
-                    let debug = to_string_debug(&called,self.table);
-                    return Err(Error::NoneCallble(
-                    NoneCallble{span:*span,value:debug})
-                    .to_list());
-                }
-
-        };
+        let func = self.pop_function(span)?;
 
         self.mut_vars = Box::new(func.mut_vars.clone());
 
@@ -310,6 +321,8 @@ impl<'code> Context<'code> {
             
             Operation::CaptureClosure(maker) => self.capture_closure(maker),
 
+            //some utils for small funcs
+
             Operation::PushBool(b) => self.stack.push_bool(b)
                 .map_err(|_| Error::StackOverflow.to_list()),
             
@@ -319,8 +332,16 @@ impl<'code> Context<'code> {
             Operation::PushNil => self.stack.push_nil()
                 .map_err(|_| Error::StackOverflow.to_list()),
 
+            
+            //args managment
+            PopArgTo(id) => self.pop_arg_to(id),
+            PopExtraArgs(num) => self.pop_extra_arg(num),
+
             Operation::PushTerminator => self.stack.push_terminator()
                 .map_err(|_| Error::StackOverflow.to_list()),
+            
+            Operation::PopTerminator => self.stack.pop_terminator()
+                .ok_or_else(|| Error::Sig(SigError{}).to_list()),
 
         }
     }
@@ -363,7 +384,11 @@ pub enum Operation<'code> {
     PushConst(usize),
     PushClosure(usize),
 
+
+    PopArgTo(usize),
+    PopExtraArgs(usize),
     PushTerminator,
+    PopTerminator,
 
     PushBool(bool),
     PushAtom(u32),
@@ -625,4 +650,35 @@ fn test_capture_closure() {
     } else {
         panic!("Expected a captured function on the stack");
     }
+}
+
+#[test]
+fn test_call_function() {
+    // Step 1: Setup the StringTable
+    let mut string_table = StringTable::new();
+    let var_a_id = string_table.get_id("var_a");
+
+    // Step 2: Setup the VarTable for the function
+    let mut mut_vars = VarTable::default();
+    mut_vars.add_ids(&[var_a_id]);
+
+    // Step 3: Create the code for the function
+    let code = vec![
+        Operation::PushNil, // Push nil before returning
+        Operation::Return,  // Return from the function
+    ].into_boxed_slice();
+    let span = Span::default();
+
+    // Step 4: Create the FuncData and Context
+    let func_data = Arc::new(FuncData::new(&mut_vars, VarTable::default(), &code, span));
+    let global_vars = VarTable::default();
+    let mut context = Context::new(func_data.clone(), &global_vars, &string_table);
+
+    // Step 5: Push the function onto the stack and call it
+    context.stack.push_value(Value::Func(func_data.clone())).unwrap();
+    context.call(&span).unwrap();
+
+    // Step 6: Run the function and verify the result
+    let result = context.run().unwrap();
+    assert_eq!(result, Value::Nil);
 }
