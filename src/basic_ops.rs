@@ -18,6 +18,8 @@ use ast::ast::StringTable;
 use crate::stack::ValueStack;
 
 
+#[cfg(test)]
+use crate::reporting::report_err_list;
 
 #[inline(always)]
 fn _is_equal<'code>(stack:&mut ValueStack<'code>,_table:&StringTable<'code>) -> Result<bool, ErrList> {
@@ -812,4 +814,78 @@ fn test_add_operation() {
     add(&mut value_stack, &string_table, mock_span).unwrap();
     let result = value_stack.pop_value().unwrap();
     assert_eq!(result, Value::String("Hello123".to_string().into()));
+}
+
+
+
+#[test]
+fn test_chained_operations() {
+    let mut value_stack = ValueStack::new();
+    let string_table = StringTable::new();
+    let mock_span = Span::default();
+
+    // Chain operations: 5 + 3 - 2
+    value_stack.push_value(Value::Int(5)).unwrap();
+    value_stack.push_value(Value::Int(3)).unwrap();
+    add(&mut value_stack, &string_table, mock_span).unwrap(); // Stack: [8]
+
+    value_stack.push_value(Value::Int(2)).unwrap();
+    sub(&mut value_stack, &string_table, mock_span).unwrap(); // Stack: [6]
+    let result = value_stack.pop_value().unwrap();
+    assert_eq!(result, Value::Int(6));
+
+    // Chain operations: (2 * 3) + (4 / 2)
+    value_stack.push_value(Value::Int(2)).unwrap();
+    value_stack.push_value(Value::Int(3)).unwrap();
+    mul(&mut value_stack, &string_table, mock_span).unwrap(); // Stack: [6]
+
+    #[cfg(feature = "debug_terminators")]
+    value_stack.push_terminator().unwrap();
+    value_stack.push_value(Value::Int(4)).unwrap();
+    value_stack.push_value(Value::Int(2)).unwrap();
+    div(&mut value_stack, &string_table, mock_span).unwrap(); // Stack: [6, 2]
+
+    add(&mut value_stack, &string_table, mock_span).unwrap(); // Stack: [8]
+    let result = value_stack.pop_value().unwrap();
+    assert_eq!(result, Value::Int(8));
+
+    // Chain operations with strings: "Hello" + " " + "World" + 123
+    value_stack.push_value(Value::String("Hello".to_string().into())).unwrap();
+    value_stack.push_value(Value::String(" ".to_string().into())).unwrap();
+    add(&mut value_stack, &string_table, mock_span).unwrap(); // Stack: ["Hello "]
+
+
+    value_stack.push_value(Value::String("World".to_string().into())).unwrap();
+    add(&mut value_stack, &string_table, mock_span).unwrap(); // Stack: ["Hello World"]
+
+
+    value_stack.push_value(Value::Int(123)).unwrap();
+    add(&mut value_stack, &string_table, mock_span).unwrap(); // Stack: ["Hello World123"]
+    let result = value_stack.pop_value().unwrap();
+    assert_eq!(result, Value::String("Hello World123".to_string().into()));
+}
+
+#[test]
+fn test_division_by_zero() {
+    let mut value_stack = ValueStack::new();
+    let string_table = StringTable::new();
+    let mock_span = Span::new(0, 10);
+
+    // Test division by zero with integers
+    value_stack.push_value(Value::Int(10)).unwrap();
+    value_stack.push_value(Value::Int(0)).unwrap();
+    let result = div(&mut value_stack, &string_table, mock_span);
+    assert!(result.is_err());
+    if let Err(err_list) = result {
+        report_err_list(&err_list, "10 / 0", &string_table);
+    }
+
+    // Test division by zero with floats
+    value_stack.push_value(Value::Float(10.0)).unwrap();
+    value_stack.push_value(Value::Float(0.0)).unwrap();
+    let result = div(&mut value_stack, &string_table, mock_span);
+    assert!(result.is_err());
+    if let Err(err_list) = result {
+        report_err_list(&err_list, "10.0 / 0.0", &string_table);
+    }
 }
