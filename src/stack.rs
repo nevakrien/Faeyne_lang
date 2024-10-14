@@ -145,15 +145,21 @@ fn test_stack() {
     // Compare with the original i32 value inside Aligned.
     assert_eq!(value.as_ref(), Some(&aligned_value));
 
-    if let Some(ref val) = value {
-        println!("Popped value: {}", val.inner_ref());
+    if let Some(ref _val) = value {
+        // println!("Popped value: {}", val.inner_ref());
+    }
+    else {
+        unreachable!()
     }
 
     // Test to_inner method
     if let Some(popped_value) = value {
         let inner_value = popped_value.to_inner();
         assert_eq!(inner_value, 42i32);
-        println!("Moved out inner value: {}", inner_value);
+        // println!("Moved out inner value: {}", inner_value);
+    }
+    else {
+        unreachable!()
     }
 
     // #[repr(align(16))]

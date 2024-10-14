@@ -307,7 +307,7 @@ impl<'code> Context<'code> {
         match op {
             NoOp => Ok(()),
 
-            BinOp(b) => handle_bin(&mut self.stack,self.table,b),
+            BinOp(b) => handle_bin(&mut self.stack,self.table,b),//probably needs span as well...
             PopTo(id) => self.pop_to(id),
             PushFrom(id) => self.push_from(id),
             PushConst(id) => self.push_const(id),
@@ -352,7 +352,7 @@ impl<'code> Context<'code> {
     #[inline(never)]
     fn trace_error(&self,mut err:ErrList) -> ErrList {
         for ret in self.call_stack.iter().rev() {
-            err = Error::Stacked(InternalError{span:ret.span,err}).to_list();
+            err = Error::Stacked(InternalError{span:ret.span,err,message:"while calling function"}).to_list();
         }
 
         err
