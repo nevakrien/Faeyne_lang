@@ -19,6 +19,8 @@ use ast::ast::StringTable;
 pub enum Error {
     Match(MatchError),
     Sig(SigError),
+    ZeroDiv,
+
     Missing(UndefinedName),
     UnreachableCase(UnreachableCase),
     NoneCallble(NoneCallble),
@@ -86,6 +88,12 @@ pub fn sig_error() -> ErrList {
 
 #[cold]
 #[inline(never)]
+pub fn zero_div_error() -> ErrList {
+    Error::ZeroDiv.to_list() 
+}
+
+#[cold]
+#[inline(never)]
 pub fn recursion_error(depth:usize) -> ErrList {
     Error::Recursion(RecursionError{depth}).to_list()
 }
@@ -105,8 +113,6 @@ pub fn stacked_error(message:&'static str,err:ErrList,span:Span) -> ErrList {
             span:span,
         }).to_list()
 }
-
-
 
 #[derive(Debug,PartialEq)]
 pub struct RecursionError{
@@ -356,6 +362,9 @@ fn emit_error(
 
             Diagnostic::help().with_message("probably caused by an infinite loop or excessive memory consumbtion")
         },
+
+        Error::ZeroDiv => Diagnostic::error()
+            .with_message("attempted to divide by zero"),
     };
 
     // Emit the diagnostic for the current error

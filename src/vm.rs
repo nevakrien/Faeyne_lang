@@ -377,7 +377,22 @@ impl<'code> Context<'code> {
             //basic ops
             Equal(span) => basic_ops::is_equal_value(&mut self.stack,self.table,span),
             NotEqual(span) => basic_ops::is_not_equal_value(&mut self.stack,self.table,span),
-            _ => todo!(),
+
+            DoubleAnd(span) => basic_ops::logical_and(&mut self.stack,self.table,span),
+            DoubleOr(span) => basic_ops::logical_or(&mut self.stack,self.table,span),
+            DoubleXor(span) => basic_ops::logical_xor(&mut self.stack,self.table,span),
+
+            Smaller(span) => basic_ops::smaller(&mut self.stack,self.table,span),
+            Bigger(span) => basic_ops::bigger(&mut self.stack,self.table,span),
+            SmallerEq(span) => basic_ops::smaller_eq(&mut self.stack,self.table,span),
+            BiggerEq(span) => basic_ops::bigger_eq(&mut self.stack,self.table,span),
+
+            Pow(span) => basic_ops::pow(&mut self.stack,self.table,span),
+            Mul(span) => basic_ops::mul(&mut self.stack,self.table,span),
+            Sub(span) => basic_ops::sub(&mut self.stack,self.table,span),
+                    
+            Add(_) | Div(_) | Modulo(_) | IntDiv(_) => todo!(),
+            Operation::And(_) | Operation::Or(_) | Operation::Xor(_) => todo!(),
 
         }
     }
