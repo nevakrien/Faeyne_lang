@@ -241,6 +241,7 @@ impl<'code> Context<'code> {
         Ok(())
     }
     
+
     fn handle_op(&mut self,op:Operation<'code>) -> Result<(),ErrList> {
         match op {
             NoOp => Ok(()),
@@ -260,7 +261,7 @@ impl<'code> Context<'code> {
                 Ok(())
             },
             
-            Operation::CaptureClosure => todo!(),
+            Operation::CaptureClosure(_) => todo!(),
 
             Operation::PushBool(b) => self.stack.push_bool(b)
                 .map_err(|_| Error::StackOverflow.to_list()),
@@ -330,7 +331,7 @@ pub enum Operation<'code> {
     //basic match pattern is similar to ifs in assembly
     // jmp (table) -> [code to push value | Jump to end]
 
-    CaptureClosure,//pops the data off the stack and creates a new function returning it as an IRValue to the stack
+    CaptureClosure(()),//pops the data off the stack and creates a new function returning it as an IRValue to the stack
     NoOp,
 }
 
@@ -392,7 +393,6 @@ fn test_vm_push_pop() {
 
 
 
-    // After executing PushConst(atom_a_id), PushConst(atom_b_id), BinOp::Add, the result should be 15 on the stack
     let result = context.run().unwrap();
     assert_eq!(result, Value::Atom(atom_b_id));
 }

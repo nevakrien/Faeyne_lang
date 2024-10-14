@@ -24,14 +24,10 @@ smallvec = "1.13.2"
 # smallvec = "1.13.2"
 
 
-[dependencies.stacker]
-version = "0.1"
-optional = true
-
 [features]
-default = ["ConsistentStackSize","nightly"]
-ConsistentStackSize = ["stacker"]
-nightly = []  # Nightly is an optional feature
+default = []
+debug_terminators = []
+
 
 
 [profile.release]

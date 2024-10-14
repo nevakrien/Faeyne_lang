@@ -59,7 +59,10 @@ pub fn handle_bin<'code>(stack:&mut ValueStack<'code>,table:&StringTable<'code>,
 pub fn is_equal<'code>(stack:&mut ValueStack<'code>,_table:&StringTable<'code>) -> Result<bool, ErrList> {
     let a = stack.pop_value().ok_or_else(|| Error::Bug("over popping").to_list())?;
     let b = stack.pop_value().ok_or_else(|| Error::Bug("over popping").to_list())?;
+
+    #[cfg(feature = "debug_terminators")]
     stack.pop_terminator().ok_or_else(|| Error::Bug("failed to pop terminator").to_list())?;
+    
     Ok(a==b)
 }
 
@@ -86,6 +89,7 @@ fn test_is_equal() {
     let atom_a = Value::Atom(1); 
     let atom_b = Value::Atom(1); 
 
+    #[cfg(feature = "debug_terminators")]
     value_stack.push_terminator().unwrap(); //with a terminator
     value_stack.push_value(atom_a).unwrap();
     value_stack.push_value(atom_b).unwrap();
@@ -117,20 +121,22 @@ fn test_is_equal() {
 
     handle_bin(&mut value_stack,&string_table, BinOp::Equal).unwrap();
 
-    let result = value_stack.pop_bool().unwrap();
-    assert!(!result);
+    #[cfg(feature = "debug_terminators")]{
+        let result = value_stack.pop_bool().unwrap();
+        assert!(!result);
 
-    //too many values
-    value_stack.push_value(Value::Nil).unwrap();
-    value_stack.push_value(Value::Nil).unwrap();
-    value_stack.push_value(Value::Nil).unwrap();
+        //too many values
+        value_stack.push_value(Value::Nil).unwrap();
+        value_stack.push_value(Value::Nil).unwrap();
+        value_stack.push_value(Value::Nil).unwrap();
 
-    let res = handle_bin(&mut value_stack,&string_table, BinOp::Equal);
-    assert!(res.is_err());
+        let res = handle_bin(&mut value_stack,&string_table, BinOp::Equal);
+        assert!(res.is_err());
 
-    //to few values
-    value_stack.push_terminator().unwrap();
-    let res = handle_bin(&mut value_stack,&string_table, BinOp::Equal);
-    assert!(res.is_err());
+        //to few values
+        value_stack.push_terminator().unwrap();
+        let res = handle_bin(&mut value_stack,&string_table, BinOp::Equal);
+        assert!(res.is_err());
+    }
 
 }
