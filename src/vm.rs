@@ -222,7 +222,7 @@ impl<'code> Context<'code> {
         Ok(())
     }
 
-    fn tail_call(&mut self) -> Result<(),ErrList> {
+    fn tail_call(&mut self,span:&'code Span) -> Result<(),ErrList> {
 
         //get function
 
@@ -234,7 +234,13 @@ impl<'code> Context<'code> {
             Value::Func(f) => f,
             Value::WeakFunc(wf) => wf.upgrade().ok_or_else(||{Error::Bug("weak function failed to upgrade").to_list()}
             )?,
-            _ => todo!()
+            Value::String(_) => todo!(),
+            _ =>{
+                    let debug = to_string_debug(&called,self.table);
+                    return Err(Error::NoneCallble(
+                    NoneCallble{span:*span,value:debug})
+                    .to_list());
+                }
 
         };
 
@@ -295,7 +301,7 @@ impl<'code> Context<'code> {
 
             Return => self.big_ret(),
             Call(span) => self.call(span),
-            TailCall => self.tail_call(),
+            TailCall(span) => self.tail_call(span),
             MatchJump(map) => self.match_jump(map),
             Jump(pos) => {
                 self.pos=pos;
@@ -349,7 +355,7 @@ impl<'code> Context<'code> {
 pub enum Operation<'code> {
 
     Call(&'code Span),//calls a function args are passed through the stack and a single return value is left at the end (args are consumed)
-    TailCall,//similar to call but does not push its own vars. instead it drops
+    TailCall(&'code Span),//similar to call but does not push its own vars. instead it drops
     Return,//returns out of the function scope. 
 
     PopTo(usize),

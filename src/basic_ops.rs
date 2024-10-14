@@ -2,6 +2,7 @@
 
 
 
+use std::sync::Arc;
 use crate::reporting::{ErrList,Error};
 
 use crate::value::Value;
@@ -67,8 +68,18 @@ pub fn is_equal<'code>(stack:&mut ValueStack<'code>,_table:&StringTable<'code>) 
 
 //can never ever fail because that would imply we can fail reporting an error
 #[inline(never)]
-pub fn to_string_debug<'code>(_value:&Value<'code>,_table:&StringTable<'code>) -> String {
-    todo!()
+pub fn to_string_debug<'code>(value: &Value<'code>, table: &StringTable<'code>) -> String {
+    match value {
+        Value::Nil => "nil".to_string(),
+        Value::Bool(b) => format!("bool({})", b),
+        Value::Int(i) => format!("int({})", i),
+        Value::Float(f) => format!("float({})", f),
+        Value::Atom(atom_id) => format!("atom({})", table.get_raw_str(*atom_id)),
+        Value::String(s) => format!("string(\"{}\")", s),
+        Value::Func(func) => format!("func({:p})", Arc::as_ptr(func)),
+        Value::WeakFunc(weak_func) => format!("weak_func({:p})", weak_func.as_ptr()),
+        Value::StaticFunc(static_func) => format!("static_func({:p})", static_func as *const _),
+    }
 }
 
 pub fn is_equal_wraped<'code>(stack:&mut ValueStack<'code>,_table:&StringTable<'code>) -> Result<(), ErrList> {
