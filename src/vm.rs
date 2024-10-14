@@ -1,10 +1,10 @@
 
 // use smallvec::SmallVec;
 
-#[cfg(test)]
-use ast::id::ERR_ID;
-#[cfg(test)]
-use ast::get_id;
+
+
+use crate::basic_ops::to_string_debug;
+use crate::reporting::NoneCallble;
 
 use codespan::Span;
 use std::collections::HashMap;
@@ -24,6 +24,10 @@ use ast::ast::StringTable;
 
 use arrayvec::ArrayVec;
 
+#[cfg(test)]
+use ast::id::ERR_ID;
+#[cfg(test)]
+use ast::get_id;
 
 // pub type Code<'code> = &'code [Operation];
 // pub type DynFFI = dyn Fn(&mut FuncInputs) -> Result<(),ErrList>;
@@ -49,11 +53,16 @@ impl<'code> FuncData<'code> {
             span,
         }
     }
-
-    
-
 }
 
+#[derive(Clone,PartialEq,Debug)]
+pub struct FuncMaker<'code> {
+    pub captures: &'code[usize],
+    pub mut_vars_template: &'code VarTable<'code>,
+    pub vars: &'code VarTable<'code>,
+    pub code: &'code [Operation<'code>],
+    pub span: Span,
+}
 
 
 pub struct RetData<'code> {
@@ -144,7 +153,10 @@ impl<'code> Context<'code> {
     } 
 
     fn big_ret(&mut self) -> Result<(),ErrList> {
-        let ret_data = self.call_stack.pop().ok_or_else(|| Error::Bug("over pop call stack").to_list())?;
+        let Some(ret_data) = self.call_stack.pop() else { 
+            self.pos=self.func.code.len();//we are in main and instructed to return so we are done
+            return Ok(())
+        };
         let value = self.stack.pop_value().ok_or_else(|| Error::Bug("over pop value stack").to_list())?;
 
         assert!(self.stack.len()>=ret_data.ret);
@@ -166,7 +178,7 @@ impl<'code> Context<'code> {
 
     
 
-    fn call(&mut self) -> Result<(),ErrList> {
+    fn call(&mut self,span:&'code Span) -> Result<(),ErrList> {
         //get function code
 
         let called = self.stack.pop_value()
@@ -177,7 +189,13 @@ impl<'code> Context<'code> {
             Value::Func(f) => f,
             Value::WeakFunc(wf) => wf.upgrade().ok_or_else(||{Error::Bug("weak function failed to upgrade").to_list()}
             )?,
-            _ => todo!()
+            Value::String(_) => todo!(),
+            _ =>{
+                    let debug = to_string_debug(&called,self.table);
+                    return Err(Error::NoneCallble(
+                    NoneCallble{span:*span,value:debug})
+                    .to_list());
+                }
 
         };
 
@@ -240,6 +258,29 @@ impl<'code> Context<'code> {
         self.pos=jump_pos;
         Ok(())
     }
+
+    fn capture_closure(&mut self,maker: &FuncMaker<'code>) -> Result<(),ErrList> {
+        let mut mut_vars = maker.mut_vars_template.clone();
+
+        for i in maker.captures {
+            mut_vars.set(*i,self.stack.pop_value()
+                .ok_or_else(||{Error::Bug("over poping").to_list()})?)
+                .map_err(|_|{Error::Bug("missing id").to_list()})?;
+        }
+
+        #[cfg(feature = "debug_terminators")]
+        self.stack.pop_terminator()
+            .ok_or_else(||{Error::Bug("too many args").to_list()})?;
+
+        let func = Value::Func(Arc::new(
+            FuncData::new(
+            maker.vars,mut_vars,maker.code,maker.span
+            )
+        ));
+
+        self.stack.push_value(func)
+            .map_err(|_| Error::StackOverflow.to_list())
+    }
     
 
     fn handle_op(&mut self,op:Operation<'code>) -> Result<(),ErrList> {
@@ -253,7 +294,7 @@ impl<'code> Context<'code> {
             PushClosure(id) => self.push_closure(id),
 
             Return => self.big_ret(),
-            Call => self.call(),
+            Call(span) => self.call(span),
             TailCall => self.tail_call(),
             MatchJump(map) => self.match_jump(map),
             Jump(pos) => {
@@ -261,7 +302,7 @@ impl<'code> Context<'code> {
                 Ok(())
             },
             
-            Operation::CaptureClosure(_) => todo!(),
+            Operation::CaptureClosure(maker) => self.capture_closure(maker),
 
             Operation::PushBool(b) => self.stack.push_bool(b)
                 .map_err(|_| Error::StackOverflow.to_list()),
@@ -275,7 +316,6 @@ impl<'code> Context<'code> {
             Operation::PushTerminator => self.stack.push_terminator()
                 .map_err(|_| Error::StackOverflow.to_list()),
 
-            // _ => todo!(),
         }
     }
 
@@ -308,7 +348,7 @@ impl<'code> Context<'code> {
 #[derive(Debug,PartialEq,Clone,Copy)]
 pub enum Operation<'code> {
 
-    Call,//calls a function args are passed through the stack and a single return value is left at the end (args are consumed)
+    Call(&'code Span),//calls a function args are passed through the stack and a single return value is left at the end (args are consumed)
     TailCall,//similar to call but does not push its own vars. instead it drops
     Return,//returns out of the function scope. 
 
@@ -331,7 +371,7 @@ pub enum Operation<'code> {
     //basic match pattern is similar to ifs in assembly
     // jmp (table) -> [code to push value | Jump to end]
 
-    CaptureClosure(()),//pops the data off the stack and creates a new function returning it as an IRValue to the stack
+    CaptureClosure(&'code FuncMaker<'code>),//pops the data off the stack and creates a new function returning it as an IRValue to the stack
     NoOp,
 }
 
@@ -534,4 +574,49 @@ fn test_string_match() {
     let result = context.run().unwrap();
     assert_eq!(result, Value::Func(func_data.clone())); // Should match the string
 
+}
+
+#[test]
+fn test_capture_closure() {
+    // Step 1: Setup the StringTable
+    let mut string_table = StringTable::new();
+    let var_a_id = string_table.get_id("var_a");
+
+    // Step 2: Setup the VarTable for the function
+    let mut mut_vars_template = VarTable::default();
+    mut_vars_template.add_ids(&[var_a_id]); // Adding the variable to capture
+
+    // Step 3: Create a FuncMaker that defines the closure capturing
+    let captures = &[0]; // Capture the variable at position 0 on the stack
+    let vars = VarTable::default();
+    let code = vec![Operation::Return].into_boxed_slice(); // Simple code that just returns
+    let span = Span::default();
+
+    let func_maker = FuncMaker {
+        captures,
+        mut_vars_template: &mut_vars_template,
+        vars: &vars,
+        code: &code,
+        span,
+    };
+
+    // Step 4: Create a Context and push a value to the stack
+    let func_data = Arc::new(FuncData::new(&vars, VarTable::default(), &code, span));
+    let global_vars = VarTable::default();
+    let mut context = Context::new(func_data.clone(), &global_vars, &string_table);
+
+    // Push a value onto the stack to be captured
+    context.stack.push_value(Value::Int(42)).unwrap();
+
+    // Step 5: Perform the CaptureClosure operation
+    context.capture_closure(&func_maker).unwrap();
+
+    // Step 6: Verify the result
+    let captured_func = context.stack.pop_value().unwrap();
+    if let Value::Func(captured_func_data) = captured_func {
+        let captured_value = captured_func_data.mut_vars.get(0).unwrap();
+        assert_eq!(captured_value, Value::Int(42));
+    } else {
+        panic!("Expected a captured function on the stack");
+    }
 }

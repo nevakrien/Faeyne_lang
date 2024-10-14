@@ -4,7 +4,6 @@
 
 use crate::reporting::{ErrList,Error};
 
-#[cfg(test)]
 use crate::value::Value;
 
 use ast::ast::StringTable;
@@ -64,6 +63,12 @@ pub fn is_equal<'code>(stack:&mut ValueStack<'code>,_table:&StringTable<'code>) 
     stack.pop_terminator().ok_or_else(|| Error::Bug("failed to pop terminator").to_list())?;
     
     Ok(a==b)
+}
+
+//can never ever fail because that would imply we can fail reporting an error
+#[inline(never)]
+pub fn to_string_debug<'code>(_value:&Value<'code>,_table:&StringTable<'code>) -> String {
+    todo!()
 }
 
 pub fn is_equal_wraped<'code>(stack:&mut ValueStack<'code>,_table:&StringTable<'code>) -> Result<(), ErrList> {
