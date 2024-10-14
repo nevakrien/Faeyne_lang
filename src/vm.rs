@@ -1,6 +1,8 @@
 
 // use smallvec::SmallVec;
 
+use ast::id::ERR_ID;
+use ast::get_id;
 use codespan::Span;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -408,7 +410,6 @@ fn test_vm_push_pop() {
 // }
 
 #[test]
-// #[no_mangle]
 fn test_not_gate_match() {
     let string_table = StringTable::new();
 
@@ -459,4 +460,63 @@ fn test_not_gate_match() {
     error_context.stack.push_value(Value::Int(1)).unwrap(); // Invalid value for matching
     let match_result = error_context.match_jump(&not_gate_match);
     assert!(match_result.is_err()); // Should return a match error
+}
+
+#[test]
+fn test_string_match() {
+    let mut string_table = StringTable::new();
+
+    // Create two different `Arc` instances holding the same string content
+    let arc_str1 = Arc::new("match_string".to_string());
+    let arc_str2 = Arc::new("match_string".to_string());
+
+    let mut match_map = HashMap::new();
+    match_map.insert(Value::String(arc_str1.clone()), 3); // Map the string to some operation (3)
+
+    // Span for reporting errors (dummy span for now)
+    let dummy_span = Span::default();
+
+    // No default match behavior
+    let string_match = StaticMatch {
+        map: match_map,
+        default: Some(1), // No default behavior
+        span: dummy_span,
+    };
+
+
+
+    // Function that just has a MatchJump with the string match
+    let code = vec![
+        Operation::MatchJump(&string_match), // Perform the string match
+        Operation::PushAtom(string_table.get_id(":err")),             // Push constant (dummy operation)
+        Operation::Jump(4),
+        Operation::PushConst(0),             // Dummy result operation
+    ]
+    .into_boxed_slice();
+
+    let mut_vars = VarTable::default();
+    let vars = VarTable::default();
+
+    let func_data = Arc::new(FuncData::new(vars, mut_vars, &code, dummy_span));
+
+    // Global variables (holding some strings)
+    let mut global_vars = VarTable::default();
+    global_vars.add_ids(&[0]); // No IDs needed in this case
+    global_vars.set(0,Value::WeakFunc(Arc::downgrade(&func_data))).unwrap();
+
+    let mut context = Context::new(func_data.clone(), &global_vars, &string_table);
+
+   
+    // Test generic
+    let unmatched_str = Arc::new("different_string".to_string());
+     // Push the second Arc (different address but same content)
+    context.stack.push_value(Value::String(unmatched_str)).unwrap();
+    let result = context.run().unwrap();
+    assert_eq!(result, Value::Atom(get_id!(":err"))); // Should match the string
+
+     // Push the second Arc (different address but same content)
+    context.stack.push_value(Value::String(arc_str2.clone())).unwrap();
+    let result = context.run().unwrap();
+    assert_eq!(result, Value::Func(func_data.clone())); // Should match the string
+
 }

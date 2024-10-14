@@ -73,9 +73,9 @@ impl Hash for Value<'_> {
             }
             Value::Atom(a) => a.hash(state),
             Value::String(arc) => {
-                let ptr = Arc::as_ptr(arc);
-                state.write_usize(ptr as usize);
-            }
+                    let string_content = &**arc;  // Dereference the `Arc` to get the string
+                    string_content.hash(state);   // Hash the string itself
+                },
             Value::Func(arc) => {
                 let ptr = Arc::as_ptr(arc);
                 state.write_usize(ptr as usize);
