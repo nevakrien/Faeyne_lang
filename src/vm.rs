@@ -33,7 +33,6 @@ use ast::id::ERR_ID;
 #[cfg(test)]
 use ast::get_id;
 
-// pub type Code<'code> = &'code [Operation];
 // pub type DynFFI = dyn Fn(&mut FuncInputs) -> Result<(),ErrList>;
 pub type StaticFunc<'code> = fn(&mut ValueStack<'code>,&StringTable<'code>) -> Result<(),ErrList>;
 
@@ -140,6 +139,7 @@ impl<'code> Context<'code> {
         .collect()
     } 
 
+    #[inline(always)]
     fn pop_to(&mut self,id:usize) -> Result<(),ErrList>{
         match self.stack.pop_value(){
             Some(x) => self.mut_vars.set(id,x)
@@ -183,6 +183,7 @@ impl<'code> Context<'code> {
         }
     }
 
+    #[cold]
     fn pop_extra_arg(&mut self,num:usize) -> Result<(),ErrList>{
         for _ in 0..num {
             match self.stack.pop_value(){
@@ -384,7 +385,7 @@ impl<'code> Context<'code> {
         }
     }
 
-    #[inline(never)]
+    #[cold]
     fn trace_error(&self,mut err:ErrList) -> ErrList {
         for ret in self.call_stack.iter().rev() {
             for span in &ret.spans {

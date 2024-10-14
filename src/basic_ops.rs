@@ -13,56 +13,7 @@ use crate::stack::ValueStack;
 
 
 
-// #[derive(Debug,PartialEq,Clone,Copy)]
-// // #[repr(u32)]
-// pub enum BinOp {
-//     Add,
-//     Sub,
-//     Mul,
-//     Div,
-//     IntDiv,
-//     Modulo,
-//     Pow,
-
-//     Equal,
-//     NotEqual,
-//     Smaller,
-//     Bigger,
-//     SmallerEq,
-//     BiggerEq,
-
-//     And,
-//     Or,
-//     Xor,
-
-//     DoubleAnd,
-//     DoubleOr,
-//     DoubleXor,
-// }
-
-// pub fn handle_bin<'code>(stack:&mut ValueStack<'code>,table:&StringTable<'code>,op:BinOp,span:Span) -> Result<(),ErrList>{
-//     match op {
-//         BinOp::Equal => {
-//             let value = is_equal(stack,table)?;
-//             stack.push_bool(value).map_err(|_|{Error::StackOverflow.to_list()})?;
-//             Ok(())
-//         },
-
-//         BinOp::NotEqual => {
-//             let value = !is_equal(stack,table)?;
-//             stack.push_bool(value).map_err(|_|{Error::StackOverflow.to_list()})?;
-//             Ok(())
-//         },
-//         _ => todo!()
-//     }.map_err(|err|{
-//         Error::Stacked(InternalError{
-//             message:"while using a buildin op",
-//             err,
-//             span:span,
-//         }).to_list()
-//     })
-// }
-
+#[inline(always)]
 fn _is_equal<'code>(stack:&mut ValueStack<'code>,_table:&StringTable<'code>) -> Result<bool, ErrList> {
     let a = stack.pop_value().ok_or_else(|| Error::Bug("over popping").to_list())?;
     let b = stack.pop_value().ok_or_else(|| Error::Bug("over popping").to_list())?;
@@ -73,6 +24,7 @@ fn _is_equal<'code>(stack:&mut ValueStack<'code>,_table:&StringTable<'code>) -> 
     Ok(a==b)
 }
 
+#[inline(always)]
 pub fn is_equal<'code>(stack:&mut ValueStack<'code>,table:&StringTable<'code>,span:Span) -> Result<bool, ErrList> {
     _is_equal(stack,table).map_err(|err|{
         Error::Stacked(InternalError{
