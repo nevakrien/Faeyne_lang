@@ -77,6 +77,22 @@ pub fn to_string_debug<'code>(value: &Value<'code>, table: &StringTable<'code>) 
     }
 }
 
+//can never ever fail because that would imply we can fail reporting an error
+pub fn to_string_runtime<'code>(value: &Value<'code>, table: &StringTable<'code>) -> String {
+    match value {
+        Value::Nil => "nil".to_string(),
+        Value::Bool(b) => format!("{}", b),
+        Value::Int(i) => format!("{}", i),
+        Value::Float(f) => format!("{}", f),
+        Value::Atom(atom_id) => format!("{}", table.get_raw_str(*atom_id)),
+        Value::String(s) => s.to_string(),
+        Value::Func(func) => format!("func({:p})", Arc::as_ptr(func)),
+        Value::WeakFunc(weak_func) => format!("weak_func({:p})", weak_func.as_ptr()),
+        Value::StaticFunc(static_func) => format!("static_func({:p})", static_func as *const _),
+    }
+}
+
+
 #[cold]
 #[inline(never)]
 pub fn non_callble_error<'code>(span:Span,called:&Value<'code>,table:&StringTable<'code>) -> ErrList {
@@ -605,4 +621,195 @@ fn test_division_operations() {
     int_div(&mut value_stack, &string_table, mock_span).unwrap();
     let result = value_stack.pop_value().unwrap();
     assert_eq!(result, Value::Int(3));
+}
+
+#[cold]
+pub fn bitwise_and<'code>(stack: &mut ValueStack<'code>, _table: &StringTable<'code>, span: Span) -> Result<(), ErrList> {
+    let b = stack.pop_value().ok_or_else(|| stacked_error("while calling &", bug_error("over popping"), span))?;
+    let a = stack.pop_value().ok_or_else(|| stacked_error("while calling &", bug_error("over popping"), span))?;
+
+    #[cfg(feature = "debug_terminators")]
+    stack.pop_terminator().ok_or_else(|| stacked_error("while calling &", bug_error("failed to pop terminator"), span))?;
+
+    let result = match (a, b) {
+        (Value::Int(a), Value::Int(b)) => Value::Int(a & b),
+        (Value::Bool(a), Value::Bool(b)) => Value::Bool(a & b),
+        _ => return Err(stacked_error("while calling &", sig_error(), span)),
+    };
+    stack.push_value(result).map_err(|_| stacked_error("while calling &", overflow_error(), span))
+}
+
+#[cold]
+pub fn bitwise_or<'code>(stack: &mut ValueStack<'code>, _table: &StringTable<'code>, span: Span) -> Result<(), ErrList> {
+    let b = stack.pop_value().ok_or_else(|| stacked_error("while calling |", bug_error("over popping"), span))?;
+    let a = stack.pop_value().ok_or_else(|| stacked_error("while calling |", bug_error("over popping"), span))?;
+
+    #[cfg(feature = "debug_terminators")]
+    stack.pop_terminator().ok_or_else(|| stacked_error("while calling |", bug_error("failed to pop terminator"), span))?;
+
+    let result = match (a, b) {
+        (Value::Int(a), Value::Int(b)) => Value::Int(a | b),
+        (Value::Bool(a), Value::Bool(b)) => Value::Bool(a | b),
+        _ => return Err(stacked_error("while calling |", sig_error(), span)),
+    };
+    stack.push_value(result).map_err(|_| stacked_error("while calling |", overflow_error(), span))
+}
+
+#[cold]
+pub fn bitwise_xor<'code>(stack: &mut ValueStack<'code>, _table: &StringTable<'code>, span: Span) -> Result<(), ErrList> {
+    let b = stack.pop_value().ok_or_else(|| stacked_error("while calling ^", bug_error("over popping"), span))?;
+    let a = stack.pop_value().ok_or_else(|| stacked_error("while calling ^", bug_error("over popping"), span))?;
+
+    #[cfg(feature = "debug_terminators")]
+    stack.pop_terminator().ok_or_else(|| stacked_error("while calling ^", bug_error("failed to pop terminator"), span))?;
+
+    let result = match (a, b) {
+        (Value::Int(a), Value::Int(b)) => Value::Int(a ^ b),
+        (Value::Bool(a), Value::Bool(b)) => Value::Bool(a ^ b),
+        _ => return Err(stacked_error("while calling ^", sig_error(), span)),
+    };
+    stack.push_value(result).map_err(|_| stacked_error("while calling ^", overflow_error(), span))
+}
+
+#[test]
+fn test_bitwise_operations() {
+    let mut value_stack = ValueStack::new();
+    let string_table = StringTable::new();
+    let mock_span = Span::default();
+
+    // Test Bitwise AND (&)
+    value_stack.push_value(Value::Int(6)).unwrap();
+    value_stack.push_value(Value::Int(3)).unwrap();
+    bitwise_and(&mut value_stack, &string_table, mock_span).unwrap();
+    let result = value_stack.pop_value().unwrap();
+    assert_eq!(result, Value::Int(2));
+
+    value_stack.push_value(Value::Bool(true)).unwrap();
+    value_stack.push_value(Value::Bool(false)).unwrap();
+    bitwise_and(&mut value_stack, &string_table, mock_span).unwrap();
+    let result = value_stack.pop_value().unwrap();
+    assert_eq!(result, Value::Bool(false));
+
+    // Test Bitwise OR (|)
+    value_stack.push_value(Value::Int(6)).unwrap();
+    value_stack.push_value(Value::Int(3)).unwrap();
+    bitwise_or(&mut value_stack, &string_table, mock_span).unwrap();
+    let result = value_stack.pop_value().unwrap();
+    assert_eq!(result, Value::Int(7));
+
+    value_stack.push_value(Value::Bool(true)).unwrap();
+    value_stack.push_value(Value::Bool(false)).unwrap();
+    bitwise_or(&mut value_stack, &string_table, mock_span).unwrap();
+    let result = value_stack.pop_value().unwrap();
+    assert_eq!(result, Value::Bool(true));
+
+    // Test Bitwise XOR (^)
+    value_stack.push_value(Value::Int(6)).unwrap();
+    value_stack.push_value(Value::Int(3)).unwrap();
+    bitwise_xor(&mut value_stack, &string_table, mock_span).unwrap();
+    let result = value_stack.pop_value().unwrap();
+    assert_eq!(result, Value::Int(5));
+
+    value_stack.push_value(Value::Bool(true)).unwrap();
+    value_stack.push_value(Value::Bool(false)).unwrap();
+    bitwise_xor(&mut value_stack, &string_table, mock_span).unwrap();
+    let result = value_stack.pop_value().unwrap();
+    assert_eq!(result, Value::Bool(true));
+}
+
+pub fn add<'code>(stack: &mut ValueStack<'code>, _table: &StringTable<'code>, span: Span) -> Result<(), ErrList> {
+    let b = stack.pop_value().ok_or_else(|| stacked_error("while calling +", sig_error(), span))?;
+    let a = stack.pop_value().ok_or_else(|| stacked_error("while calling +", sig_error(), span))?;
+
+    #[cfg(feature = "debug_terminators")]
+    stack.pop_terminator().ok_or_else(|| stacked_error("while calling +", sig_error(), span))?;
+
+    let result = match (a, b) {
+        // Numeric addition for Ints and Floats
+        (Value::Int(a), Value::Int(b)) => Value::Int(a + b),
+        (Value::Float(a), Value::Float(b)) => Value::Float(a + b),
+        (Value::Int(a), Value::Float(b)) => Value::Float((a as f64) + b),
+        (Value::Float(a), Value::Int(b)) => Value::Float(a + (b as f64)),
+
+        // String concatenation
+        (Value::String(mut s1), Value::String(s2)) => {
+            if let Some(s1_mut) = Arc::get_mut(&mut s1) {
+                s1_mut.push_str(&s2);
+                Value::String(s1)
+            } else {
+                let mut ans = String::with_capacity(s1.len() + s2.len());
+                ans.push_str(&s1);
+                ans.push_str(&s2);
+                Value::String(ans.into())
+            }
+        }
+        (Value::String(mut s1), b) => {
+            let s2 = to_string_runtime(&b, _table);
+            if let Some(s1_mut) = Arc::get_mut(&mut s1) {
+                s1_mut.push_str(&s2);
+                Value::String(s1)
+            } else {
+                let mut ans = String::with_capacity(s1.len() + s2.len());
+                ans.push_str(&s1);
+                ans.push_str(&s2);
+                Value::String(ans.into())
+            }
+        }
+        (a, Value::String(mut s2)) => {
+            let s1 = to_string_runtime(&a, _table);
+            if let Some(s2_mut) = Arc::get_mut(&mut s2) {
+                s2_mut.insert_str(0, &s1);
+                Value::String(s2)
+            } else {
+                let mut ans = String::with_capacity(s1.len() + s2.len());
+                ans.push_str(&s1);
+                ans.push_str(&s2);
+                Value::String(ans.into())
+            }
+        }
+        _ => return Err(stacked_error("while calling +", sig_error(), span)),
+    };
+    stack.push_value(result).map_err(|_| stacked_error("while calling +", overflow_error(), span))
+}
+
+
+
+
+#[test]
+fn test_add_operation() {
+    let mut value_stack = ValueStack::new();
+    let string_table = StringTable::new();
+    let mock_span = Span::default();
+
+    // Test numeric addition for Ints and Floats
+    value_stack.push_value(Value::Int(5)).unwrap();
+    value_stack.push_value(Value::Int(3)).unwrap();
+    add(&mut value_stack, &string_table, mock_span).unwrap();
+    let result = value_stack.pop_value().unwrap();
+    assert_eq!(result, Value::Int(8));
+
+    value_stack.push_value(Value::Float(2.5)).unwrap();
+    value_stack.push_value(Value::Float(1.5)).unwrap();
+    add(&mut value_stack, &string_table, mock_span).unwrap();
+    let result = value_stack.pop_value().unwrap();
+    assert_eq!(result, Value::Float(4.0));
+
+    value_stack.push_value(Value::Int(2)).unwrap();
+    value_stack.push_value(Value::Float(3.5)).unwrap();
+    add(&mut value_stack, &string_table, mock_span).unwrap();
+    let result = value_stack.pop_value().unwrap();
+    assert_eq!(result, Value::Float(5.5));
+
+    // Test string concatenation
+    value_stack.push_value(Value::String("Hello".to_string().into())).unwrap();
+    value_stack.push_value(Value::String(" World".to_string().into())).unwrap();
+    add(&mut value_stack, &string_table, mock_span).unwrap();
+    let result = value_stack.pop_value().unwrap();
+    assert_eq!(result, Value::String("Hello World".to_string().into()));
+
+    value_stack.push_value(Value::String("Hello".to_string().into())).unwrap();
+    value_stack.push_value(Value::Int(123)).unwrap();
+    add(&mut value_stack, &string_table, mock_span).unwrap();
+    let result = value_stack.pop_value().unwrap();
+    assert_eq!(result, Value::String("Hello123".to_string().into()));
 }

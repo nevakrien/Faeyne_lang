@@ -390,9 +390,16 @@ impl<'code> Context<'code> {
             Pow(span) => basic_ops::pow(&mut self.stack,self.table,span),
             Mul(span) => basic_ops::mul(&mut self.stack,self.table,span),
             Sub(span) => basic_ops::sub(&mut self.stack,self.table,span),
+
+            Div(span) => basic_ops::div(&mut self.stack,self.table,span),
+            Modulo(span) => basic_ops::modulo(&mut self.stack,self.table,span),
+            IntDiv(span) => basic_ops::int_div(&mut self.stack,self.table,span),
                     
-            Add(_) | Div(_) | Modulo(_) | IntDiv(_) => todo!(),
-            Operation::And(_) | Operation::Or(_) | Operation::Xor(_) => todo!(),
+            And(span) => basic_ops::bitwise_and(&mut self.stack,self.table,span),
+            Or(span) => basic_ops::bitwise_or(&mut self.stack,self.table,span),
+            Xor(span) => basic_ops::bitwise_xor(&mut self.stack,self.table,span),
+            
+            Operation::Add(span) => basic_ops::add(&mut self.stack,self.table,span),
 
         }
     }
