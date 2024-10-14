@@ -1,3 +1,8 @@
+#[cfg(test)]
+use crate::value::VarTable;
+#[cfg(test)]
+use codespan::Span;
+
 use core::marker::PhantomData;
 use std::sync::Weak;
 use crate::vm::FuncData;
@@ -498,8 +503,13 @@ fn test_weak_pointer_drop() {
 
     use std::sync::{Arc};
 
+    let vars = VarTable::default();
+    let mut_vars = VarTable::default();
+    let func_data = FuncData::new(&vars,mut_vars,&[],Span::default());
+
     let mut value_stack = ValueStack::<100>::new();
-    let arc_value = Arc::new(FuncData::default());
+
+    let arc_value = Arc::new(func_data);
     let weak_value = Arc::downgrade(&arc_value);
 
     
@@ -518,6 +528,11 @@ fn test_stack_operations() {
 
     use std::sync::{Arc};
     use crate::basic_ops::is_equal_wraped;
+
+    let vars = VarTable::default();
+    let mut_vars = VarTable::default();
+    let func_data = FuncData::new(&vars,mut_vars,&[],Span::default());
+
 
     let mut value_stack = Box::new(ValueStack::<1_000>::new());
 
@@ -544,7 +559,7 @@ fn test_stack_operations() {
     assert!(value_stack.pop_value().is_none()); // Terminator should be Nil
 
     // Test with Weak pointer
-    let arc_value = Arc::new(FuncData::default()); 
+    let arc_value = Arc::new(func_data.clone()); 
     let weak_value= Arc::downgrade(&arc_value);
 
     value_stack.push_value(Value::Func(arc_value)).unwrap();
@@ -573,7 +588,7 @@ fn test_stack_operations() {
     assert!(value_stack.pop_value().is_none()); // Terminator should be Nil
 
     // Test with Weak pointer
-    let arc_value = Arc::new(FuncData::default());
+    let arc_value = Arc::new(func_data.clone());
     let weak_value = Arc::downgrade(&arc_value);
     
     value_stack.push_value(Value::Func(arc_value)).unwrap();
@@ -585,7 +600,7 @@ fn test_stack_operations() {
 
 
     let mut value_stack = Box::new(ValueStack::<1_000>::new());
-    let arc_value = Arc::new(FuncData::default());
+    let arc_value = Arc::new(func_data);
     let weak_value = Arc::downgrade(&arc_value);
 
     
@@ -600,6 +615,10 @@ fn test_stack_operations() {
 
 #[test]
 fn test_typed_stack_operations() {
+    let vars = VarTable::default();
+    let mut_vars = VarTable::default();
+    let func_data = FuncData::new(&vars,mut_vars,&[],Span::default());
+
     const STACK_CAPACITY: usize = 1024;
     let mut stack = ValueStack::<STACK_CAPACITY>::new();
 
@@ -611,7 +630,8 @@ fn test_typed_stack_operations() {
     stack.push_atom(123).unwrap();
     let s = Arc::new(String::from("Hello"));
     stack.push_string(s.clone()).unwrap();
-    let f = Arc::new(FuncData::default());
+    let f = Arc::new(func_data);
+
     stack.push_func(f.clone()).unwrap();
     let wf = Arc::downgrade(&f);
     stack.push_weak_func(wf.clone()).unwrap();

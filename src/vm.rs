@@ -1,8 +1,11 @@
 
 // use smallvec::SmallVec;
 
+#[cfg(test)]
 use ast::id::ERR_ID;
+#[cfg(test)]
 use ast::get_id;
+
 use codespan::Span;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -24,28 +27,30 @@ use arrayvec::ArrayVec;
 
 // pub type Code<'code> = &'code [Operation];
 // pub type DynFFI = dyn Fn(&mut FuncInputs) -> Result<(),ErrList>;
-pub type StaticFunc<'code> = fn(&mut ValueStack,&StringTable<'code>) -> Result<(),ErrList>;
+pub type StaticFunc<'code> = fn(&mut ValueStack<'code>,&StringTable<'code>) -> Result<(),ErrList>;
 
 
 #[derive(Clone,PartialEq,Debug)]
-#[derive(Default)]
+// #[derive(Default)]
 // #[repr(C)]
 pub struct FuncData<'code> {
     pub mut_vars: VarTable<'code>,
-    pub vars: VarTable<'code>,
+    pub vars: &'code VarTable<'code>,
     pub code: &'code [Operation<'code>],
     pub span: Span
 }
 
 impl<'code> FuncData<'code> {
-    pub fn new(vars: VarTable<'code>,mut_vars: VarTable<'code>, code: &'code [Operation<'code>],span:Span) -> Self {
-        FuncData {
+    pub fn new(vars: &'code VarTable<'code>,mut_vars: VarTable<'code>, code: &'code [Operation<'code>],span:Span) -> FuncData<'code> {
+        FuncData::<'code> {
             vars,
             mut_vars,
             code,
             span,
         }
     }
+
+    
 
 }
 
@@ -194,7 +199,9 @@ impl<'code> Context<'code> {
                 RecursionError{depth:MAX_RECURSION}
             ).to_list())?;
 
-        todo!()
+        self.func = func;
+        self.pos = 0;
+        Ok(())
     }
 
     fn tail_call(&mut self) -> Result<(),ErrList> {
@@ -216,7 +223,9 @@ impl<'code> Context<'code> {
         self.mut_vars = Box::new(func.mut_vars.clone());
 
 
-        todo!()
+        self.func = func;
+        self.pos = 0;
+        Ok(())
     }
         
     fn match_jump(&mut self,map:&StaticMatch<'code>) -> Result<(),ErrList> {
@@ -262,6 +271,9 @@ impl<'code> Context<'code> {
             Operation::PushNil => self.stack.push_nil()
                 .map_err(|_| Error::StackOverflow.to_list()),
 
+            Operation::PushTerminator => self.stack.push_terminator()
+                .map_err(|_| Error::StackOverflow.to_list()),
+
             // _ => todo!(),
         }
     }
@@ -303,6 +315,8 @@ pub enum Operation<'code> {
     PushFrom(usize),
     PushConst(usize),
     PushClosure(usize),
+
+    PushTerminator,
 
     PushBool(bool),
     PushAtom(u32),
@@ -366,7 +380,7 @@ fn test_vm_push_pop() {
     ]
     .into_boxed_slice(); // Box the slice for FuncData
 
-    let func_data = Arc::new(FuncData::new(vars,mut_vars, &code,Span::default()));
+    let func_data = Arc::new(FuncData::new(&vars,mut_vars, &code,Span::default()));
 
     //global vars
     let mut global_vars = VarTable::default();
@@ -442,7 +456,7 @@ fn test_not_gate_match() {
     let mut_vars = VarTable::default();
     let vars = VarTable::default();
 
-    let func_data = Arc::new(FuncData::new(vars, mut_vars, &code,dummy_span));
+    let func_data = Arc::new(FuncData::new(&vars, mut_vars, &code,dummy_span));
 
     let mut context = Context::new(func_data.clone(), &global_vars, &string_table);
 
@@ -497,7 +511,8 @@ fn test_string_match() {
     let mut_vars = VarTable::default();
     let vars = VarTable::default();
 
-    let func_data = Arc::new(FuncData::new(vars, mut_vars, &code, dummy_span));
+
+    let func_data = Arc::new(FuncData::new(&vars, mut_vars, &code, dummy_span));
 
     // Global variables (holding some strings)
     let mut global_vars = VarTable::default();
