@@ -1,7 +1,6 @@
 #[cfg(test)]
 use crate::value::VarTable;
-#[cfg(test)]
-use codespan::Span;
+
 
 use core::marker::PhantomData;
 use std::sync::Weak;
@@ -505,7 +504,7 @@ fn test_weak_pointer_drop() {
 
     let vars = VarTable::default();
     let mut_vars = VarTable::default();
-    let func_data = FuncData::new(&vars,mut_vars,&[],Span::default());
+    let func_data = FuncData::new(&vars,mut_vars,&[]);
 
     let mut value_stack = ValueStack::<100>::new();
 
@@ -531,7 +530,7 @@ fn test_stack_operations() {
 
     let vars = VarTable::default();
     let mut_vars = VarTable::default();
-    let func_data = FuncData::new(&vars,mut_vars,&[],Span::default());
+    let func_data = FuncData::new(&vars,mut_vars,&[]);
 
 
     let mut value_stack = Box::new(ValueStack::<1_000>::new());
@@ -617,7 +616,7 @@ fn test_stack_operations() {
 fn test_typed_stack_operations() {
     let vars = VarTable::default();
     let mut_vars = VarTable::default();
-    let func_data = FuncData::new(&vars,mut_vars,&[],Span::default());
+    let func_data = FuncData::new(&vars,mut_vars,&[]);
 
     const STACK_CAPACITY: usize = 1024;
     let mut stack = ValueStack::<STACK_CAPACITY>::new();

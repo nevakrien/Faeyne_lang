@@ -3,6 +3,7 @@
 
 
 
+use crate::reporting::InternalError;
 use crate::reporting::SigError;
 use crate::basic_ops::to_string_debug;
 use crate::reporting::NoneCallble;
@@ -42,16 +43,15 @@ pub struct FuncData<'code> {
     pub mut_vars: VarTable<'code>,
     pub vars: &'code VarTable<'code>,
     pub code: &'code [Operation<'code>],
-    pub span: Span
 }
 
 impl<'code> FuncData<'code> {
-    pub fn new(vars: &'code VarTable<'code>,mut_vars: VarTable<'code>, code: &'code [Operation<'code>],span:Span) -> FuncData<'code> {
+    pub fn new(vars: &'code VarTable<'code>,mut_vars: VarTable<'code>, code: &'code [Operation<'code>]) -> FuncData<'code> {
         FuncData::<'code> {
             vars,
             mut_vars,
             code,
-            span,
+            // span,
         }
     }
 }
@@ -71,6 +71,8 @@ pub struct RetData<'code> {
     pos:usize,
     func:Arc<FuncData<'code>>,
     mut_vars:Box<VarTable<'code>>,
+    pub span: Span
+
 }
 
 pub const MAX_RECURSION :usize=2_500;
@@ -238,6 +240,7 @@ impl<'code> Context<'code> {
             func:self.func.clone(),
             pos:self.pos,
             mut_vars:new_vars,
+            span: *span,
         };
 
         self.call_stack.try_push(ret)
@@ -291,7 +294,7 @@ impl<'code> Context<'code> {
 
         let func = Value::Func(Arc::new(
             FuncData::new(
-            maker.vars,mut_vars,maker.code,maker.span
+            maker.vars,mut_vars,maker.code
             )
         ));
 
@@ -346,12 +349,25 @@ impl<'code> Context<'code> {
         }
     }
 
+    #[inline(never)]
+    fn trace_error(&self,mut err:ErrList) -> ErrList {
+        for ret in self.call_stack.iter().rev() {
+            err = Error::Stacked(InternalError{span:ret.span,err}).to_list();
+        }
+
+        err
+    }
+
     //returns true if we should keep going
     pub fn next_op(&mut self) -> Result<bool,ErrList>{
         if self.pos>=self.func.code.len() {return Ok(false);}
         let op = self.func.code[self.pos];
         self.pos+=1;
-        self.handle_op(op).map(|_| true)
+
+        match self.handle_op(op) {
+            Ok(()) => Ok(true),
+            Err(e) => Err(self.trace_error(e)),
+        }
     }
 
     pub fn finish(&mut self) -> Result<Value<'code>,ErrList> {
@@ -452,7 +468,7 @@ fn test_vm_push_pop() {
     ]
     .into_boxed_slice(); // Box the slice for FuncData
 
-    let func_data = Arc::new(FuncData::new(&vars,mut_vars, &code,Span::default()));
+    let func_data = Arc::new(FuncData::new(&vars,mut_vars, &code));
 
     //global vars
     let mut global_vars = VarTable::default();
@@ -527,7 +543,7 @@ fn test_not_gate_match() {
     let mut_vars = VarTable::default();
     let vars = VarTable::default();
 
-    let func_data = Arc::new(FuncData::new(&vars, mut_vars, &code,dummy_span));
+    let func_data = Arc::new(FuncData::new(&vars, mut_vars, &code));
 
     let mut context = Context::new(func_data.clone(), &global_vars, &string_table);
 
@@ -583,7 +599,7 @@ fn test_string_match() {
     let vars = VarTable::default();
 
 
-    let func_data = Arc::new(FuncData::new(&vars, mut_vars, &code, dummy_span));
+    let func_data = Arc::new(FuncData::new(&vars, mut_vars, &code));
 
     // Global variables (holding some strings)
     let mut global_vars = VarTable::default();
@@ -632,7 +648,7 @@ fn test_capture_closure() {
     };
 
     // Step 4: Create a Context and push a value to the stack
-    let func_data = Arc::new(FuncData::new(&vars, VarTable::default(), &code, span));
+    let func_data = Arc::new(FuncData::new(&vars, VarTable::default(), &code));
     let global_vars = VarTable::default();
     let mut context = Context::new(func_data.clone(), &global_vars, &string_table);
 
@@ -670,7 +686,7 @@ fn test_call_function() {
     let span = Span::default();
 
     // Step 4: Create the FuncData and Context
-    let func_data = Arc::new(FuncData::new(&mut_vars, VarTable::default(), &code, span));
+    let func_data = Arc::new(FuncData::new(&mut_vars, VarTable::default(), &code));
     let global_vars = VarTable::default();
     let mut context = Context::new(func_data.clone(), &global_vars, &string_table);
 

@@ -1,7 +1,5 @@
 // #![allow(clippy::result_unit_err)]
 
-#[cfg(test)]
-use codespan::Span;
 
 use core::hash::Hasher;
 use core::hash::Hash;
@@ -93,7 +91,7 @@ impl Hash for Value<'_> {
 fn test_value_partial_eq() {
     let vars = VarTable::default();
     let mut_vars = VarTable::default();
-    let func_data = FuncData::new(&vars,mut_vars,&[],Span::default());
+    let func_data = FuncData::new(&vars,mut_vars,&[]);
 
     let value_nil = Value::Nil;
     let value_bool_true = Value::Bool(true);

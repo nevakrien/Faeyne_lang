@@ -100,7 +100,7 @@ pub struct UndefinedName {
 
 #[derive(Debug,PartialEq)]
 pub struct InternalError {
-    pub message: String,
+    // pub message: String,
     pub span : Span,
     pub err : ErrList
 }
@@ -265,8 +265,8 @@ fn emit_error(
             ]),
             
 
-        Error::Stacked(InternalError { span, err,message }) => {
-            let diagnostic = Diagnostic::error().with_message(message).with_labels(vec![
+        Error::Stacked(InternalError { span, err }) => {
+            let diagnostic = Diagnostic::error().with_message("while calling function").with_labels(vec![
                 Label::primary(file_id, span.start().to_usize()..span.end().to_usize())
                     ,
             ]);
@@ -382,7 +382,6 @@ fn test_err_list_reporting_with_stacking() {
     // Add an internal error wrapped inside another error (stacked errors)
     let internal_err = Error::Stacked(InternalError {
         span: Span::new(ByteIndex(23), ByteIndex(27)),
-        message: "junk".to_string(),
         err: vec_to_list(vec![
             Error::Missing(UndefinedName { id: undef_id }),
             Error::UnreachableCase(UnreachableCase {
