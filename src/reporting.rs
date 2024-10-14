@@ -44,6 +44,8 @@ pub fn vec_to_list(errors: Vec<Error>) -> ErrList {
 }
 
 impl Error {
+    #[cold]
+#[inline(never)]
     pub fn to_list(self) -> LinkedList<Self> {
         let mut l = LinkedList::new();
         l.push_back(self);
@@ -64,6 +66,35 @@ pub fn append_err_list(mut a: Result<(),ErrList>, b:Result<(),ErrList>) -> Resul
     }
 }
 
+#[cold]
+#[inline(never)]
+pub fn bug_error(message: &'static str) -> ErrList {
+    Error::Bug(message).to_list()
+}
+
+#[cold]
+#[inline(never)]
+pub fn overflow_error() -> ErrList {
+    Error::StackOverflow.to_list() 
+}
+
+#[cold]
+#[inline(never)]
+pub fn sig_error() -> ErrList {
+    Error::Sig(SigError{}).to_list() 
+}
+
+#[cold]
+#[inline(never)]
+pub fn recursion_error(depth:usize) -> ErrList {
+    Error::Recursion(RecursionError{depth}).to_list()
+}
+
+#[cold]
+#[inline(never)]
+pub fn match_error(span:Span) -> ErrList {
+    Error::Match(MatchError{span}).to_list()
+}
 
 #[derive(Debug,PartialEq)]
 pub struct RecursionError{

@@ -1,0 +1,4 @@
+#[cold]
+pub fn cold(){
+	
+}

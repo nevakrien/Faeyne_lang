@@ -2,6 +2,9 @@
 
 
 
+use crate::reporting::NoneCallble;
+use crate::reporting::overflow_error;
+use crate::reporting::bug_error;
 use codespan::Span;
 use std::sync::Arc;
 use crate::reporting::{ErrList,Error,InternalError};
@@ -15,11 +18,11 @@ use crate::stack::ValueStack;
 
 #[inline(always)]
 fn _is_equal<'code>(stack:&mut ValueStack<'code>,_table:&StringTable<'code>) -> Result<bool, ErrList> {
-    let a = stack.pop_value().ok_or_else(|| Error::Bug("over popping").to_list())?;
-    let b = stack.pop_value().ok_or_else(|| Error::Bug("over popping").to_list())?;
+    let a = stack.pop_value().ok_or_else(|| bug_error("over popping"))?;
+    let b = stack.pop_value().ok_or_else(|| bug_error("over popping"))?;
 
     #[cfg(feature = "debug_terminators")]
-    stack.pop_terminator().ok_or_else(|| Error::Bug("failed to pop terminator").to_list())?;
+    stack.pop_terminator().ok_or_else(|| bug_error("failed to pop terminator"))?;
     
     Ok(a==b)
 }
@@ -38,23 +41,23 @@ pub fn is_equal<'code>(stack:&mut ValueStack<'code>,table:&StringTable<'code>,sp
 pub fn is_equal_value<'code>(stack:&mut ValueStack<'code>,table:&StringTable<'code>,span:Span) -> Result<(), ErrList> {
     match is_equal(stack,table,span){
         Ok(b) => {
-            stack.push_bool(b).map_err(|_| Error::StackOverflow.to_list())
+            stack.push_bool(b).map_err(|_| overflow_error())
         },
         Err(e) => Err(e),
     }
 }
 
+
 pub fn is_not_equal_value<'code>(stack:&mut ValueStack<'code>,table:&StringTable<'code>,span:Span) -> Result<(), ErrList> {
     match is_equal(stack,table,span){
         Ok(b) => {
-            stack.push_bool(!b).map_err(|_| Error::StackOverflow.to_list())
+            stack.push_bool(!b).map_err(|_| overflow_error())
         },
         Err(e) => Err(e),
     }
 }
 
 //can never ever fail because that would imply we can fail reporting an error
-#[inline(never)]
 pub fn to_string_debug<'code>(value: &Value<'code>, table: &StringTable<'code>) -> String {
     match value {
         Value::Nil => "nil".to_string(),
@@ -67,6 +70,13 @@ pub fn to_string_debug<'code>(value: &Value<'code>, table: &StringTable<'code>) 
         Value::WeakFunc(weak_func) => format!("weak_func({:p})", weak_func.as_ptr()),
         Value::StaticFunc(static_func) => format!("static_func({:p})", static_func as *const _),
     }
+}
+
+#[cold]
+#[inline(never)]
+pub fn non_callble_error<'code>(span:Span,called:&Value<'code>,table:&StringTable<'code>) -> ErrList {
+    let value = to_string_debug(called,table);
+    Error::NoneCallble(NoneCallble{span,value}).to_list()
 }
 
 pub fn is_equal_wraped<'code>(stack:&mut ValueStack<'code>,_table:&StringTable<'code>) -> Result<(), ErrList> {

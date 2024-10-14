@@ -4,23 +4,25 @@
 
 
 // use std::collections::LinkedList;
+use crate::reporting::match_error;
+use crate::basic_ops::non_callble_error;
+use crate::reporting::recursion_error;
+use crate::reporting::sig_error;
+use crate::reporting::overflow_error;
+use crate::reporting::bug_error;
 use std::collections::LinkedList;
 use crate::reporting::InternalError;
-use crate::reporting::SigError;
-use crate::basic_ops::to_string_debug;
-use crate::reporting::NoneCallble;
 
 use codespan::Span;
 use std::collections::HashMap;
 use std::sync::Arc;
-use crate::reporting::RecursionError;
 use crate::value::Value;
 use crate::value::VarTable;
 
 use crate::basic_ops;
 
 
-use crate::reporting::{Error,MatchError,ErrList};
+use crate::reporting::{Error,ErrList};
 use crate::stack::ValueStack;
 // use crate::value::Scope;
 use ast::ast::StringTable;
@@ -143,30 +145,30 @@ impl<'code> Context<'code> {
     fn pop_to(&mut self,id:usize) -> Result<(),ErrList>{
         match self.stack.pop_value(){
             Some(x) => self.mut_vars.set(id,x)
-                .map_err(|_| Error::Bug("tried seting a non existent id").to_list()),
+                .map_err(|_| bug_error("tried seting a non existent id")),
             
-            None  => Err(Error::Bug("over poping").to_list()),
+            None  => Err(bug_error("over poping")),
         }
     }
 
     fn push_from(&mut self,id:usize) -> Result<(),ErrList>{
         let value = self.mut_vars.get(id)
-            .ok_or_else(|| Error::Bug("tried seting a non existent id").to_list())?;
-        self.stack.push_value(value).map_err(|_|{Error::StackOverflow.to_list()})?;
+            .ok_or_else(|| bug_error("tried seting a non existent id"))?;
+        self.stack.push_value(value).map_err(|_|{overflow_error()})?;
         Ok(())
     }
 
     fn push_global(&mut self,id:usize) -> Result<(),ErrList>{
         let value = self.global_vars.get(id)
-            .ok_or_else(|| Error::Bug("tried seting a non existent id").to_list())?;
-        self.stack.push_value(value).map_err(|_|{Error::StackOverflow.to_list()})?;
+            .ok_or_else(|| bug_error("tried seting a non existent id"))?;
+        self.stack.push_value(value).map_err(|_|{overflow_error()})?;
         Ok(())
     }
 
     fn push_local(&mut self,id:usize) -> Result<(),ErrList>{
         let value = self.func.vars.get(id)
-            .ok_or_else(|| Error::Bug("tried seting a non existent id").to_list())?;
-        self.stack.push_value(value).map_err(|_|{Error::StackOverflow.to_list()})?;
+            .ok_or_else(|| bug_error("tried seting a non existent id"))?;
+        self.stack.push_value(value).map_err(|_|{overflow_error()})?;
         Ok(())
     }
 
@@ -174,11 +176,11 @@ impl<'code> Context<'code> {
 
     fn pop_arg_to(&mut self,id:usize) -> Result<(),ErrList>{
         match self.stack.pop_value(){
-            None  => Err(Error::Sig(SigError {}).to_list()),
+            None  => Err(sig_error()),
 
             Some(x) => self.mut_vars.set(id,x)
-                .map_err(|_| Error::Bug("tried seting a non existent id")
-                .to_list()),
+                .map_err(|_| bug_error("tried seting a non existent id")
+                ),
             
         }
     }
@@ -187,7 +189,7 @@ impl<'code> Context<'code> {
     fn pop_extra_arg(&mut self,num:usize) -> Result<(),ErrList>{
         for _ in 0..num {
             match self.stack.pop_value(){
-                None  => {return Err(Error::Sig(SigError {}).to_list());},
+                None  => {return Err(sig_error());},
 
                 Some(_) => {},
                 
@@ -202,16 +204,16 @@ impl<'code> Context<'code> {
             self.pos=self.func.code.len();//we are in main and instructed to return so we are done
             return Ok(())
         };
-        let value = self.stack.pop_value().ok_or_else(|| Error::Bug("over pop value stack").to_list())?;
+        let value = self.stack.pop_value().ok_or_else(|| bug_error("over pop value stack"))?;
 
         assert!(self.stack.len()>=ret_data.ret);
         while self.stack.len()>ret_data.ret {
-            self.stack.pop_value().ok_or_else(|| Error::Bug("impossible").to_list())?;
+            self.stack.pop_value().ok_or_else(|| bug_error("impossible"))?;
         }
         assert!(self.stack.len()==ret_data.ret);
 
 
-        self.stack.push_value(value).map_err(|_|{Error::StackOverflow.to_list()})?;
+        self.stack.push_value(value).map_err(|_|{overflow_error()})?;
         
         self.func = ret_data.func.clone();
         self.pos = ret_data.pos;
@@ -223,19 +225,16 @@ impl<'code> Context<'code> {
 
     fn pop_function(&mut self,span:Span) -> Result<Arc<FuncData<'code>>,ErrList> {
         let called = self.stack.pop_value()
-            .ok_or_else(||{Error::Bug("over poping").to_list()}
+            .ok_or_else(||{bug_error("over poping")}
             )?;
 
         match called {
             Value::Func(f) => Ok(f),
-            Value::WeakFunc(wf) => Ok(wf.upgrade().ok_or_else(||{Error::Bug("weak function failed to upgrade").to_list()}
+            Value::WeakFunc(wf) => Ok(wf.upgrade().ok_or_else(||{bug_error("weak function failed to upgrade")}
             )?),
             Value::String(_) => todo!(),
             _ =>{
-                    let debug = to_string_debug(&called,self.table);
-                    return Err(Error::NoneCallble(
-                    NoneCallble{span:span,value:debug})
-                    .to_list());
+                    Err(non_callble_error(span,&called,self.table))
                 }
 
         }
@@ -264,9 +263,7 @@ impl<'code> Context<'code> {
         };
 
         self.call_stack.try_push(ret)
-            .map_err(|_| Error::Recursion(
-                RecursionError{depth:MAX_RECURSION}
-            ).to_list())?;
+            .map_err(|_| recursion_error(MAX_RECURSION))?;
 
         self.func = func;
         self.pos = 0;
@@ -295,11 +292,11 @@ impl<'code> Context<'code> {
         
     fn match_jump(&mut self,map:&StaticMatch<'code>) -> Result<(),ErrList> {
         let x = self.stack.pop_value()
-            .ok_or_else(||{Error::Bug("over poping").to_list()}
+            .ok_or_else(||{bug_error("over poping")}
             )?;
 
         let jump_pos = map.get(&x)
-            .ok_or_else(||{Error::Match(MatchError{span:map.span}).to_list()}
+            .ok_or_else(||{match_error(map.span)}
             )?;
         
         self.pos=jump_pos;
@@ -311,13 +308,13 @@ impl<'code> Context<'code> {
 
         for i in maker.captures {
             mut_vars.set(*i,self.stack.pop_value()
-                .ok_or_else(||{Error::Bug("over poping").to_list()})?)
-                .map_err(|_|{Error::Bug("missing id").to_list()})?;
+                .ok_or_else(||{bug_error("over poping")})?)
+                .map_err(|_|{bug_error("missing id")})?;
         }
 
         #[cfg(feature = "debug_terminators")]
         self.stack.pop_terminator()
-            .ok_or_else(||{Error::Bug("too many args").to_list()})?;
+            .ok_or_else(||{bug_error("too many args")})?;
 
         let func = Value::Func(Arc::new(
             FuncData::new(
@@ -326,7 +323,7 @@ impl<'code> Context<'code> {
         ));
 
         self.stack.push_value(func)
-            .map_err(|_| Error::StackOverflow.to_list())
+            .map_err(|_| overflow_error())
     }
     
 
@@ -358,13 +355,13 @@ impl<'code> Context<'code> {
             //some utils for small funcs
 
             PushBool(b) => self.stack.push_bool(b)
-                .map_err(|_| Error::StackOverflow.to_list()),
+                .map_err(|_| overflow_error()),
             
             PushAtom(a) => self.stack.push_atom(a)
-                .map_err(|_| Error::StackOverflow.to_list()),
+                .map_err(|_| overflow_error()),
             
             PushNil => self.stack.push_nil()
-                .map_err(|_| Error::StackOverflow.to_list()),
+                .map_err(|_| overflow_error()),
 
             
             //args managment
@@ -372,10 +369,10 @@ impl<'code> Context<'code> {
             PopExtraArgs(num) => self.pop_extra_arg(num),
 
             PushTerminator => self.stack.push_terminator()
-                .map_err(|_| Error::StackOverflow.to_list()),
+                .map_err(|_| overflow_error()),
             
             PopTerminator => self.stack.pop_terminator()
-                .ok_or_else(|| Error::Sig(SigError{}).to_list()),
+                .ok_or_else(|| sig_error()),
             
             //basic ops
             Equal(span) => basic_ops::is_equal_value(&mut self.stack,self.table,span),
@@ -415,7 +412,7 @@ impl<'code> Context<'code> {
             keep_running = self.next_op()?;
         }
         self.stack.pop_value()
-            .ok_or_else(||{Error::Bug("over poping").to_list()}
+            .ok_or_else(||{bug_error("over poping")}
             )
     }
 
