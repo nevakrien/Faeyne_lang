@@ -12,7 +12,7 @@ use codespan_reporting::files::SimpleFiles;
 use lalrpop_util::ParseError;
 use ast::lexer::LexTag;
 
-use crate::ir::FuncSig;
+use ast::ast::FuncSig;
 use ast::ast::StringTable;
 
 #[derive(Debug,PartialEq)]
@@ -22,7 +22,7 @@ pub enum Error {
     ZeroDiv,
 
     Missing(UndefinedName),
-    UnreachableCase(UnreachableCase),
+    UnreachableCase(FuncSig),
     NoneCallble(NoneCallble),
     Stacked(InternalError),
     IllegalSelfRef(IllegalSelfRef),
@@ -136,11 +136,11 @@ pub struct NoneCallble {
     pub value: String,
 }
 
-#[derive(Debug,PartialEq)]
-pub struct UnreachableCase {
-    pub name : u32,
-    pub sig : FuncSig,
-}
+// #[derive(Debug,PartialEq)]
+// pub struct UnreachableCase {
+//     // pub name : u32,
+//     pub sig : FuncSig,
+// }
 
 #[derive(Debug,PartialEq)]
 pub struct UndefinedName {
@@ -166,7 +166,7 @@ pub trait DiagnosticDisplay {
 
 impl DiagnosticDisplay for FuncSig {
     fn display_with_table(&self, table: &StringTable) -> String {
-        let args_names: Vec<_>= self.arg_ids
+        let args_names: Vec<_>= self.args
             .iter()
             .map(|&id| table.get_display_str(id).unwrap_or("Unknown"))
             .collect();
@@ -296,8 +296,8 @@ fn emit_error(
                 table.get_display_str(*id).unwrap_or("Unknown name")
             )),
 
-        Error::UnreachableCase(UnreachableCase { name, sig }) => {
-            let name_str = table.get_display_str(*name).unwrap_or("Unknown name");
+        Error::UnreachableCase(  sig ) => {
+            let name_str = table.get_display_str(sig.name).unwrap_or("Unknown name");
             let sig_display = sig.display_with_table(table);
             Diagnostic::error()
                 .with_message(format!(
@@ -392,10 +392,10 @@ fn test_err_list_reporting() {
     let undef_err = Error::Missing(UndefinedName { id: undef_id });
 
     // Simulate unreachable case
-    let unreachable_case_err = Error::UnreachableCase(UnreachableCase {
-        name: unreachable_name_id,
-        sig: FuncSig {arg_ids:vec![undef_id]}, // Assuming FuncSig has a default or placeholder
-    });
+    let unreachable_case_err = Error::UnreachableCase(
+        
+        FuncSig {name: unreachable_name_id,args:vec![undef_id]}, // Assuming FuncSig has a default or placeholder
+    );
 
     err_list.push_back(match_err);
     err_list.push_back(sig_err);
@@ -426,10 +426,10 @@ fn test_err_list_reporting_with_stacking() {
     let _undef_err = Error::Missing(UndefinedName { id: undef_id });
 
     // Simulate unreachable case
-    let _unreachable_case_err = Error::UnreachableCase(UnreachableCase {
-        name: unreachable_name_id,
-        sig: FuncSig { arg_ids: vec![undef_id] },
-    });
+    let _unreachable_case_err = Error::UnreachableCase(
+        // name: unreachable_name_id,
+         FuncSig { name: unreachable_name_id, args: vec![undef_id] },
+    );
 
     // Add an internal error wrapped inside another error (stacked errors)
     let internal_err = Error::Stacked(InternalError {
@@ -437,10 +437,10 @@ fn test_err_list_reporting_with_stacking() {
         message: "junk",
         err: vec_to_list(vec![
             Error::Missing(UndefinedName { id: undef_id }),
-            Error::UnreachableCase(UnreachableCase {
-                name: unreachable_name_id,
-                sig: FuncSig { arg_ids: vec![undef_id] },
-            }),
+            Error::UnreachableCase(
+                
+                FuncSig {name: unreachable_name_id, args: vec![undef_id] },
+            ),
 
         ]),
     });

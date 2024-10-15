@@ -126,6 +126,10 @@ pub struct VarTable<'code> {
 }
 
 impl<'code> VarTable<'code>  {
+    pub fn len(&self) -> usize {
+        self.names.len()
+    }
+
     pub fn clear(&mut self) {
         self.data.clear();
         self.names.clear();
