@@ -889,3 +889,7 @@ fn test_division_by_zero() {
         report_err_list(&err_list, "10.0 / 0.0", &string_table);
     }
 }
+
+pub fn call_string<'code>(_string:Arc<String>,_stack: &mut ValueStack<'code>, _table: &StringTable<'code>, _span: Span) -> Result<(), ErrList> {
+    todo!()
+}

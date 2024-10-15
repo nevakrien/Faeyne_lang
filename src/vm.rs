@@ -4,6 +4,8 @@
 
 
 // use std::collections::LinkedList;
+use crate::basic_ops::call_string;
+use crate::reporting::stacked_error;
 use crate::reporting::match_error;
 use crate::basic_ops::non_callble_error;
 use crate::reporting::recursion_error;
@@ -67,6 +69,7 @@ pub struct FuncMaker<'code> {
     pub code: &'code [Operation<'code>],
     pub span: Span,
 }
+
 
 
 pub struct RetData<'code> {
@@ -223,16 +226,28 @@ impl<'code> Context<'code> {
         Ok(())
     }
 
-    fn pop_function(&mut self,span:Span) -> Result<Arc<FuncData<'code>>,ErrList> {
+    #[inline]
+    fn pop_function_or_run(&mut self,span:Span) -> Result<Option<Arc<FuncData<'code>>>,ErrList> {
         let called = self.stack.pop_value()
             .ok_or_else(||{bug_error("over poping")}
             )?;
 
         match called {
-            Value::Func(f) => Ok(f),
-            Value::WeakFunc(wf) => Ok(wf.upgrade().ok_or_else(||{bug_error("weak function failed to upgrade")}
-            )?),
-            Value::String(_) => todo!(),
+            Value::Func(f) => Ok(Some(f)),
+            Value::WeakFunc(wf) => Ok(Some(wf.upgrade().ok_or_else(||{bug_error("weak function failed to upgrade")}
+            )?)),
+            Value::String(s) => {
+                call_string(s,&mut self.stack,self.table,span)?;
+                Ok(None)
+            },
+            Value::StaticFunc(extern_func) => {
+                extern_func(&mut self.stack,self.table)
+                .map_err(|err| 
+                    stacked_error("while calling external function",err,span)
+                 )?;
+                
+                Ok(None)
+            },
             _ =>{
                     Err(non_callble_error(span,&called,self.table))
                 }
@@ -243,7 +258,7 @@ impl<'code> Context<'code> {
     fn call(&mut self,span:Span) -> Result<(),ErrList> {
         
 
-        let func = self.pop_function(span)?;
+        let Some(func) = self.pop_function_or_run(span)? else {return Ok(())};
 
         let mut new_vars = Box::new(func.mut_vars.clone());
 
@@ -273,7 +288,7 @@ impl<'code> Context<'code> {
     fn tail_call(&mut self,span:Span) -> Result<(),ErrList> {
 
         //get function
-        let func = self.pop_function(span)?;
+        let Some(func) = self.pop_function_or_run(span)? else {return Ok(())};
 
         self.mut_vars = Box::new(func.mut_vars.clone());
 
