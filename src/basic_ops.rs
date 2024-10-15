@@ -2,6 +2,8 @@
 
 
 
+use ast::id::STRING_OUT_OF_BOUNDS;
+use ast::get_id;
 use crate::reporting::zero_div_error;
 use crate::reporting::sig_error;
 use crate::reporting::stacked_error;
@@ -890,6 +892,23 @@ fn test_division_by_zero() {
     }
 }
 
-pub fn call_string<'code>(_string:Arc<String>,_stack: &mut ValueStack<'code>, _table: &StringTable<'code>, _span: Span) -> Result<(), ErrList> {
-    todo!()
+pub fn call_string<'code>(string:Arc<String>,stack: &mut ValueStack<'code>, _table: &StringTable<'code>, span: Span) -> Result<(), ErrList> {
+    const ERR_MESSAGE: &str = "while calling a string"; 
+    let arg = stack.pop_value().ok_or_else(|| stacked_error(ERR_MESSAGE, sig_error(), span))?;
+    stack.pop_terminator().ok_or_else(|| stacked_error(ERR_MESSAGE, sig_error(), span))?;
+
+    match arg {
+        Value::Atom( get_id!(":len")) => {
+            stack.push_int(string.len() as i64)
+        },
+        Value::Int(i) => {
+           match string.chars().nth(i as usize) {
+                Some(c) =>stack.push_string(Arc::new(c.to_string())), 
+                None => stack.push_atom(get_id!(":string_out_of_bounds"))
+            }
+        },
+        _ => {return Err(stacked_error(ERR_MESSAGE, sig_error(), span));},
+    }
+    .map_err(|_| stacked_error(ERR_MESSAGE, overflow_error(), span))
+    
 }
