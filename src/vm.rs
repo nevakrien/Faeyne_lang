@@ -79,6 +79,7 @@ pub struct RetData<'code> {
     mut_vars:Box<VarTable<'code>>,
     // pub span: Span,
     pub spans:LinkedList<Span>,
+    pub tailed:bool
 
 }
 
@@ -124,6 +125,7 @@ impl<'code> Context<'code> {
             ret:0,
             mut_vars:Box::new(VarTable::default()),
             spans:LinkedList::new(),
+            tailed:false
         };
         let mut call_stack = ArrayVec::new();
         call_stack.push(ret);
@@ -275,6 +277,7 @@ impl<'code> Context<'code> {
             pos:self.pos,
             mut_vars:new_vars,
             spans,
+            tailed:false,
         };
 
         self.call_stack.try_push(ret)
@@ -300,6 +303,8 @@ impl<'code> Context<'code> {
     }
 
     fn call_this(&mut self) -> Result<(),ErrList> {
+        self.call_stack.last_mut().unwrap().tailed=true;
+
         self.mut_vars = Box::new(self.func.mut_vars.clone());
         self.pos = 0;
         Ok(())
@@ -416,14 +421,19 @@ impl<'code> Context<'code> {
             
             Operation::Add(span) => basic_ops::add(&mut self.stack,self.table,span),
 
-        }
+        }.map_err(|e| self.trace_error(e))
     }
 
     #[cold]
     fn trace_error(&self,mut err:ErrList) -> ErrList {
+        
         for ret in self.call_stack.iter().rev() {
             for span in &ret.spans {
-                err = Error::Stacked(InternalError{span: *span,err,message:"while calling function"}).to_list();
+                let err_in = InternalError{span: *span,err,message:"while calling function"};
+                err = match ret.tailed {
+                    false => Error::Stacked(err_in).to_list(),
+                    true => Error::StackedTail(err_in).to_list(),
+                }           
 
             }
         }

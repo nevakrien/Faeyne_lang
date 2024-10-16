@@ -25,6 +25,7 @@ pub enum Error {
     UnreachableCase(FuncSig),
     NoneCallble(NoneCallble),
     Stacked(InternalError),
+    StackedTail(InternalError),
     IllegalSelfRef(IllegalSelfRef),
     
     Recursion(RecursionError),
@@ -108,6 +109,16 @@ pub fn match_error(span:Span) -> ErrList {
 #[inline(never)]
 pub fn stacked_error(message:&'static str,err:ErrList,span:Span) -> ErrList {
     Error::Stacked(InternalError{
+            message,
+            err,
+            span:span,
+        }).to_list()
+}
+
+#[cold]
+#[inline(never)]
+pub fn tail_stacked_error(message:&'static str,err:ErrList,span:Span) -> ErrList {
+    Error::StackedTail(InternalError{
             message,
             err,
             span:span,
@@ -329,6 +340,25 @@ fn emit_error(
 
             return;
         },
+
+         Error::StackedTail(InternalError { span, err,message }) => {
+            let diagnostic = Diagnostic::error().with_message(*message).with_labels(vec![
+                Label::primary(file_id, span.start().to_usize()..span.end().to_usize())
+                    ,
+            ]).with_notes(vec![
+                "some recursive calls may be missing due to tail call optimization".to_string()
+            ]);
+            term::emit(buffer, config, files, &diagnostic).unwrap();
+
+
+            // Emit each error inside `Error::Stacked` recursively
+            for e in err {
+                emit_error(e, file_id, buffer, config, files, table);
+            }
+
+            return;
+        },
+
         Error::IllegalSelfRef(IllegalSelfRef{span}) => {
             let error = Diagnostic::error()
                 .with_message("Illegal use of Self")
