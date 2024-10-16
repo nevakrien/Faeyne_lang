@@ -346,7 +346,7 @@ fn emit_error(
                 Label::primary(file_id, span.start().to_usize()..span.end().to_usize())
                     ,
             ]).with_notes(vec![
-                "some recursive calls may be missing due to tail call optimization".to_string()
+                "Note: some self recursive calls may be missing due to tail call optimization".to_string()
             ]);
             term::emit(buffer, config, files, &diagnostic).unwrap();
 

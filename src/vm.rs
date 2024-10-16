@@ -70,17 +70,40 @@ pub struct FuncMaker<'code> {
     pub span: Span,
 }
 
-
-
 pub struct RetData<'code> {
     ret:usize,
     pos:usize,
     func:Arc<FuncData<'code>>,
     mut_vars:Box<VarTable<'code>>,
     // pub span: Span,
-    pub spans:LinkedList<Span>,
-    pub tailed:bool
+    // pub spans:LinkedList<Span>,
+    // pub tailed:bool
 
+    pub tail_debug: TailDebug,
+
+}
+
+pub struct TailDebug {
+    pub inner: LinkedList<(Span,bool)>
+}
+
+impl TailDebug  {
+    fn new_empty() -> Self {
+        TailDebug{inner:LinkedList::new()}
+    }
+    fn new(span:Span) -> Self {
+        let mut inner = LinkedList::new();
+        inner.push_front((span,false));
+        TailDebug{inner}
+    }
+
+    fn push(&mut self,span:Span) {
+        self.inner.push_front((span,false));
+    }
+
+    fn mark_tailed(&mut self) {
+        self.inner.front_mut().unwrap().1 = true;
+    }
 }
 
 pub const MAX_RECURSION :usize=2_500;
@@ -124,8 +147,7 @@ impl<'code> Context<'code> {
             pos:func.code.len(),
             ret:0,
             mut_vars:Box::new(VarTable::default()),
-            spans:LinkedList::new(),
-            tailed:false
+            tail_debug:TailDebug::new_empty(),
         };
         let mut call_stack = ArrayVec::new();
         call_stack.push(ret);
@@ -268,16 +290,14 @@ impl<'code> Context<'code> {
 
         std::mem::swap(&mut self.mut_vars,&mut new_vars);
 
-        let mut spans = LinkedList::new();
-        spans.push_front(span);
+
 
         let ret = RetData{
             ret:self.stack.len(),
             func:self.func.clone(),
             pos:self.pos,
             mut_vars:new_vars,
-            spans,
-            tailed:false,
+            tail_debug:TailDebug::new(span)
         };
 
         self.call_stack.try_push(ret)
@@ -295,7 +315,7 @@ impl<'code> Context<'code> {
 
         self.mut_vars = Box::new(func.mut_vars.clone());
 
-        self.call_stack.last_mut().unwrap().spans.push_front(span);
+        self.call_stack.last_mut().unwrap().tail_debug.push(span);
 
         self.func = func;
         self.pos = 0;
@@ -303,7 +323,7 @@ impl<'code> Context<'code> {
     }
 
     fn call_this(&mut self) -> Result<(),ErrList> {
-        self.call_stack.last_mut().unwrap().tailed=true;
+        self.call_stack.last_mut().unwrap().tail_debug.mark_tailed();
 
         self.mut_vars = Box::new(self.func.mut_vars.clone());
         self.pos = 0;
@@ -428,9 +448,9 @@ impl<'code> Context<'code> {
     fn trace_error(&self,mut err:ErrList) -> ErrList {
         
         for ret in self.call_stack.iter().rev() {
-            for span in &ret.spans {
+            for (span,tailed) in &ret.tail_debug.inner {
                 let err_in = InternalError{span: *span,err,message:"while calling function"};
-                err = match ret.tailed {
+                err = match tailed {
                     false => Error::Stacked(err_in).to_list(),
                     true => Error::StackedTail(err_in).to_list(),
                 }           
