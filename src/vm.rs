@@ -4,6 +4,7 @@
 
 
 // use std::collections::LinkedList;
+use crate::value::ValueKey;
 use crate::basic_ops::call_string;
 use crate::reporting::stacked_error;
 use crate::reporting::match_error;
@@ -38,7 +39,7 @@ use ast::id::ERR_ID;
 use ast::get_id;
 
 // pub type DynFFI = dyn Fn(&mut FuncInputs) -> Result<(),ErrList>;
-pub type StaticFunc<'code> = fn(&mut ValueStack<'code>,&StringTable<'code>) -> Result<(),ErrList>;
+pub type StaticFunc = for<'code> fn(&mut ValueStack<'code>,&StringTable<'code>) -> Result<(),ErrList>;
 
 
 #[derive(Clone,PartialEq,Debug)]
@@ -47,11 +48,11 @@ pub type StaticFunc<'code> = fn(&mut ValueStack<'code>,&StringTable<'code>) -> R
 pub struct FuncData<'code> {
     pub mut_vars: VarTable<'code>,
     pub vars: &'code VarTable<'code>,
-    pub code: &'code [Operation<'code>],
+    pub code: &'code [Operation],
 }
 
 impl<'code> FuncData<'code> {
-    pub fn new(vars: &'code VarTable<'code>,mut_vars: VarTable<'code>, code: &'code [Operation<'code>]) -> FuncData<'code> {
+    pub fn new(vars: &'code VarTable<'code>,mut_vars: VarTable<'code>, code: &'code [Operation]) -> FuncData<'code> {
         FuncData::<'code> {
             vars,
             mut_vars,
@@ -61,13 +62,34 @@ impl<'code> FuncData<'code> {
     }
 }
 
+
+
 #[derive(Clone,PartialEq,Debug)]
-pub struct FuncMaker<'code> {
-    pub captures: &'code[usize],
-    pub mut_vars_template: &'code VarTable<'code>,
-    pub vars: &'code VarTable<'code>,
-    pub code: &'code [Operation<'code>],
+pub struct FuncMaker {
+    pub captures: Box<[usize]>,
+    pub mut_vars_template: VarTable<'static>,
+    pub vars: VarTable<'static>,
+    pub code: Box<[Operation]>,
     pub span: Span,
+}
+
+#[derive(PartialEq,Debug,Clone)]
+#[repr(C)] //static match should probably hold the map first because its acessed first
+pub struct StaticMatch {
+    //note that offsets are not from the start of the code 
+    pub map: HashMap<ValueKey,usize>,
+    pub default: Option<usize>,
+    pub span: Span
+}
+
+
+impl StaticMatch {
+    pub fn get(&self,value:&Value) -> Option<usize> {
+        match self.map.get(&value.to_key()) {
+            Some(id) => Some(*id),
+            None => self.default
+        }
+    }
 }
 
 pub struct RetData<'code> {
@@ -330,7 +352,7 @@ impl<'code> Context<'code> {
         Ok(())
     }
         
-    fn match_jump(&mut self,map:&StaticMatch<'code>) -> Result<(),ErrList> {
+    fn match_jump(&mut self,map:&StaticMatch) -> Result<(),ErrList> {
         let x = self.stack.pop_value()
             .ok_or_else(||{bug_error("over poping")}
             )?;
@@ -343,10 +365,10 @@ impl<'code> Context<'code> {
         Ok(())
     }
 
-    fn capture_closure(&mut self,maker: &FuncMaker<'code>) -> Result<(),ErrList> {
+    fn capture_closure(&mut self,maker: &'code FuncMaker) -> Result<(),ErrList> {
         let mut mut_vars = maker.mut_vars_template.clone();
 
-        for i in maker.captures {
+        for i in maker.captures.iter() {
             mut_vars.set(*i,self.stack.pop_value()
                 .ok_or_else(||{bug_error("over poping")})?)
                 .map_err(|_|{bug_error("missing id")})?;
@@ -358,7 +380,7 @@ impl<'code> Context<'code> {
 
         let func = Value::Func(Arc::new(
             FuncData::new(
-            maker.vars,mut_vars,maker.code
+            &maker.vars,mut_vars,&maker.code //very happy this works not sure why it works tho...
             )
         ));
 
@@ -367,26 +389,26 @@ impl<'code> Context<'code> {
     }
     
 
-    pub fn handle_op(&mut self,op:Operation<'code>) -> Result<(),ErrList> {
+    pub fn handle_op(&mut self,op:&'code Operation) -> Result<(),ErrList> {
         match op {
             NoOp => Ok(()),
 
             // BinOp{op,span} => handle_bin(&mut self.stack,self.table,op,span),//probably needs span as well...
-            PopTo(id) => self.pop_to(id),
-            PushFrom(id) => self.push_from(id),
-            PushGlobal(id) => self.push_global(id),
-            PushLocal(id) => self.push_local(id),
+            PopTo(id) => self.pop_to(*id),
+            PushFrom(id) => self.push_from(*id),
+            PushGlobal(id) => self.push_global(*id),
+            PushLocal(id) => self.push_local(*id),
 
             Return => self.big_ret(),
             
-            Call(span) => self.call(span),
-            TailCall(span) => self.tail_call(span),
+            Call(span) => self.call(*span),
+            TailCall(span) => self.tail_call(*span),
             Operation::CallThis => self.call_this(),
 
 
-            MatchJump(map) => self.match_jump(map),
+            MatchJump(map) => self.match_jump(&map),
             Jump(pos) => {
-                self.pos=pos;
+                self.pos=*pos;
                 Ok(())
             },
             
@@ -394,10 +416,10 @@ impl<'code> Context<'code> {
 
             //some utils for small funcs
 
-            PushBool(b) => self.stack.push_bool(b)
+            PushBool(b) => self.stack.push_bool(*b)
                 .map_err(|_| overflow_error()),
             
-            PushAtom(a) => self.stack.push_atom(a)
+            PushAtom(a) => self.stack.push_atom(*a)
                 .map_err(|_| overflow_error()),
             
             PushNil => self.stack.push_nil()
@@ -405,8 +427,8 @@ impl<'code> Context<'code> {
 
             
             //args managment
-            PopArgTo(id) => self.pop_arg_to(id),
-            PopExtraArgs(num) => self.pop_extra_arg(num),
+            PopArgTo(id) => self.pop_arg_to(*id),
+            PopExtraArgs(num) => self.pop_extra_arg(*num),
 
             PushTerminator => self.stack.push_terminator()
                 .map_err(|_| overflow_error()),
@@ -415,31 +437,31 @@ impl<'code> Context<'code> {
                 .ok_or_else(|| sig_error()),
             
             //basic ops
-            Equal(span) => basic_ops::is_equal_value(&mut self.stack,self.table,span),
-            NotEqual(span) => basic_ops::is_not_equal_value(&mut self.stack,self.table,span),
+            Equal(span) => basic_ops::is_equal_value(&mut self.stack,self.table,*span),
+            NotEqual(span) => basic_ops::is_not_equal_value(&mut self.stack,self.table,*span),
 
-            DoubleAnd(span) => basic_ops::logical_and(&mut self.stack,self.table,span),
-            DoubleOr(span) => basic_ops::logical_or(&mut self.stack,self.table,span),
-            DoubleXor(span) => basic_ops::logical_xor(&mut self.stack,self.table,span),
+            DoubleAnd(span) => basic_ops::logical_and(&mut self.stack,self.table,*span),
+            DoubleOr(span) => basic_ops::logical_or(&mut self.stack,self.table,*span),
+            DoubleXor(span) => basic_ops::logical_xor(&mut self.stack,self.table,*span),
 
-            Smaller(span) => basic_ops::smaller(&mut self.stack,self.table,span),
-            Bigger(span) => basic_ops::bigger(&mut self.stack,self.table,span),
-            SmallerEq(span) => basic_ops::smaller_eq(&mut self.stack,self.table,span),
-            BiggerEq(span) => basic_ops::bigger_eq(&mut self.stack,self.table,span),
+            Smaller(span) => basic_ops::smaller(&mut self.stack,self.table,*span),
+            Bigger(span) => basic_ops::bigger(&mut self.stack,self.table,*span),
+            SmallerEq(span) => basic_ops::smaller_eq(&mut self.stack,self.table,*span),
+            BiggerEq(span) => basic_ops::bigger_eq(&mut self.stack,self.table,*span),
 
-            Pow(span) => basic_ops::pow(&mut self.stack,self.table,span),
-            Mul(span) => basic_ops::mul(&mut self.stack,self.table,span),
-            Sub(span) => basic_ops::sub(&mut self.stack,self.table,span),
+            Pow(span) => basic_ops::pow(&mut self.stack,self.table,*span),
+            Mul(span) => basic_ops::mul(&mut self.stack,self.table,*span),
+            Sub(span) => basic_ops::sub(&mut self.stack,self.table,*span),
 
-            Div(span) => basic_ops::div(&mut self.stack,self.table,span),
-            Modulo(span) => basic_ops::modulo(&mut self.stack,self.table,span),
-            IntDiv(span) => basic_ops::int_div(&mut self.stack,self.table,span),
+            Div(span) => basic_ops::div(&mut self.stack,self.table,*span),
+            Modulo(span) => basic_ops::modulo(&mut self.stack,self.table,*span),
+            IntDiv(span) => basic_ops::int_div(&mut self.stack,self.table,*span),
                     
-            And(span) => basic_ops::bitwise_and(&mut self.stack,self.table,span),
-            Or(span) => basic_ops::bitwise_or(&mut self.stack,self.table,span),
-            Xor(span) => basic_ops::bitwise_xor(&mut self.stack,self.table,span),
+            And(span) => basic_ops::bitwise_and(&mut self.stack,self.table,*span),
+            Or(span) => basic_ops::bitwise_or(&mut self.stack,self.table,*span),
+            Xor(span) => basic_ops::bitwise_xor(&mut self.stack,self.table,*span),
             
-            Operation::Add(span) => basic_ops::add(&mut self.stack,self.table,span),
+            Operation::Add(span) => basic_ops::add(&mut self.stack,self.table,*span),
 
         }.map_err(|e| self.trace_error(e))
     }
@@ -464,7 +486,7 @@ impl<'code> Context<'code> {
     //returns true if we should keep going
     pub fn next_op(&mut self) -> Result<bool,ErrList>{
         if self.pos>=self.func.code.len() {return Ok(false);}
-        let op = self.func.code[self.pos];
+        let op = &self.func.code[self.pos];
         self.pos+=1;
 
         match self.handle_op(op) {
@@ -490,8 +512,8 @@ impl<'code> Context<'code> {
 
 }
 
-#[derive(Debug,PartialEq,Clone,Copy)]
-pub enum Operation<'code> {
+#[derive(Debug,PartialEq,Clone)]
+pub enum Operation {
 
     Call(Span),//calls a function args are passed through the stack and a single return value is left at the end (args are consumed)
     TailCall(Span),//similar to call but does not push its own vars. instead it drops
@@ -515,13 +537,13 @@ pub enum Operation<'code> {
 
     
 
-    MatchJump(&'code StaticMatch<'code>),//pops a value to match aginst then jumps to a position based on it
+    MatchJump(Box<StaticMatch>),//pops a value to match aginst then jumps to a position based on it
     Jump(usize), //jumps to a position usually outside of a match case
     
     //basic match pattern is similar to ifs in assembly
     // jmp (table) -> [code to push value | Jump to end]
 
-    CaptureClosure(&'code FuncMaker<'code>),//pops the data off the stack and creates a new function returning it as an IRValue to the stack
+    CaptureClosure(Box<FuncMaker>),//pops the data off the stack and creates a new function returning it as an IRValue to the stack
     NoOp,
 
     // BinOp{op:basic_ops::BinOp,span: Span},//too fat
@@ -553,24 +575,7 @@ use Operation::*;
 
 
 
-#[derive(PartialEq,Debug,Clone)]
-#[repr(C)] //static match should probably hold the map first because its acessed first
-pub struct StaticMatch<'code> {
-    //note that offsets are not from the start of the code 
-    pub map: HashMap<Value<'code>,usize>,
-    pub default: Option<usize>,
-    pub span: Span
-}
 
-
-impl<'a> StaticMatch<'a> {
-    pub fn get(&self,value:&Value<'a>) -> Option<usize> {
-        match self.map.get(value) {
-            Some(id) => Some(*id),
-            None => self.default
-        }
-    }
-}
 
 #[test]
 fn test_vm_push_pop() {
@@ -644,17 +649,17 @@ fn test_not_gate_match() {
     let string_table = StringTable::new();
 
     let mut match_map = HashMap::new();
-    match_map.insert(Value::Bool(false), 3); // false => true
-    match_map.insert(Value::Bool(true), 1);  // true => false
+    match_map.insert(Value::Bool(false).to_key(), 3); // false => true
+    match_map.insert(Value::Bool(true).to_key(), 1);  // true => false
 
     // Span for reporting errors (dummy span for now)
     let dummy_span = Span::default();
 
-    let not_gate_match = StaticMatch {
+    let not_gate_match = Box::new(StaticMatch {
         map: match_map,
         default: None, // No default behavior, should throw an error on a match failure
         span: dummy_span,
-    };
+    });
 
     // Global variables (holding `true` and `false` as booleans)
     let mut global_vars = VarTable::default();
@@ -662,7 +667,7 @@ fn test_not_gate_match() {
 
     // Function that just has a MatchJump with the NOT gate
     let code = vec![
-        Operation::MatchJump(&not_gate_match), // Perform the NOT operation
+        Operation::MatchJump(not_gate_match.clone()), // Perform the NOT operation
         Operation::PushBool(false),      // Push `false` (id 0 in this case)
         Operation::Jump(4),
         Operation::PushBool(true),      // Push `true` (id 1 as the result of NOT false)
@@ -701,23 +706,23 @@ fn test_string_match() {
     let arc_str2 = Arc::new("match_string".to_string());
 
     let mut match_map = HashMap::new();
-    match_map.insert(Value::String(arc_str1.clone()), 3); // Map the string to some operation (3)
+    match_map.insert(Value::String(arc_str1.clone()).to_key(), 3); // Map the string to some operation (3)
 
     // Span for reporting errors (dummy span for now)
     let dummy_span = Span::default();
 
     // No default match behavior
-    let string_match = StaticMatch {
+    let string_match = Box::new(StaticMatch {
         map: match_map,
         default: Some(1), // No default behavior
         span: dummy_span,
-    };
+    });
 
 
 
     // Function that just has a MatchJump with the string match
     let code = vec![
-        Operation::MatchJump(&string_match), // Perform the string match
+        Operation::MatchJump(string_match), // Perform the string match
         Operation::PushAtom(string_table.get_id(":err")),             // Push constant (dummy operation)
         Operation::Jump(4),
         Operation::PushGlobal(0),             // Dummy result operation
@@ -763,16 +768,16 @@ fn test_capture_closure() {
     mut_vars_template.add_ids(&[var_a_id]); // Adding the variable to capture
 
     // Step 3: Create a FuncMaker that defines the closure capturing
-    let captures = &[0]; // Capture the variable at position 0 on the stack
+    let captures = Box::new([0]); // Capture the variable at position 0 on the stack
     let vars = VarTable::default();
     let code = vec![Operation::Return].into_boxed_slice(); // Simple code that just returns
     let span = Span::default();
 
     let func_maker = FuncMaker {
         captures,
-        mut_vars_template: &mut_vars_template,
-        vars: &vars,
-        code: &code,
+        mut_vars_template: mut_vars_template,
+        vars: vars.clone(),
+        code: code.clone(),
         span,
     };
 
