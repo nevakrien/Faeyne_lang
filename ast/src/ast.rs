@@ -240,7 +240,7 @@ impl<'input> StringTable<'input> {
     }
 
     // Returns the ID of the string, inserting it if it doesn't exist.
-    pub fn check_id(&mut self, s: &'input str) -> Option<u32> {
+    pub fn check_id(&self, s: &'input str) -> Option<u32> {
         if let Some(&id) = self.map.get(s) {
             Some(id)
         } else {

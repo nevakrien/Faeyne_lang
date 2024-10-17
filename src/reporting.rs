@@ -21,6 +21,9 @@ pub enum Error {
     Sig(SigError),
     ZeroDiv,
 
+    MissingCall(String),
+
+
     Missing(UndefinedName),
     UnreachableCase(FuncSig),
     NoneCallble(NoneCallble),
@@ -124,6 +127,13 @@ pub fn tail_stacked_error(message:&'static str,err:ErrList,span:Span) -> ErrList
             span:span,
         }).to_list()
 }
+
+#[cold]
+#[inline(never)]
+pub fn missing_func_error(name:String) -> ErrList {
+    Error::MissingCall(name).to_list()
+}
+
 
 #[derive(Debug,PartialEq)]
 pub struct RecursionError{
@@ -305,6 +315,12 @@ fn emit_error(
             .with_message(format!(
                 "Undefined name error: {}",
                 table.get_display_str(*id).unwrap_or("Unknown name")
+            )),
+
+        Error::MissingCall(s) => Diagnostic::error()
+            .with_message(format!(
+                "Attempted to call non existent function: {s}",
+                
             )),
 
         Error::UnreachableCase(  sig ) => {
