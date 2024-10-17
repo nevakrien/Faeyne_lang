@@ -1,4 +1,5 @@
 // #![allow(unused_imports)]
+use crate::reporting::overflow_error;
 use std::sync::RwLock;
 use crate::reporting::missing_func_error;
 use std::collections::HashMap;
@@ -49,7 +50,7 @@ impl Code<'_> {
 		VarTable{data,names:self.names.clone()}
 	}
 
-	pub fn run(&self,name:&str) -> Result<(),RunError> {
+	pub fn run<'a>(&self,name:&str,values:impl IntoIterator<Item = IRValue<'a>>) -> Result<(),RunError> {
 		let func = *self.name_map.get(name).ok_or_else(|| missing_func_error(name.to_string()))?;
 		let table = &*self.table.try_read().map_err(|_| {RunError::Sync})?;
 
@@ -58,11 +59,14 @@ impl Code<'_> {
 		let Some(IRValue::Func(main)) = global.get(func) else { todo!() };
 
 		let mut context = Context::new(main,&global,table);
+		for v in values {
+			context.stack.push_value(v).map_err(|_| overflow_error())?;
+		}
 		let _ = context.run()?;
 		Ok(())
 	}
 
-	pub fn run_compare(&self,name:&str,value:IRValue) -> Result<bool,RunError> {
+	pub fn run_compare<'a>(&self,name:&str,values:impl IntoIterator<Item = IRValue<'a>>,value:IRValue) -> Result<bool,RunError> {
 		let func = *self.name_map.get(name).ok_or_else(|| missing_func_error(name.to_string()))?;
 		let table = &*self.table.try_read().map_err(|_| {RunError::Sync})?;
 
@@ -70,11 +74,14 @@ impl Code<'_> {
 		let global = self.get_global();
 		let Some(IRValue::Func(main)) = global.get(func) else { todo!() };
 		let mut context = Context::new(main,&global,table);
+		for v in values {
+			context.stack.push_value(v).map_err(|_| overflow_error())?;
+		}
 		let x = context.run()?;
 		Ok(x==value)
 	}
 
-	pub fn run_map<T,F:FnOnce(IRValue) -> T>(&self,name:&str,map:F) -> Result<T,RunError> {
+	pub fn run_map<'a, T,F:FnOnce(IRValue) -> T>(&self,name:&str,values:impl IntoIterator<Item = IRValue<'a>>,map:F) -> Result<T,RunError> {
 		let func = *self.name_map.get(name).ok_or_else(|| missing_func_error(name.to_string()))?;
 		let table = &*self.table.try_read().map_err(|_| {RunError::Sync})?;
 		
@@ -82,6 +89,9 @@ impl Code<'_> {
 		let global = self.get_global();
 		let Some(IRValue::Func(main)) = global.get(func) else { todo!() };
 		let mut context = Context::new(main,&global,table);
+		for v in values {
+			context.stack.push_value(v).map_err(|_| overflow_error())?;
+		}
 		let x = context.run()?;
 
 		Ok(map(x))
@@ -90,6 +100,7 @@ impl Code<'_> {
 
 #[test]
 fn test_unified_code_runs() {
+
     // Step 1: Setup the StringTable
     let mut string_table = StringTable::new();
     let var_a_id = string_table.get_id("var_a");
@@ -124,19 +135,19 @@ fn test_unified_code_runs() {
     };
 
     // Test 1: Using `run` method
-    let result = code_struct.run("bool_func");
+    let result = code_struct.run("bool_func",vec![]);
     assert!(result.is_ok(), "Expected successful run with no errors");
 
     // Test 2: Using `run_compare` method to compare with true (should pass)
-    let result = code_struct.run_compare("bool_func", IRValue::Bool(true));
+    let result = code_struct.run_compare("bool_func",vec![], IRValue::Bool(true));
     assert_eq!(result.unwrap(), true, "Expected true from run_compare");
 
     // Test 3: Using `run_compare` method to compare with false (should fail)
-    let result = code_struct.run_compare("bool_func", IRValue::Bool(false));
+    let result = code_struct.run_compare("bool_func",vec![], IRValue::Bool(false));
     assert_eq!(result.unwrap(), false, "Expected false from run_compare");
 
     // Test 4: Using `run_map` method to map output to a string
-    let result = code_struct.run_map("bool_func", |val| match val {
+    let result = code_struct.run_map("bool_func",vec![], |val| match val {
         IRValue::Bool(true) => "True",
         _ => "False",
     });
@@ -195,16 +206,16 @@ fn test_all_errors_in_one_code() {
     };
 
     // Test 1: Missing Function Error
-    let result = code_struct.run("missing_func");
+    let result = code_struct.run("missing_func",vec![]);
     assert!(matches!(result, Err(RunError::Exc(_))), "Expected missing function error");
 
     // Test 2: Internal Function Error (PopTo on empty stack)
-    let result = code_struct.run("internal_error_func");
+    let result = code_struct.run("internal_error_func",vec![]);
     assert!(matches!(result, Err(RunError::Exc(_))), "Expected internal function error due to empty stack");
 
     // Test 3: Sync Error - Lock the table in write mode and try running a function
     let write_lock = table.write().unwrap();  // Hold the lock to simulate a sync error
-    let result = code_struct.run("simple_func");
+    let result = code_struct.run("simple_func",vec![]);
     assert!(matches!(result, Err(RunError::Sync)), "Expected sync error due to locked table");
 
     // Ensure the lock is released after the test
