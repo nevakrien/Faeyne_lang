@@ -122,7 +122,7 @@ pub struct MissingID;
 #[derive(Clone,Debug,PartialEq)]
 #[derive(Default)]
 pub struct VarTable<'code> {
-    data: Vec<Option<Value<'code>>>,
+    pub data: Vec<Option<Value<'code>>>,
     pub names: Vec<u32>,
 }
 

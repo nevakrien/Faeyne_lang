@@ -494,7 +494,7 @@ impl<'code> Context<'code> {
         }
     }
 
-    pub fn finish(&mut self) -> Result<Value<'code>,ErrList> {
+    pub fn run(&mut self) -> Result<Value<'code>,ErrList> {
         let mut keep_running = true;
         while keep_running {
             keep_running = self.next_op()?;
@@ -504,10 +504,10 @@ impl<'code> Context<'code> {
             )
     }
 
-    pub fn run(&mut self) -> Result<Value<'code>,ErrList> {
-        self.pos=0;
-        self.finish()
-    }
+    // pub fn run(&mut self) -> Result<Value<'code>,ErrList> {
+    //     self.pos=0;
+    //     self.finish()
+    // }
 
 }
 
@@ -685,6 +685,7 @@ fn test_not_gate_match() {
     let result = context.run().unwrap();
     assert_eq!(result, Value::Bool(true)); // Should return true
 
+    context.pos = 0;
     context.stack.push_bool(true).unwrap();
     let result = context.run().unwrap();
     assert_eq!(result, Value::Bool(false)); // Should return true
@@ -751,6 +752,7 @@ fn test_string_match() {
 
      // Push the second Arc (different address but same content)
     context.stack.push_value(Value::String(arc_str2.clone())).unwrap();
+    context.pos=0;
     let result = context.run().unwrap();
     assert_eq!(result, Value::Func(func_data.clone())); // Should match the string
 
