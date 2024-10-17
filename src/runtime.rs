@@ -1,4 +1,6 @@
-// #![allow(unused_imports)]
+#[cfg(test)]
+use codespan::Span;
+
 use crate::reporting::overflow_error;
 use std::sync::RwLock;
 use crate::reporting::missing_func_error;
@@ -221,3 +223,49 @@ fn test_all_errors_in_one_code() {
     // Ensure the lock is released after the test
     drop(write_lock);
 }
+
+#[test]
+fn test_args_passing() {
+    // Step 1: Setup the StringTable
+    let mut string_table = StringTable::new();
+    let var_a_id = string_table.get_id("var_a");
+
+    // Step 2: Setup the VarTable for the function
+    let mut mut_vars = VarTable::default();
+    mut_vars.add_ids(&[var_a_id]);
+
+    // Step 3: Create the code for the function that sums two arguments
+    let code = vec![
+        Operation::Add(Span::default()), // Pop two values, add them, and push the result
+        Operation::Return,               // Return the result
+    ].into_boxed_slice();
+
+    // Step 4: Create the FuncHolder and Code structs
+    let func_holder = FuncHolder {
+        mut_vars_template: mut_vars.clone(),
+        vars: VarTable::default(),
+        code,
+    };
+
+    let mut name_map = HashMap::new();
+    name_map.insert(Box::from("sum_func"), 0); // Function for the test
+
+    let table = Arc::new(RwLock::new(string_table));
+
+    let code_struct = Code {
+        names: vec![var_a_id],
+        func: vec![func_holder],
+        name_map,
+        table,
+    };
+
+    // Step 5: Test passing two integer arguments (e.g., 5 + 3)
+    let args = vec![IRValue::Int(5), IRValue::Int(3)];
+    
+    // Running the function and comparing the result
+    let result = code_struct.run_compare("sum_func", args, IRValue::Int(8));
+
+    // Step 6: Assert that the result is the sum of the two arguments (5 + 3 = 8)
+    assert_eq!(result.unwrap(), true, "Expected the result to be 8");
+}
+
