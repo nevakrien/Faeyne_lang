@@ -33,20 +33,20 @@ pub enum Value<'code> {
 impl PartialEq for Value<'_> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
-        self.to_key() == other.to_key()
-        // match (self, other) {
-        //     (Value::WeakFunc(weak_a), Value::WeakFunc(weak_b)) => weak_a.as_ptr()==weak_b.as_ptr(),
-        //     (Value::WeakFunc(weak), Value::Func(func)) | (Value::Func(func), Value::WeakFunc(weak)) => weak.as_ptr()==Arc::as_ptr(func),
-        //     (Value::Func(a), Value::Func(b)) => Arc::as_ptr(a) == Arc::as_ptr(b),
-        //     (Value::StaticFunc(a),Value::StaticFunc(b)) => a==b,
-        //     (Value::Nil, Value::Nil) => true,
-        //     (Value::Bool(a), Value::Bool(b)) => a == b,
-        //     (Value::Int(a), Value::Int(b)) => a == b,
-        //     (Value::Float(a), Value::Float(b)) => a == b || a.is_nan() && b.is_nan(),
-        //     (Value::Atom(a), Value::Atom(b)) => a == b,
-        //     (Value::String(a), Value::String(b)) => Arc::ptr_eq(a, b) || *a == *b,
-        //     _ => false,
-        // }
+       
+        match (self, other) {
+            (Value::WeakFunc(weak_a), Value::WeakFunc(weak_b)) => weak_a.as_ptr()==weak_b.as_ptr(),
+            (Value::WeakFunc(weak), Value::Func(func)) | (Value::Func(func), Value::WeakFunc(weak)) => weak.as_ptr()==Arc::as_ptr(func),
+            (Value::Func(a), Value::Func(b)) => Arc::as_ptr(a) == Arc::as_ptr(b),
+            (Value::StaticFunc(a),Value::StaticFunc(b)) => a==b,
+            (Value::Nil, Value::Nil) => true,
+            (Value::Bool(a), Value::Bool(b)) => a == b,
+            (Value::Int(a), Value::Int(b)) => a == b,
+            (Value::Float(a), Value::Float(b)) => a == b || a.is_nan() && b.is_nan(),
+            (Value::Atom(a), Value::Atom(b)) => a == b,
+            (Value::String(a), Value::String(b)) => Arc::ptr_eq(a, b) || *a == *b,
+            _ => false,
+        }
     }
 }
 
@@ -87,54 +87,6 @@ impl Hash for Value<'_> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-#[repr(u32)]
-pub enum ValueKey {
-    Nil=2,
-    Bool(bool)=0,
-    Int(i64)=3,
-    Float(u64)=4, // Use the bit representation of the f64
-    Atom(u32)=5,
-    String(Arc<String>)=6,
-    Func(usize)=7,       // Use the pointer value for uniqueness.
-}
-
-impl<'code> Value<'code> {
-    /// Converts a `Value` into a `ValueKey` for unique identification.
-    #[inline]
-    pub fn to_key(&self) -> ValueKey {
-        match self {
-            Value::Nil => ValueKey::Nil,
-            Value::Bool(b) => ValueKey::Bool(*b),
-            Value::Int(i) => ValueKey::Int(*i),
-            Value::Float(f) => {
-                // Use the bit representation for NaN consistency.
-                let normalized = if f.is_nan() {
-                    f64::NAN.to_bits()
-                } else if *f == 0.0 {
-                    0
-                } else {
-                    f.to_bits()
-                };
-                ValueKey::Float(normalized)
-            }
-            Value::Atom(a) => ValueKey::Atom(*a),
-            Value::String(s) => ValueKey::String(Arc::clone(s)),
-            Value::Func(func) => {
-                // Use the pointer address for uniqueness.
-                ValueKey::Func(Arc::as_ptr(func) as usize)
-            }
-            Value::WeakFunc(weak) => {
-                // Use the pointer address for uniqueness.
-                ValueKey::Func(weak.as_ptr() as usize)
-            }
-            Value::StaticFunc(func) => {
-                // Use the pointer address (or part of it) for uniqueness.
-                ValueKey::Func(*func as *const StaticFunc as usize)
-            }
-        }
-    }
-}
 
 #[test]
 fn test_value_partial_eq() {

@@ -4,7 +4,6 @@
 
 
 // use std::collections::LinkedList;
-use crate::value::ValueKey;
 use crate::basic_ops::call_string;
 use crate::reporting::stacked_error;
 use crate::reporting::match_error;
@@ -77,7 +76,7 @@ pub struct FuncMaker {
 #[repr(C)] //static match should probably hold the map first because its acessed first
 pub struct StaticMatch {
     //note that offsets are not from the start of the code 
-    pub map: HashMap<ValueKey,usize>,
+    pub map: HashMap<Value<'static>,usize>,
     pub default: Option<usize>,
     pub span: Span
 }
@@ -85,7 +84,7 @@ pub struct StaticMatch {
 
 impl StaticMatch {
     pub fn get(&self,value:&Value) -> Option<usize> {
-        match self.map.get(&value.to_key()) {
+        match self.map.get(value) {
             Some(id) => Some(*id),
             None => self.default
         }
@@ -649,8 +648,8 @@ fn test_not_gate_match() {
     let string_table = StringTable::new();
 
     let mut match_map = HashMap::new();
-    match_map.insert(Value::Bool(false).to_key(), 3); // false => true
-    match_map.insert(Value::Bool(true).to_key(), 1);  // true => false
+    match_map.insert(Value::Bool(false), 3); // false => true
+    match_map.insert(Value::Bool(true), 1);  // true => false
 
     // Span for reporting errors (dummy span for now)
     let dummy_span = Span::default();
@@ -706,7 +705,7 @@ fn test_string_match() {
     let arc_str2 = Arc::new("match_string".to_string());
 
     let mut match_map = HashMap::new();
-    match_map.insert(Value::String(arc_str1.clone()).to_key(), 3); // Map the string to some operation (3)
+    match_map.insert(Value::String(arc_str1.clone()), 3); // Map the string to some operation (3)
 
     // Span for reporting errors (dummy span for now)
     let dummy_span = Span::default();
