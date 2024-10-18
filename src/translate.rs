@@ -48,7 +48,7 @@ pub fn translate_program<'a>(outer:&[OuterExp],table:Arc<RwLock<StringTable<'a>>
 }
 
 pub fn translate_func<'a>(func:&FuncDec,_table:&StringTable<'a>) -> Result<FuncHolder<'a>,ErrList> {
-	let mut vars = VarTable::default();
+	let vars = VarTable::default();
 	let mut mut_vars = VarTable::default();
 	let mut code = Vec::default();
 
@@ -58,13 +58,13 @@ pub fn translate_func<'a>(func:&FuncDec,_table:&StringTable<'a>) -> Result<FuncH
 		todo!()
 	}
 	match func.body.ret {
-	    None => {code.push(Operation::PushNil);},
+	    None => {
+	    	code.push(Operation::PushNil);
+	    	code.push(Operation::Return);
+	    },
 	    Some(_) => todo!(),
 	}
-	code.push(Operation::Return);
-
-	vars.add_ids(&[69696969]);
-
+	
 	Ok(FuncHolder{
 		code:code.into(),
 		mut_vars_template:mut_vars,
