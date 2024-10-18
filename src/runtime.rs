@@ -31,7 +31,7 @@ pub struct FuncHolder<'a> {
 
 
 impl Code<'_> {
-	pub fn get_global<'code>(&'code self) -> VarTable<'code>{
+	pub fn get_global(&self) -> VarTable<'_>{
 		let mut data = Vec::with_capacity(self.names.len());
 		for f in self.funcs.iter() {
 			let function = Arc::new(FuncData{
@@ -150,11 +150,11 @@ fn test_unified_code_runs() {
 
     // Test 2: Using `run_compare` method to compare with true (should pass)
     let result = code_struct.run_compare("bool_func",vec![], IRValue::Bool(true));
-    assert_eq!(result.unwrap(), true, "Expected true from run_compare");
+    assert!(result.unwrap(), "Expected true from run_compare");
 
     // Test 3: Using `run_compare` method to compare with false (should fail)
     let result = code_struct.run_compare("bool_func",vec![], IRValue::Bool(false));
-    assert_eq!(result.unwrap(), false, "Expected false from run_compare");
+    assert!(!result.unwrap(), "Expected false from run_compare");
 
     // Test 4: Using `run_map` method to map output to a string
     let result = code_struct.run_map("bool_func",vec![], |val| match val {
@@ -268,6 +268,6 @@ fn test_args_passing() {
     let result = code_struct.run_compare("sum_func", args, IRValue::Int(8));
 
     // Step 6: Assert that the result is the sum of the two arguments (5 + 3 = 8)
-    assert_eq!(result.unwrap(), true, "Expected the result to be 8");
+    assert!(result.unwrap(), "Expected the result to be 8");
 }
 

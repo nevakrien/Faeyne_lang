@@ -88,7 +88,7 @@ pub fn to_string_runtime<'code>(value: &Value<'code>, table: &StringTable<'code>
         Value::Bool(b) => format!("{}", b),
         Value::Int(i) => format!("{}", i),
         Value::Float(f) => format!("{}", f),
-        Value::Atom(atom_id) => format!("{}", table.get_raw_str(*atom_id)),
+        Value::Atom(atom_id) => table.get_raw_str(*atom_id).to_string(),
         Value::String(s) => s.to_string(),
         Value::Func(func) => format!("func({:p})", Arc::as_ptr(func)),
         Value::WeakFunc(weak_func) => format!("weak_func({:p})", weak_func.as_ptr()),
@@ -185,7 +185,7 @@ fn test_is_equal() {
 
 
 #[inline]
-fn to_bool<'code>(value: &Value<'code>) -> bool {
+fn to_bool(value: &Value<'_>) -> bool {
     match value {
         Value::Nil => false,
         Value::Bool(b) => *b,

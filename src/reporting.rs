@@ -114,7 +114,7 @@ pub fn stacked_error(message:&'static str,err:ErrList,span:Span) -> ErrList {
     Error::Stacked(InternalError{
             message,
             err,
-            span:span,
+            span,
         }).to_list()
 }
 
@@ -124,7 +124,7 @@ pub fn tail_stacked_error(message:&'static str,err:ErrList,span:Span) -> ErrList
     Error::StackedTail(InternalError{
             message,
             err,
-            span:span,
+            span,
         }).to_list()
 }
 

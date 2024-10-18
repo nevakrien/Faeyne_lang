@@ -405,9 +405,9 @@ impl<'code> Context<'code> {
             Operation::CallThis => self.call_this(),
 
 
-            MatchJump(map) => self.match_jump(&map),
+            MatchJump(map) => self.match_jump(map),
             Jump(pos) => {
-                self.pos=*pos;
+                self.pos= * pos;
                 Ok(())
             },
             
@@ -433,7 +433,7 @@ impl<'code> Context<'code> {
                 .map_err(|_| overflow_error()),
             
             PopTerminator => self.stack.pop_terminator()
-                .ok_or_else(|| sig_error()),
+                .ok_or_else(sig_error),
             
             //basic ops
             Equal(span) => basic_ops::is_equal_value(&mut self.stack,self.table,*span),
@@ -776,7 +776,7 @@ fn test_capture_closure() {
 
     let func_maker = FuncMaker {
         captures,
-        mut_vars_template: mut_vars_template,
+        mut_vars_template,
         vars: vars.clone(),
         code: code.clone(),
         span,

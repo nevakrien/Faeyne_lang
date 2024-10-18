@@ -73,10 +73,10 @@ pub fn translate_func<'a>(func:&FuncDec,_table:&StringTable<'a>) -> Result<FuncH
 	
 }
 
-fn simple_load_args<'code>(
+fn simple_load_args(
 	args: &[u32],
 	write_spot:&mut Vec<Operation>,
-	mut_vars:&mut VarTable<'code>,
+	mut_vars:&mut VarTable<'_>,
 ){
 	let last_arg_id = mut_vars.len();
 	mut_vars.add_ids(args);
@@ -90,7 +90,7 @@ fn simple_load_args<'code>(
 }
 
 // This function handles the process of taking source code and returning a `Code` object.
-pub fn compile_source_to_code<'a>(source_code: &'a str) -> Code<'a> {
+pub fn compile_source_to_code(source_code: &str) -> Code<'_> {
     // Step 1: Setup the StringTable (we will use Arc<RwLock<StringTable>> as required)
     let string_table = Arc::new(RwLock::new(StringTable::new()));
 
@@ -138,5 +138,5 @@ fn test_end_to_end_empty_function() {
     ];
 
     // Step 4: Run the translated code and call the "main" function with the arguments
-    let _result = code.run("main", args).unwrap();
+    code.run("main", args).unwrap();
 }

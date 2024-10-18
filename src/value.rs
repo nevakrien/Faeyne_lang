@@ -131,6 +131,10 @@ impl<'code> VarTable<'code>  {
         self.names.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.names.is_empty()
+    }
+
     pub fn clear(&mut self) {
         self.data.clear();
         self.names.clear();
