@@ -15,7 +15,7 @@ use crate::vm::{Operation,Context};
 
 pub struct Code<'a> {
 	pub names: Vec<u32>,
-	pub func : Vec<FuncHolder<'a>>,
+	pub funcs : Vec<FuncHolder<'a>>,
 	pub name_map: HashMap<Box<str>,usize>,
     pub table:Arc<RwLock<StringTable<'a>>>,
 
@@ -33,10 +33,12 @@ pub struct FuncHolder<'a> {
 impl Code<'_> {
 	pub fn get_global<'code>(&'code self) -> VarTable<'code>{
 		let mut data = Vec::with_capacity(self.names.len());
-		for f in self.func.iter() {
-			let function = Arc::new(FuncData::new(
-            &f.vars,f.mut_vars_template.clone(),&f.code //very happy this works not sure why it works tho...
-            ));
+		for f in self.funcs.iter() {
+			let function = Arc::new(FuncData{
+	            vars:&f.vars,
+	            mut_vars:f.mut_vars_template.clone(),
+	            code:&f.code //very happy this works not sure why it works tho...
+            });
 			data.push(Some(IRValue::Func(function)))
 		}
 
@@ -53,10 +55,13 @@ impl Code<'_> {
 		let global = self.get_global();
 		let Some(IRValue::Func(main)) = global.get(func) else { todo!() };
 
+
 		let mut context = Context::new(main,&global,table);
+
 		for v in values {
 			context.stack.push_value(v).map_err(|_| overflow_error())?;
 		}
+
 		let _ = context.run()?;
 		Ok(())
 	}
@@ -93,6 +98,7 @@ impl Code<'_> {
 		let global = self.get_global();
 		let Some(IRValue::Func(main)) = global.get(func) else { todo!() };
 		let mut context = Context::new(main,&global,table);
+
 		for v in values {
 			context.stack.push_value(v).map_err(|_| overflow_error())?;
 		}
@@ -133,7 +139,7 @@ fn test_unified_code_runs() {
 
     let code_struct = Code {
         names: vec![var_a_id],
-        func: vec![func_holder],
+        funcs: vec![func_holder],
         name_map,
         table,
     };
@@ -204,7 +210,7 @@ fn test_all_errors_in_one_code() {
 
     let code_struct = Code {
         names: vec![var_a_id],
-        func: vec![simple_func, internal_error_func],
+        funcs: vec![simple_func, internal_error_func],
         name_map,
         table: table.clone(),
     };
@@ -250,7 +256,7 @@ fn test_args_passing() {
 
     let code_struct = Code {
         names: vec![var_a_id],
-        func: vec![func_holder],
+        funcs: vec![func_holder],
         name_map,
         table,
     };

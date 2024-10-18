@@ -174,7 +174,7 @@ impl<'code> Context<'code> {
         call_stack.push(ret);
 
         Context{
-            pos:0,mut_vars:Box::new(VarTable::default()),
+            pos:0,mut_vars:Box::new(func.mut_vars.clone()),
             stack:ValueStack::default(),
             func,global_vars,
             table,call_stack,
@@ -227,7 +227,7 @@ impl<'code> Context<'code> {
             None  => Err(sig_error()),
 
             Some(x) => self.mut_vars.set(id,x)
-                .map_err(|_| bug_error("tried seting a non existent id")
+                .map_err(|_| bug_error("tried seting a non existent arg id")
                 ),
             
         }
