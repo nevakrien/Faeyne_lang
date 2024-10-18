@@ -28,16 +28,7 @@ pub struct FuncHolder<'a> {
     pub code: Box<[Operation]>,
 }
 
-#[derive(Debug,PartialEq)]
-pub enum RunError {
-	Exc(ErrList),
-	Sync
-}
 
-impl From<ErrList> for RunError {
-
-	fn from(e: ErrList) -> Self { RunError::Exc(e) }
-}
 
 impl Code<'_> {
 	pub fn get_global<'code>(&'code self) -> VarTable<'code>{
@@ -52,9 +43,11 @@ impl Code<'_> {
 		VarTable{data,names:self.names.clone()}
 	}
 
-	pub fn run<'a>(&self,name:&str,values:impl IntoIterator<Item = IRValue<'a>>) -> Result<(),RunError> {
+	pub fn run<'a,ValueIter:IntoIterator<Item = IRValue<'a>>>
+	(&self,name:&str,values:ValueIter) -> Result<(),ErrList> {
+
 		let func = *self.name_map.get(name).ok_or_else(|| missing_func_error(name.to_string()))?;
-		let table = &*self.table.try_read().map_err(|_| {RunError::Sync})?;
+		let table = &*self.table.read().unwrap();
 
 
 		let global = self.get_global();
@@ -68,9 +61,12 @@ impl Code<'_> {
 		Ok(())
 	}
 
-	pub fn run_compare<'a>(&self,name:&str,values:impl IntoIterator<Item = IRValue<'a>>,value:IRValue) -> Result<bool,RunError> {
+	pub fn run_compare<'a,ValueIter:IntoIterator<Item = IRValue<'a>>>
+	(&self,name:&str,values:ValueIter,value:IRValue) 
+	-> Result<bool,ErrList> {
+
 		let func = *self.name_map.get(name).ok_or_else(|| missing_func_error(name.to_string()))?;
-		let table = &*self.table.try_read().map_err(|_| {RunError::Sync})?;
+		let table = &*self.table.read().unwrap();
 
 		
 		let global = self.get_global();
@@ -83,9 +79,15 @@ impl Code<'_> {
 		Ok(x==value)
 	}
 
-	pub fn run_map<'a, T,F:FnOnce(IRValue) -> T>(&self,name:&str,values:impl IntoIterator<Item = IRValue<'a>>,map:F) -> Result<T,RunError> {
+	pub fn run_map<
+		'a,ValueIter:IntoIterator<Item = IRValue<'a>>, 
+		T,F:FnOnce(IRValue) -> T
+		>
+	(&self,name:&str,values:ValueIter,map:F) 
+	-> Result<T,ErrList> {
+
 		let func = *self.name_map.get(name).ok_or_else(|| missing_func_error(name.to_string()))?;
-		let table = &*self.table.try_read().map_err(|_| {RunError::Sync})?;
+		let table = &*self.table.read().unwrap();
 		
 
 		let global = self.get_global();
@@ -209,19 +211,13 @@ fn test_all_errors_in_one_code() {
 
     // Test 1: Missing Function Error
     let result = code_struct.run("missing_func",vec![]);
-    assert!(matches!(result, Err(RunError::Exc(_))), "Expected missing function error");
+    assert!(result.is_err(), "Expected missing function error");
 
     // Test 2: Internal Function Error (PopTo on empty stack)
     let result = code_struct.run("internal_error_func",vec![]);
-    assert!(matches!(result, Err(RunError::Exc(_))), "Expected internal function error due to empty stack");
+    assert!(result.is_err(), "Expected internal function error due to empty stack");
 
-    // Test 3: Sync Error - Lock the table in write mode and try running a function
-    let write_lock = table.write().unwrap();  // Hold the lock to simulate a sync error
-    let result = code_struct.run("simple_func",vec![]);
-    assert!(matches!(result, Err(RunError::Sync)), "Expected sync error due to locked table");
 
-    // Ensure the lock is released after the test
-    drop(write_lock);
 }
 
 #[test]
