@@ -45,17 +45,19 @@ pub type StaticFunc = for<'code> fn(&mut ValueStack<'code>,&StringTable<'code>) 
 // #[derive(Default)]
 // #[repr(C)]
 pub struct FuncData<'code> {
+    pub num_args: usize,
     pub mut_vars: VarTable<'code>,
     pub vars: &'code VarTable<'code>,
     pub code: &'code [Operation],
 }
 
 impl<'code> FuncData<'code> {
-    pub fn new(vars: &'code VarTable<'code>,mut_vars: VarTable<'code>, code: &'code [Operation]) -> FuncData<'code> {
+    pub fn new(vars: &'code VarTable<'code>,mut_vars: VarTable<'code>, code: &'code [Operation],num_args:usize) -> FuncData<'code> {
         FuncData::<'code> {
             vars,
             mut_vars,
             code,
+            num_args,
             // span,
         }
     }
@@ -65,6 +67,7 @@ impl<'code> FuncData<'code> {
 
 #[derive(Clone,PartialEq,Debug)]
 pub struct FuncMaker {
+    pub num_args : usize,
     pub captures: Box<[usize]>,
     pub mut_vars_template: VarTable<'static>,
     pub vars: VarTable<'static>,
@@ -222,29 +225,29 @@ impl<'code> Context<'code> {
 
     
 
-    fn pop_arg_to(&mut self,id:usize) -> Result<(),ErrList>{
-        match self.stack.pop_value(){
-            None  => Err(sig_error()),
+    // fn pop_arg_to(&mut self,id:usize) -> Result<(),ErrList>{
+    //     match self.stack.pop_value(){
+    //         None  => Err(sig_error()),
 
-            Some(x) => self.mut_vars.set(id,x)
-                .map_err(|_| bug_error("tried seting a non existent arg id")
-                ),
+    //         Some(x) => self.mut_vars.set(id,x)
+    //             .map_err(|_| bug_error("tried seting a non existent arg id")
+    //             ),
             
-        }
-    }
+    //     }
+    // }
 
-    #[cold]
-    fn pop_extra_arg(&mut self,num:usize) -> Result<(),ErrList>{
-        for _ in 0..num {
-            match self.stack.pop_value(){
-                None  => {return Err(sig_error());},
+    // #[cold]
+    // fn pop_extra_arg(&mut self,num:usize) -> Result<(),ErrList>{
+    //     for _ in 0..num {
+    //         match self.stack.pop_value(){
+    //             None  => {return Err(sig_error());},
 
-                Some(_) => {},
+    //             Some(_) => {},
                 
-            }
-        }
-        Ok(())
-    }
+    //         }
+    //     }
+    //     Ok(())
+    // }
     
 
     fn big_ret(&mut self) -> Result<(),ErrList> {
@@ -300,6 +303,15 @@ impl<'code> Context<'code> {
         }
     } 
 
+    fn set_args(&mut self) -> Result<(),ErrList> {
+        for i in (0.. self.func.num_args).rev() {
+            let value = self.stack.pop_value().ok_or_else(|| sig_error())?;
+            self.mut_vars.set(i,value).map_err(|_| bug_error("poping arg to no where"))?;
+        }
+
+        self.stack.pop_terminator().ok_or_else(|| sig_error())
+    }
+
     fn call(&mut self,span:Span) -> Result<(),ErrList> {
         
 
@@ -326,7 +338,8 @@ impl<'code> Context<'code> {
 
         self.func = func;
         self.pos = 0;
-        Ok(())
+
+        self.set_args()
     }
 
     fn tail_call(&mut self,span:Span) -> Result<(),ErrList> {
@@ -340,7 +353,8 @@ impl<'code> Context<'code> {
 
         self.func = func;
         self.pos = 0;
-        Ok(())
+        
+        self.set_args()
     }
 
     fn call_this(&mut self) -> Result<(),ErrList> {
@@ -348,12 +362,13 @@ impl<'code> Context<'code> {
 
         self.mut_vars = Box::new(self.func.mut_vars.clone());
         self.pos = 0;
-        Ok(())
+        
+        self.set_args()
     }
         
     fn match_jump(&mut self,map:&StaticMatch) -> Result<(),ErrList> {
         let x = self.stack.pop_value()
-            .ok_or_else(||{bug_error("over poping")}
+            .ok_or_else(||{bug_error("over poping match")}
             )?;
 
         let jump_pos = map.get(&x)
@@ -379,7 +394,7 @@ impl<'code> Context<'code> {
 
         let func = Value::Func(Arc::new(
             FuncData::new(
-            &maker.vars,mut_vars,&maker.code //very happy this works not sure why it works tho...
+            &maker.vars,mut_vars,&maker.code,maker.num_args //very happy this works not sure why it works tho...
             )
         ));
 
@@ -426,8 +441,8 @@ impl<'code> Context<'code> {
 
             
             //args managment
-            PopArgTo(id) => self.pop_arg_to(*id),
-            PopExtraArgs(num) => self.pop_extra_arg(*num),
+            // PopArgTo(id) => self.pop_arg_to(*id),
+            // PopExtraArgs(num) => self.pop_extra_arg(*num),
 
             PushTerminator => self.stack.push_terminator()
                 .map_err(|_| overflow_error()),
@@ -495,6 +510,8 @@ impl<'code> Context<'code> {
     }
 
     pub fn run(&mut self) -> Result<Value<'code>,ErrList> {
+        self.set_args()?;
+
         let mut keep_running = true;
         while keep_running {
             keep_running = self.next_op()?;
@@ -525,8 +542,8 @@ pub enum Operation {
     PushLocal(usize),
 
 
-    PopArgTo(usize),
-    PopExtraArgs(usize),
+    // PopArgTo(usize),
+    // PopExtraArgs(usize),
     PushTerminator,
     PopTerminator,
 
@@ -601,7 +618,7 @@ fn test_vm_push_pop() {
     ]
     .into_boxed_slice(); // Box the slice for FuncData
 
-    let func_data = Arc::new(FuncData::new(&vars,mut_vars, &code));
+    let func_data = Arc::new(FuncData::new(&vars,mut_vars, &code,0));
 
     //global vars
     let mut global_vars = VarTable::default();
@@ -648,8 +665,8 @@ fn test_not_gate_match() {
     let string_table = StringTable::new();
 
     let mut match_map = HashMap::new();
-    match_map.insert(Value::Bool(false), 3); // false => true
-    match_map.insert(Value::Bool(true), 1);  // true => false
+    match_map.insert(Value::Bool(false), 4); // false => true
+    match_map.insert(Value::Bool(true), 2);  // true => false
 
     // Span for reporting errors (dummy span for now)
     let dummy_span = Span::default();
@@ -662,21 +679,23 @@ fn test_not_gate_match() {
 
     // Global variables (holding `true` and `false` as booleans)
     let mut global_vars = VarTable::default();
-    global_vars.add_ids(&[0]); // No IDs needed in this case
+    global_vars.add_ids(&[0]); // 1 ID
 
     // Function that just has a MatchJump with the NOT gate
     let code = vec![
+        Operation::PushFrom(0),
         Operation::MatchJump(not_gate_match.clone()), // Perform the NOT operation
         Operation::PushBool(false),      // Push `false` (id 0 in this case)
-        Operation::Jump(4),
+        Operation::Jump(5),
         Operation::PushBool(true),      // Push `true` (id 1 as the result of NOT false)
     ]
     .into_boxed_slice();
 
-    let mut_vars = VarTable::default();
+    let mut mut_vars = VarTable::default();
+    mut_vars.add_ids(&[0]);
     let vars = VarTable::default();
 
-    let func_data = Arc::new(FuncData::new(&vars, mut_vars, &code));
+    let func_data = Arc::new(FuncData::new(&vars, mut_vars, &code,1));
 
     let mut context = Context::new(func_data.clone(), &global_vars, &string_table);
 
@@ -692,6 +711,7 @@ fn test_not_gate_match() {
 
     // Test Match Error
     let mut error_context = Context::new(func_data.clone(), &global_vars, &string_table);
+
     error_context.stack.push_value(Value::Int(1)).unwrap(); // Invalid value for matching
     let match_result = error_context.match_jump(&not_gate_match);
     assert!(match_result.is_err()); // Should return a match error
@@ -706,7 +726,7 @@ fn test_string_match() {
     let arc_str2 = Arc::new("match_string".to_string());
 
     let mut match_map = HashMap::new();
-    match_map.insert(Value::String(arc_str1.clone()), 3); // Map the string to some operation (3)
+    match_map.insert(Value::String(arc_str1.clone()), 4); // Map the string to some operation (4)
 
     // Span for reporting errors (dummy span for now)
     let dummy_span = Span::default();
@@ -714,7 +734,7 @@ fn test_string_match() {
     // No default match behavior
     let string_match = Box::new(StaticMatch {
         map: match_map,
-        default: Some(1), // No default behavior
+        default: Some(2), // No default behavior
         span: dummy_span,
     });
 
@@ -722,18 +742,20 @@ fn test_string_match() {
 
     // Function that just has a MatchJump with the string match
     let code = vec![
+        Operation::PushFrom(0),
         Operation::MatchJump(string_match), // Perform the string match
         Operation::PushAtom(string_table.get_id(":err")),             // Push constant (dummy operation)
-        Operation::Jump(4),
+        Operation::Jump(5),
         Operation::PushGlobal(0),             // Dummy result operation
     ]
     .into_boxed_slice();
 
-    let mut_vars = VarTable::default();
+    let mut mut_vars = VarTable::default();
+    mut_vars.add_ids(&[0]);
     let vars = VarTable::default();
 
 
-    let func_data = Arc::new(FuncData::new(&vars, mut_vars, &code));
+    let func_data = Arc::new(FuncData::new(&vars, mut_vars, &code,1));
 
     // Global variables (holding some strings)
     let mut global_vars = VarTable::default();
@@ -776,6 +798,7 @@ fn test_capture_closure() {
 
     let func_maker = FuncMaker {
         captures,
+        num_args:0,
         mut_vars_template,
         vars: vars.clone(),
         code: code.clone(),
@@ -783,7 +806,7 @@ fn test_capture_closure() {
     };
 
     // Step 4: Create a Context and push a value to the stack
-    let func_data = Arc::new(FuncData::new(&vars, VarTable::default(), &code));
+    let func_data = Arc::new(FuncData::new(&vars, VarTable::default(), &code,0));
     let global_vars = VarTable::default();
     let mut context = Context::new(func_data.clone(), &global_vars, &string_table);
 
@@ -821,7 +844,7 @@ fn test_call_function() {
     let span = Span::default();
 
     // Step 4: Create the FuncData and Context
-    let func_data = Arc::new(FuncData::new(&mut_vars, VarTable::default(), &code));
+    let func_data = Arc::new(FuncData::new(&mut_vars, VarTable::default(), &code,0));
     let global_vars = VarTable::default();
     let mut context = Context::new(func_data.clone(), &global_vars, &string_table);
 

@@ -50,9 +50,11 @@ pub fn translate_program<'a>(outer:&[OuterExp],table:Arc<RwLock<StringTable<'a>>
 pub fn translate_func<'a>(func:&FuncDec,_table:&StringTable<'a>) -> Result<FuncHolder<'a>,ErrList> {
 	let vars = VarTable::default();
 	let mut mut_vars = VarTable::default();
+	mut_vars.add_ids(&func.sig.args);
+	
 	let mut code = Vec::default();
 
-	simple_load_args(&func.sig.args,&mut code,&mut mut_vars);
+	// simple_load_args(&func.sig.args,&mut code,&mut mut_vars);
 
 	for _x in func.body.body.iter() {
 		todo!()
@@ -69,25 +71,26 @@ pub fn translate_func<'a>(func:&FuncDec,_table:&StringTable<'a>) -> Result<FuncH
 		code:code.into(),
 		mut_vars_template:mut_vars,
 		vars,
+		num_args:func.sig.args.len()
 	})
 	
 }
 
-fn simple_load_args(
-	args: &[u32],
-	write_spot:&mut Vec<Operation>,
-	mut_vars:&mut VarTable<'_>,
-){
-	let last_arg_id = mut_vars.len();
-	mut_vars.add_ids(args);
-	println!("{:?}", mut_vars);
+// fn simple_load_args(
+// 	args: &[u32],
+// 	write_spot:&mut Vec<Operation>,
+// 	mut_vars:&mut VarTable<'_>,
+// ){
+// 	let last_arg_id = mut_vars.len();
+// 	mut_vars.add_ids(args);
+// 	println!("{:?}", mut_vars);
 
-	for i in (last_arg_id..mut_vars.len()).rev() {
-		println!("adding arg ({:?})",i );
-		write_spot.push(Operation::PopArgTo(i));
-	}
-	write_spot.push(Operation::PopTerminator)
-}
+// 	for i in (last_arg_id..mut_vars.len()).rev() {
+// 		println!("adding arg ({:?})",i );
+// 		write_spot.push(Operation::PopArgTo(i));
+// 	}
+// 	write_spot.push(Operation::PopTerminator)
+// }
 
 // This function handles the process of taking source code and returning a `Code` object.
 pub fn compile_source_to_code(source_code: &str) -> Code<'_> {

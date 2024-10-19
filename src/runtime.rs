@@ -26,6 +26,7 @@ pub struct FuncHolder<'a> {
     pub mut_vars_template: VarTable<'a>,
     pub vars: VarTable<'a>,
     pub code: Box<[Operation]>,
+    pub num_args:usize,
 }
 
 
@@ -35,7 +36,8 @@ impl Code<'_> {
 		let mut data = Vec::with_capacity(self.names.len());
 		for f in self.funcs.iter() {
 			let function = Arc::new(FuncData{
-	            vars:&f.vars,
+                num_args:f.num_args,
+                vars:&f.vars,
 	            mut_vars:f.mut_vars_template.clone(),
 	            code:&f.code //very happy this works not sure why it works tho...
             });
@@ -127,6 +129,7 @@ fn test_unified_code_runs() {
 
     // Step 4: Create the FuncHolder and Code structs
     let func_holder = FuncHolder {
+        num_args:0,
         mut_vars_template: mut_vars.clone(),
         vars: VarTable::default(),
         code,
@@ -189,12 +192,14 @@ fn test_all_errors_in_one_code() {
 
     // Step 4: Create FuncHolders for the two functions
     let internal_error_func = FuncHolder {
+        num_args:0,
         mut_vars_template: mut_vars.clone(),
         vars: VarTable::default(),
         code: internal_error_code,
     };
 
     let simple_func = FuncHolder {
+        num_args:0,
         mut_vars_template: mut_vars.clone(),
         vars: VarTable::default(),
         code: simple_code,
@@ -231,19 +236,23 @@ fn test_args_passing() {
     // Step 1: Setup the StringTable
     let mut string_table = StringTable::new();
     let var_a_id = string_table.get_id("var_a");
+    let var_b_id = string_table.get_id("var_b");
 
     // Step 2: Setup the VarTable for the function
     let mut mut_vars = VarTable::default();
-    mut_vars.add_ids(&[var_a_id]);
+    mut_vars.add_ids(&[var_a_id,var_b_id]);
 
     // Step 3: Create the code for the function that sums two arguments
     let code = vec![
+        Operation::PushFrom(0),
+        Operation::PushFrom(1),
         Operation::Add(Span::default()), // Pop two values, add them, and push the result
         Operation::Return,               // Return the result
     ].into_boxed_slice();
 
     // Step 4: Create the FuncHolder and Code structs
     let func_holder = FuncHolder {
+        num_args:2,
         mut_vars_template: mut_vars.clone(),
         vars: VarTable::default(),
         code,
