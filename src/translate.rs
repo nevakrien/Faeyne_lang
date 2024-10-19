@@ -51,10 +51,8 @@ pub fn translate_func<'a>(func:&FuncDec,_table:&StringTable<'a>) -> Result<FuncH
 	let vars = VarTable::default();
 	let mut mut_vars = VarTable::default();
 	mut_vars.add_ids(&func.sig.args);
-	
-	let mut code = Vec::default();
 
-	// simple_load_args(&func.sig.args,&mut code,&mut mut_vars);
+	let mut code = Vec::default();
 
 	for _x in func.body.body.iter() {
 		todo!()
@@ -75,22 +73,6 @@ pub fn translate_func<'a>(func:&FuncDec,_table:&StringTable<'a>) -> Result<FuncH
 	})
 	
 }
-
-// fn simple_load_args(
-// 	args: &[u32],
-// 	write_spot:&mut Vec<Operation>,
-// 	mut_vars:&mut VarTable<'_>,
-// ){
-// 	let last_arg_id = mut_vars.len();
-// 	mut_vars.add_ids(args);
-// 	println!("{:?}", mut_vars);
-
-// 	for i in (last_arg_id..mut_vars.len()).rev() {
-// 		println!("adding arg ({:?})",i );
-// 		write_spot.push(Operation::PopArgTo(i));
-// 	}
-// 	write_spot.push(Operation::PopTerminator)
-// }
 
 // This function handles the process of taking source code and returning a `Code` object.
 pub fn compile_source_to_code(source_code: &str) -> Code<'_> {

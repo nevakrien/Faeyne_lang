@@ -1,9 +1,3 @@
-
-// use smallvec::SmallVec;
-
-
-
-// use std::collections::LinkedList;
 use crate::basic_ops::call_string;
 use crate::reporting::stacked_error;
 use crate::reporting::match_error;
@@ -99,10 +93,6 @@ pub struct RetData<'code> {
     pos:usize,
     func:Arc<FuncData<'code>>,
     mut_vars:Box<VarTable<'code>>,
-    // pub span: Span,
-    // pub spans:LinkedList<Span>,
-    // pub tailed:bool
-
     pub tail_debug: TailDebug,
 
 }
@@ -134,7 +124,6 @@ pub const MAX_RECURSION :usize=2_500;
 
 // #[repr(C)] //want to orgenize by importance
 pub struct Context<'code> {
-    // pub pos:usize,
     pos:usize,
     func:Arc<FuncData<'code>>,
     call_stack:  ArrayVec<RetData<'code>,MAX_RECURSION>,
@@ -143,7 +132,6 @@ pub struct Context<'code> {
     mut_vars:Box<VarTable<'code>>,
     global_vars:&'code VarTable<'code>,
 
-    // pub inputs: FuncInputs<'code>,
     pub stack: ValueStack<'code>,    
     pub table: &'code StringTable<'code>,//for errors only
 
@@ -305,11 +293,11 @@ impl<'code> Context<'code> {
 
     fn set_args(&mut self) -> Result<(),ErrList> {
         for i in (0.. self.func.num_args).rev() {
-            let value = self.stack.pop_value().ok_or_else(|| sig_error())?;
+            let value = self.stack.pop_value().ok_or_else(sig_error)?;
             self.mut_vars.set(i,value).map_err(|_| bug_error("poping arg to no where"))?;
         }
 
-        self.stack.pop_terminator().ok_or_else(|| sig_error())
+        self.stack.pop_terminator().ok_or_else(sig_error)
     }
 
     fn call(&mut self,span:Span) -> Result<(),ErrList> {
@@ -521,11 +509,11 @@ impl<'code> Context<'code> {
             )
     }
 
-    // pub fn run(&mut self) -> Result<Value<'code>,ErrList> {
-    //     self.pos=0;
-    //     self.finish()
-    // }
-
+    pub fn reset(&mut self) {
+        *self.mut_vars = self.func.mut_vars.clone();
+        self.pos=0;
+        self.stack = ValueStack::new();
+    }
 }
 
 #[derive(Debug,PartialEq,Clone)]

@@ -1,18 +1,9 @@
-// #![allow(clippy::result_unit_err)]
-
-
 use core::hash::Hasher;
 use core::hash::Hash;
 use crate::vm::StaticFunc;
 use crate::vm::FuncData;
 use std::sync::Weak;
 use std::sync::Arc;
-
-// #[derive(Clone,PartialEq,Debug)]
-// pub struct FuncData{
-//     //holds raw code
-// }
-
 
 #[derive(Clone,Debug)]
 #[repr(u32)] //optimized for 64bit architctures
