@@ -535,12 +535,6 @@ pub enum Operation {
     PushTerminator,
     PopTerminator,
 
-    PushBool(bool),
-    PushAtom(u32),
-    PushNil,
-
-    
-
     MatchJump(Box<StaticMatch>),//pops a value to match aginst then jumps to a position based on it
     Jump(usize), //jumps to a position usually outside of a match case
     
@@ -549,6 +543,10 @@ pub enum Operation {
 
     CaptureClosure(Box<FuncMaker>),//pops the data off the stack and creates a new function returning it as an IRValue to the stack
     NoOp,
+
+    PushBool(bool),
+    PushAtom(u32),
+    PushNil,
 
     // BinOp{op:basic_ops::BinOp,span: Span},//too fat
     Add(Span),
