@@ -6,4 +6,7 @@ pub mod stack;
 
 pub mod translate;
 pub mod runtime;
+
+mod test_code_easy;
+
 //mod test_code;
