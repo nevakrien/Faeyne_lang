@@ -70,7 +70,7 @@ pub fn translate_program<'a>(outer:&[OuterExp],table:Arc<RwLock<StringTable<'a>>
 	})
 }
 
-pub fn translate_func<'a>(func:&FuncDec,_table:&StringTable<'a>) -> Result<FuncHolder<'a>,ErrList> {
+pub fn translate_func<'a>(func:&FuncDec,table:&StringTable<'a>) -> Result<FuncHolder<'a>,ErrList> {
 	let mut vars = VarTable::default();
 	let mut mut_vars = VarTable::default();
 	mut_vars.add_ids(&func.sig.args);
@@ -81,6 +81,7 @@ pub fn translate_func<'a>(func:&FuncDec,_table:&StringTable<'a>) -> Result<FuncH
 		code:&mut code,
 		vars:&mut vars,
 		mut_vars:&mut mut_vars,
+		table
 	};
 
 	for x in func.body.body.iter() {
@@ -106,6 +107,7 @@ struct TransHandle<'a> {
 	code:&'a mut Vec<Operation>,
 	mut_vars:&'a mut VarTable<'static>,
 	vars:&'a mut VarTable<'static>,
+	table:&'a StringTable<'a>,
 }
 
 #[inline]
@@ -132,6 +134,13 @@ fn translate_value(v:&AstValue,handle: &mut TransHandle ) -> Result<(),ErrList> 
 		AstValue::Nil => handle.code.push(Operation::PushNil),
 		AstValue::Bool(b) => handle.code.push(Operation::PushBool(*b)),
 		AstValue::Atom(a) => handle.code.push(Operation::PushAtom(*a)),
+
+		AstValue::Float(f) => handle.code.push(Operation::PushFloat(*f)),
+		AstValue::Int(i) => handle.code.push(Operation::PushInt(*i)),
+		AstValue::String(id) => {
+			let s = Arc::new(handle.table.get_escaped_string(*id));
+			handle.code.push(Operation::PushString(s))
+		},
 	    _ => todo!(),
 	};
 	Ok(())
@@ -223,4 +232,22 @@ fn test_atom_passing() {
     // Step 3: Run the translated code and call the "main" function with the arguments
     assert!(code.run_compare("main", vec![],IRValue::Atom(atom_id)).unwrap());
     assert!(!code.run_compare("main", vec![],IRValue::Atom(wrong_atom_id)).unwrap());
+}
+
+#[test]
+fn test_string_escaping() {
+    // Step 1: Define the source code (a function that does nothing)
+    let source_code = r#"
+        def main() {
+            "string\n"
+        }
+    "#;
+
+    // Step 2: Compile the source code to a `Code` object
+    let code = compile_source_to_code(source_code);
+
+    let s = Arc::new("string\n".to_string());
+
+    // Step 3: Run the translated code and call the "main" function with the arguments
+    assert!(code.run_compare("main", vec![],IRValue::String(s)).unwrap());
 }

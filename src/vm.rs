@@ -427,6 +427,15 @@ impl<'code> Context<'code> {
             PushNil => self.stack.push_nil()
                 .map_err(|_| overflow_error()),
 
+            Operation::PushFloat(f) => self.stack.push_float(*f)
+                .map_err(|_| overflow_error()),
+            
+            Operation::PushInt(i) => self.stack.push_int(*i)
+                .map_err(|_| overflow_error()),
+
+            Operation::PushString(s) => self.stack.push_string(s.clone())
+                .map_err(|_| overflow_error()),
+
             
             //args managment
             // PopArgTo(id) => self.pop_arg_to(*id),
@@ -547,6 +556,9 @@ pub enum Operation {
     PushBool(bool),
     PushAtom(u32),
     PushNil,
+    PushFloat(f64),
+    PushInt(i64),
+    PushString(Arc<String>),
 
     // BinOp{op:basic_ops::BinOp,span: Span},//too fat
     Add(Span),
