@@ -219,11 +219,7 @@ fn test_assign() {
                 _ => 0,
             };
 
-            match :five {
-                :ok => 2,
-                2 => true,
-                _ => false,
-            }
+            a
         }
     "#;
 
@@ -231,5 +227,5 @@ fn test_assign() {
     let code = compile_source_to_code(source_code);
 
     // Step 3: Run the translated code and call the "main" function with the arguments
-    assert!(code.run_compare("main", vec![],Value::Bool(false)).unwrap());
+    assert!(code.run_compare("main", vec![],Value::Bool(true)).unwrap());
 }

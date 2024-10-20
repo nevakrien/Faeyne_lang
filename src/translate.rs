@@ -37,7 +37,7 @@ struct TransHandle<'a> {
 
 trait NameSpace {
 	fn set(&mut self,handle:&mut TransHandle,name:u32) ;
-	fn get(&mut self,handle:&mut TransHandle,name:u32) -> Result<(),ErrList>;
+	fn get(&self,handle:&mut TransHandle,name:u32) -> Result<(),ErrList>;
 	// fn del(handle:&mut TransHandle,name:u32);
 }
 
@@ -56,7 +56,7 @@ impl<'a> FuncScope<'a> {
 }
 
 impl NameSpace for FuncScope<'_> {
-	fn get(&mut self,handle: &mut TransHandle, name: u32) -> Result<(),ErrList> {
+	fn get(&self,handle: &mut TransHandle, name: u32) -> Result<(),ErrList> {
 		let op = match self.assigns.get(&name) {
 		    Some(id) => Operation::PushFrom(*id),
 		    None => {
@@ -67,16 +67,61 @@ impl NameSpace for FuncScope<'_> {
 		handle.code.push(op);
 		Ok(())
 	}
-	fn set(&mut self, handle: &mut TransHandle, name: u32)  {
-		let op = match self.assigns.get(&name) {
-		    Some(id) => Operation::PopTo(*id),
-		    None => {
-		    	let id = handle.mut_vars.len();
-		    	handle.mut_vars.add_ids(&[name]);
-		    	Operation::PopTo(id)
-		    }
+	fn set(&mut self, handle: &mut TransHandle, name: u32) {
+	    let op = match self.assigns.entry(name) {
+	        Entry::Occupied(entry) => {
+	            // If the key exists, use the existing id
+	            Operation::PopTo(*entry.get())
+	        }
+	        Entry::Vacant(spot) => {
+	            // If the key doesn't exist, insert the new id
+	            let id = handle.mut_vars.len();
+	            handle.mut_vars.add_ids(&[name]);
+	            spot.insert(id);  // This is the step you were missing
+	            Operation::PopTo(id)
+	        }
+	    };
+	    handle.code.push(op);
+	}
+}
+
+struct MatchScope<'a> {
+	parent: &'a dyn NameSpace,
+	assigns: HashMap<u32,usize>,
+}
+
+impl<'a> MatchScope<'a> {
+	fn new(parent: &'a dyn NameSpace,) -> Self {
+		MatchScope{
+			parent,
+			assigns:HashMap::new()
+		}
+	}
+}
+
+impl NameSpace for MatchScope<'_> {
+	fn get(&self,handle: &mut TransHandle, name: u32) -> Result<(),ErrList> {
+		match self.assigns.get(&name) {
+		    Some(id) => handle.code.push(Operation::PushFrom(*id)),
+		    None => self.parent.get(handle,name)?,
 		};
-		handle.code.push(op);
+		Ok(())
+	}
+	fn set(&mut self, handle: &mut TransHandle, name: u32) {
+	    let op = match self.assigns.entry(name) {
+	        Entry::Occupied(entry) => {
+	            // If the key exists, use the existing id
+	            Operation::PopTo(*entry.get())
+	        }
+	        Entry::Vacant(spot) => {
+	            // If the key doesn't exist, insert the new id
+	            let id = handle.mut_vars.len();
+	            handle.mut_vars.add_ids(&[name]);
+	            spot.insert(id);  // This is the step you were missing
+	            Operation::PopTo(id)
+	        }
+	    };
+	    handle.code.push(op);
 	}
 }
 
@@ -149,7 +194,7 @@ pub fn translate_program<'a>(outer:&[OuterExp],table:Arc<RwLock<StringTable<'a>>
 }
 
 
-pub fn translate_func<'a>(func:&FuncDec,name_space:&mut dyn NameSpace,table:&StringTable<'a>) -> Result<FuncHolder<'a>,ErrList> {
+fn translate_func<'a>(func:&FuncDec,name_space:&mut dyn NameSpace,table:&StringTable<'a>) -> Result<FuncHolder<'a>,ErrList> {
 	let mut vars = VarTable::default();
 	let mut mut_vars = VarTable::default();
 	mut_vars.add_ids(&func.sig.args);
@@ -166,23 +211,23 @@ pub fn translate_func<'a>(func:&FuncDec,name_space:&mut dyn NameSpace,table:&Str
 	for x in func.body.body.iter() {
 		match x{
 			Statment::Match(m) =>{
-				translate_match(m,&mut handle,FullCall)?;
+				translate_match(m,name_space,&mut handle,FullCall)?;
 				handle.code.push(Operation::PopDump);
 				handle.code.push(Operation::PushNil);
 			},
 			Statment::Assign(id, val) => {
-				translate_value(val,&mut handle,FullCall)?;
+				translate_value(val,name_space,&mut handle,FullCall)?;
 				name_space.set(&mut handle,*id);
 			},
 			Statment::Call(call) => {
-				translate_call_raw(call,&mut handle,FullCall)?;
+				translate_call_raw(call,name_space,&mut handle,FullCall)?;
 				handle.code.push(Operation::PopDump);
 				handle.code.push(Operation::PushNil);
 			}
 		}
 	}
 
-	translate_ret_func(&func.body.ret,TailCall,&mut handle)?;
+	translate_ret_func(&func.body.ret,TailCall,name_space,&mut handle)?;
 	
 	Ok(FuncHolder{
 		code:code.into(),
@@ -199,7 +244,7 @@ pub fn translate_func<'a>(func:&FuncDec,name_space:&mut dyn NameSpace,table:&Str
 fn translate_ret_func(
 	x:&Option<Ret>,tail:CallType,
 	
-	handle:&mut TransHandle
+	name_space:&mut dyn NameSpace,handle:&mut TransHandle
 
 ) -> Result<(),ErrList> {
 	match x {
@@ -207,14 +252,14 @@ fn translate_ret_func(
 	    	handle.code.push(Operation::PushNil);
 	    },
 	    Some(r) => {
-	    	translate_value(r.get_value(),handle,tail)?;
+	    	translate_value(r.get_value(),name_space,handle,tail)?;
 	    }
 	}
 	handle.code.push(Operation::Return);
 	Ok(())
 }
 
-fn translate_value(v:&AstValue,handle: &mut TransHandle,tail:CallType) -> Result<(),ErrList> {
+fn translate_value(v:&AstValue,name_space:&mut dyn NameSpace,handle: &mut TransHandle,tail:CallType) -> Result<(),ErrList> {
 	match v {
 		AstValue::Nil => handle.code.push(Operation::PushNil),
 		AstValue::Bool(b) => handle.code.push(Operation::PushBool(*b)),
@@ -228,14 +273,16 @@ fn translate_value(v:&AstValue,handle: &mut TransHandle,tail:CallType) -> Result
 		},
 
 		AstValue::SelfRef(_) => handle.code.push(Operation::PushThis),
-		AstValue::FuncCall(call) => translate_call_raw(call,handle,tail)?,
-		AstValue::Match(m) => translate_match(m,handle,tail)?,
+		AstValue::FuncCall(call) => translate_call_raw(call,name_space,handle,tail)?,
+		AstValue::Match(m) => translate_match(m,name_space,handle,tail)?,
+
+		AstValue::Variable(id) => name_space.get(handle,*id)?,
 	    _ => todo!(),
 	};
 	Ok(())
 }
 
-fn translate_call_raw(call:&FunctionCall,handle: &mut TransHandle,tail:CallType) -> Result<(),ErrList> {
+fn translate_call_raw(call:&FunctionCall,name_space:&mut dyn NameSpace,handle: &mut TransHandle,tail:CallType) -> Result<(),ErrList> {
 	if !matches!(call.name,FValue::BuildIn(_)) {
 		handle.code.push(Operation::PushTerminator);
 	}
@@ -245,7 +292,7 @@ fn translate_call_raw(call:&FunctionCall,handle: &mut TransHandle,tail:CallType)
 	}
 	
 	for a in call.args.iter() {
-		translate_value(a,handle,FullCall)?;
+		translate_value(a,name_space,handle,FullCall)?;
 	}
 
 	match call.name {
@@ -289,8 +336,13 @@ fn translate_call_raw(call:&FunctionCall,handle: &mut TransHandle,tail:CallType)
 	Ok(())	
 }
 
-fn translate_match(m:&MatchStatment,handle:&mut TransHandle,tail:CallType) -> Result<(),ErrList> {
-	translate_value(&m.val,handle,tail)?;
+fn translate_match(m:&MatchStatment,name_space:&mut dyn NameSpace,handle:&mut TransHandle,tail:CallType) -> Result<(),ErrList> {
+	//first in the existing name space calculate the match value
+	translate_value(&m.val,name_space,handle,tail)?;
+
+	//then in the match scope do the rest
+	let mut scope = MatchScope::new(name_space);
+
 	let mut ans = Box::new(StaticMatch::default());
 	ans.span = m.debug_span;
 
@@ -306,7 +358,7 @@ fn translate_match(m:&MatchStatment,handle:&mut TransHandle,tail:CallType) -> Re
 	    	    	let val = literal_to_IRValue(v,handle.table);
 	    	    	ans.map.insert(val,handle.code.len());
 	    	    	match &c.result {
-		    			MatchOut::Value(v) =>translate_value(v,handle,tail)?,
+		    			MatchOut::Value(v) =>translate_value(v,&mut scope,handle,tail)?,
 		    			MatchOut::Block(_) => todo!(),
 		    		}
 
@@ -326,7 +378,7 @@ fn translate_match(m:&MatchStatment,handle:&mut TransHandle,tail:CallType) -> Re
 	    	    	let val = literal_to_IRValue(v,handle.table);
 	    	    	ans.map.insert(val,handle.code.len());
 	    	    	match &last.result {
-		    			MatchOut::Value(v) =>translate_value(v,handle,tail)?,
+		    			MatchOut::Value(v) =>translate_value(v,&mut scope,handle,tail)?,
 		    			MatchOut::Block(_) => todo!(),
 		    		}
 		    },
@@ -335,7 +387,7 @@ fn translate_match(m:&MatchStatment,handle:&mut TransHandle,tail:CallType) -> Re
 	    		ans.default=Some(handle.code.len());
 	    	
 	    		match &last.result {
-	    			MatchOut::Value(v) =>translate_value(v,handle,tail)?,
+	    			MatchOut::Value(v) =>translate_value(v,&mut scope,handle,tail)?,
 	    			MatchOut::Block(_) => todo!(),
 	    		}
 	    	}
