@@ -1,6 +1,5 @@
 
-use ast::ast::FValue;
-use ast::ast::FunctionCall;
+use ast::ast::{FValue,FunctionCall,BuildIn};
 use ast::ast::Value as AstValue;
 use ast::lexer::Lexer;
 use ast::parser::ProgramParser;
@@ -135,7 +134,7 @@ fn translate_ret_func(
 	Ok(())
 }
 
-fn translate_value(v:&AstValue,handle: &mut TransHandle,_tail:CallType) -> Result<(),ErrList> {
+fn translate_value(v:&AstValue,handle: &mut TransHandle,tail:CallType) -> Result<(),ErrList> {
 	match v {
 		AstValue::Nil => handle.code.push(Operation::PushNil),
 		AstValue::Bool(b) => handle.code.push(Operation::PushBool(*b)),
@@ -149,25 +148,60 @@ fn translate_value(v:&AstValue,handle: &mut TransHandle,_tail:CallType) -> Resul
 		},
 
 		AstValue::SelfRef(_) => handle.code.push(Operation::PushThis),
+		AstValue::FuncCall(call) => translate_call_raw(call,handle,tail)?,
 	    _ => todo!(),
 	};
 	Ok(())
 }
 
 fn translate_call_raw(call:&FunctionCall,handle: &mut TransHandle,tail:CallType) -> Result<(),ErrList> {
-	handle.code.push(Operation::PushTerminator);
+	if !matches!(call.name,FValue::BuildIn(_)) {
+		handle.code.push(Operation::PushTerminator);
+	}
+	else {
+    	#[cfg(feature = "debug_terminators")]
+    	handle.code.push(Operation::PushTerminator);
+	}
+	
 	for a in call.args.iter() {
 		translate_value(a,handle,FullCall)?;
 	}
 
 	match call.name {
-		FValue::SelfRef(span) => match tail {
+		FValue::SelfRef(_) => match tail {
 			TailCall => handle.code.push(Operation::CallThis),
 			FullCall => {
 				handle.code.push(Operation::PushThis);
-				handle.code.push(Operation::Call(span));
+				handle.code.push(Operation::Call(call.debug_span));
 			}
 		}
+		FValue::BuildIn(op) => match op {
+			BuildIn::Add => handle.code.push(Operation::Add(call.debug_span)),
+			BuildIn::Sub => handle.code.push(Operation::Sub(call.debug_span)),
+			BuildIn::Mul => handle.code.push(Operation::Mul(call.debug_span)),
+			BuildIn::Div => handle.code.push(Operation::Div(call.debug_span)),
+			BuildIn::IntDiv => handle.code.push(Operation::IntDiv(call.debug_span)),
+
+			BuildIn::Modulo => handle.code.push(Operation::Modulo(call.debug_span)),
+
+
+			BuildIn::Pow => handle.code.push(Operation::Pow(call.debug_span)),
+			BuildIn::Equal => handle.code.push(Operation::Equal(call.debug_span)),
+			BuildIn::NotEqual => handle.code.push(Operation::NotEqual(call.debug_span)),
+			
+			BuildIn::Bigger => handle.code.push(Operation::Bigger(call.debug_span)),
+			BuildIn::BiggerEq => handle.code.push(Operation::BiggerEq(call.debug_span)),
+			BuildIn::Smaller => handle.code.push(Operation::Smaller(call.debug_span)),
+			BuildIn::SmallerEq => handle.code.push(Operation::SmallerEq(call.debug_span)),
+			
+			BuildIn::Xor => handle.code.push(Operation::Xor(call.debug_span)),
+			BuildIn::DoubleXor => handle.code.push(Operation::DoubleXor(call.debug_span)),
+			BuildIn::And => handle.code.push(Operation::And(call.debug_span)),
+			BuildIn::DoubleAnd => handle.code.push(Operation::DoubleAnd(call.debug_span)),
+			BuildIn::Or => handle.code.push(Operation::Or(call.debug_span)),
+			BuildIn::DoubleOr => handle.code.push(Operation::DoubleOr(call.debug_span)),
+
+		},
 		_ => todo!(),
 	}
 

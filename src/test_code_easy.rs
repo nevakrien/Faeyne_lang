@@ -59,3 +59,51 @@ fn test_return_self() {
     // Step 3: Run the translated code and call the "main" function with the arguments
     code.run("main", vec![]).unwrap();
 }
+
+#[test]
+fn test_1_p_1() {
+    // Step 1: Define the source code (a function that does nothing)
+    let source_code = r#"
+        def main() {
+            1+1
+        }
+    "#;
+
+    // Step 2: Compile the source code to a `Code` object
+    let code = compile_source_to_code(source_code);
+
+    // Step 3: Run the translated code and call the "main" function with the arguments
+    assert!(code.run_compare("main", vec![],Value::Int(2)).unwrap());
+}
+
+#[test]
+fn test_add_sub() {
+    // Step 1: Define the source code (a function that does nothing)
+    let source_code = r#"
+        def main() {
+            1+1-2
+        }
+    "#;
+
+    // Step 2: Compile the source code to a `Code` object
+    let code = compile_source_to_code(source_code);
+
+    // Step 3: Run the translated code and call the "main" function with the arguments
+    assert!(code.run_compare("main", vec![],Value::Int(0)).unwrap());
+}
+
+#[test]
+fn test_parens() {
+    // Step 1: Define the source code (a function that does nothing)
+    let source_code = r#"
+        def main() {
+            (1+1) < (2+3) || false
+        }
+    "#;
+
+    // Step 2: Compile the source code to a `Code` object
+    let code = compile_source_to_code(source_code);
+
+    // Step 3: Run the translated code and call the "main" function with the arguments
+    assert!(code.run_compare("main", vec![],Value::Bool(true)).unwrap());
+}
