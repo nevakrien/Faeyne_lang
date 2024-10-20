@@ -69,7 +69,7 @@ pub struct FuncMaker {
     pub span: Span,
 }
 
-#[derive(PartialEq,Debug,Clone)]
+#[derive(PartialEq,Debug,Clone,Default)]
 #[repr(C)] //static match should probably hold the map first because its acessed first
 pub struct StaticMatch {
     //note that offsets are not from the start of the code 

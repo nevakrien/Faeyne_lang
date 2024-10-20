@@ -128,9 +128,82 @@ fn test_add_err() {
     match res {
         Ok(()) => panic!("should have type errored"),
         Err(e) => {
-            assert!(matches!(e,ref _error));
+            assert!(matches!(e,ref _error));//weird this works
             report_err_list(&e,source_code,&code.table.try_read().unwrap())
         }
     }
 
+}
+
+#[test]
+fn test_match_err() {
+    // Step 1: Define the source code (a function that does nothing)
+    let source_code = r#"
+        def main() {
+            match 2 {
+                1 => 0,
+            }
+        }
+    "#;
+
+    // Step 2: Compile the source code to a `Code` object
+    let code = compile_source_to_code(source_code);
+    let _error = sig_error();
+    
+    
+    let res = code.run("main", vec![]);
+    match res {
+        Ok(()) => panic!("should have type errored"),
+        Err(e) => {
+            assert!(matches!(e,ref _error));//weird this works
+            report_err_list(&e,source_code,&code.table.try_read().unwrap())
+        }
+    }
+
+}
+
+#[test]
+fn test_match() {
+    // Step 1: Define the source code (a function that does nothing)
+    let source_code = r#"
+        def main() {
+            match 2 {
+                :ok => 2,
+                2 => true,
+                _ => 0,
+            }
+        }
+    "#;
+
+    // Step 2: Compile the source code to a `Code` object
+    let code = compile_source_to_code(source_code);
+
+    // Step 3: Run the translated code and call the "main" function with the arguments
+    assert!(code.run_compare("main", vec![],Value::Bool(true)).unwrap());
+}
+
+#[test]
+fn test_match_jumps() {
+    // Step 1: Define the source code (a function that does nothing)
+    let source_code = r#"
+        def main() {
+            match 2 {
+                :ok => 2,
+                2 => true,
+                _ => 0,
+            };
+
+            match :five {
+                :ok => 2,
+                2 => true,
+                _ => false,
+            }
+        }
+    "#;
+
+    // Step 2: Compile the source code to a `Code` object
+    let code = compile_source_to_code(source_code);
+
+    // Step 3: Run the translated code and call the "main" function with the arguments
+    assert!(code.run_compare("main", vec![],Value::Bool(false)).unwrap());
 }

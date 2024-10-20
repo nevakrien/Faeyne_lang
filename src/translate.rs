@@ -1,21 +1,24 @@
 
-use ast::ast::{FValue,FunctionCall,BuildIn};
+use ast::ast::Literal;
+use crate::reporting::stacked_error;
+use crate::reporting::sig_error;
+use ast::ast::MatchOut;
+use ast::ast::MatchPattern;
 use ast::ast::Value as AstValue;
 use ast::lexer::Lexer;
 use ast::parser::ProgramParser;
 
-use crate::reporting::{report_parse_error,report_err_list};
+use crate::reporting::{report_parse_error,report_err_list,ErrList};
 use crate::value::VarTable;
-#[cfg(test)]
 use crate::value::Value as IRValue;
-use crate::vm::Operation;
-use crate::reporting::ErrList;
+use crate::vm::{Operation,StaticMatch};
 use std::collections::HashMap;
 
-use ast::ast::{StringTable,FuncDec,OuterExp,Ret,Statment};
+use ast::ast::{StringTable,FuncDec,OuterExp,Ret,Statment,FValue,FunctionCall,BuildIn,MatchStatment};
 use std::sync::{RwLock,Arc};
 use crate::runtime::{Code,FuncHolder};
 
+#[derive(Debug,PartialEq,Clone,Copy)]
 enum CallType{
 	TailCall,
 	FullCall,
@@ -87,7 +90,11 @@ pub fn translate_func<'a>(func:&FuncDec,table:&StringTable<'a>) -> Result<FuncHo
 
 	for x in func.body.body.iter() {
 		match x{
-			Statment::Match(_) => todo!(),
+			Statment::Match(m) =>{
+				translate_match(m,&mut handle,FullCall)?;
+				handle.code.push(Operation::PopDump);
+				handle.code.push(Operation::PushNil);
+			},
 			Statment::Assign(_, _) => todo!(),
 			Statment::Call(call) => {
 				translate_call_raw(call,&mut handle,FullCall)?;
@@ -149,6 +156,7 @@ fn translate_value(v:&AstValue,handle: &mut TransHandle,tail:CallType) -> Result
 
 		AstValue::SelfRef(_) => handle.code.push(Operation::PushThis),
 		AstValue::FuncCall(call) => translate_call_raw(call,handle,tail)?,
+		AstValue::Match(m) => translate_match(m,handle,tail)?,
 	    _ => todo!(),
 	};
 	Ok(())
@@ -174,7 +182,7 @@ fn translate_call_raw(call:&FunctionCall,handle: &mut TransHandle,tail:CallType)
 				handle.code.push(Operation::PushThis);
 				handle.code.push(Operation::Call(call.debug_span));
 			}
-		}
+		},		
 		FValue::BuildIn(op) => match op {
 			BuildIn::Add => handle.code.push(Operation::Add(call.debug_span)),
 			BuildIn::Sub => handle.code.push(Operation::Sub(call.debug_span)),
@@ -206,6 +214,80 @@ fn translate_call_raw(call:&FunctionCall,handle: &mut TransHandle,tail:CallType)
 	}
 
 	Ok(())	
+}
+
+fn translate_match(m:&MatchStatment,handle:&mut TransHandle,tail:CallType) -> Result<(),ErrList> {
+	translate_value(&m.val,handle,tail)?;
+	let mut ans = Box::new(StaticMatch::default());
+	ans.span = m.debug_span;
+
+	let in_id = handle.code.len();
+	handle.code.push(Operation::PopTo(100000000));//trap instraction
+
+	let mut return_spots = Vec::new();
+
+	if let Some((last, rest)) = m.arms.split_last() {
+	    for c in rest {
+	    	match &c.pattern {
+	    	    MatchPattern::Literal(v) => {
+	    	    	let val = literal_to_IRValue(v,handle.table);
+	    	    	ans.map.insert(val,handle.code.len());
+	    	    	match &c.result {
+		    			MatchOut::Value(v) =>translate_value(v,handle,tail)?,
+		    			MatchOut::Block(_) => todo!(),
+		    		}
+
+	    	    	return_spots.push(handle.code.len());
+	    			handle.code.push(Operation::PopTo(100000000));//trap instraction 
+	    	    }
+	    	    MatchPattern::Variable(_) => todo!(),
+	    	    MatchPattern::Wildcard => {
+	    	    	//todo fix this up to be a proper error type
+	    	    	return Err(stacked_error("while defining match",sig_error(),m.debug_span));
+	    	    }
+	    	}
+	    }
+	    
+	    match &last.pattern {
+	    	 MatchPattern::Literal(v) => {
+	    	    	let val = literal_to_IRValue(&v,handle.table);
+	    	    	ans.map.insert(val,handle.code.len());
+	    	    	match &last.result {
+		    			MatchOut::Value(v) =>translate_value(v,handle,tail)?,
+		    			MatchOut::Block(_) => todo!(),
+		    		}
+		    },
+	    	MatchPattern::Variable(_) => todo!(),
+	    	MatchPattern::Wildcard => {
+	    		ans.default=Some(handle.code.len());
+	    	
+	    		match &last.result {
+	    			MatchOut::Value(v) =>translate_value(v,handle,tail)?,
+	    			MatchOut::Block(_) => todo!(),
+	    		}
+	    	}
+	    }
+	}
+
+	for r in return_spots {
+		handle.code[r] = Operation::Jump(handle.code.len());
+	}
+
+
+	handle.code[in_id]=Operation::MatchJump(ans);
+	Ok(())
+}
+
+#[allow(non_snake_case)]
+fn literal_to_IRValue(l: &Literal,table:&StringTable) -> IRValue<'static> {
+	match l {
+		Literal::Int(i) => IRValue::Int(*i),
+        Literal::Float(f) => IRValue::Float(*f),
+        Literal::Atom(a) => IRValue::Atom(*a),
+        Literal::String(s) => IRValue::String(Arc::new(table.get_escaped_string(*s))),
+        Literal::Bool(b) => IRValue::Bool(*b),
+        Literal::Nil => IRValue::Nil,
+	}
 }
 
 // This function handles the process of taking source code and returning a `Code` object.

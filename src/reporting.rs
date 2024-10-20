@@ -1,3 +1,4 @@
+use ast::ast::MatchPattern;
 use codespan::Span;
 
 #[cfg(test)]
@@ -25,7 +26,8 @@ pub enum Error {
 
 
     Missing(UndefinedName),
-    UnreachableCase(FuncSig),
+    UnreachableFunctionCase(FuncSig),
+    UnreachableCase(UnreachableCase),
     NoneCallble(NoneCallble),
     Stacked(InternalError),
     StackedTail(InternalError),
@@ -157,11 +159,10 @@ pub struct NoneCallble {
     pub value: String,
 }
 
-// #[derive(Debug,PartialEq)]
-// pub struct UnreachableCase {
-//     // pub name : u32,
-//     pub sig : FuncSig,
-// }
+#[derive(Debug,PartialEq)]
+pub struct UnreachableCase {
+    pub pattern : MatchPattern,
+}
 
 #[derive(Debug,PartialEq)]
 pub struct UndefinedName {
@@ -323,7 +324,15 @@ fn emit_error(
                 
             )),
 
-        Error::UnreachableCase(  sig ) => {
+        Error::UnreachableCase(case) => {//needs more work
+            Diagnostic::error()
+                .with_message(format!(
+                    "the case {:?} is unreachable",
+                    case.pattern
+                ))
+        },
+
+        Error::UnreachableFunctionCase(  sig ) => {
             let name_str = table.get_display_str(sig.name).unwrap_or("Unknown name");
             let sig_display = sig.display_with_table(table);
             Diagnostic::error()
@@ -438,7 +447,7 @@ fn test_err_list_reporting() {
     let undef_err = Error::Missing(UndefinedName { id: undef_id });
 
     // Simulate unreachable case
-    let unreachable_case_err = Error::UnreachableCase(
+    let unreachable_case_err = Error::UnreachableFunctionCase(
         
         FuncSig {name: unreachable_name_id,args:vec![undef_id]}, // Assuming FuncSig has a default or placeholder
     );
@@ -472,7 +481,7 @@ fn test_err_list_reporting_with_stacking() {
     let _undef_err = Error::Missing(UndefinedName { id: undef_id });
 
     // Simulate unreachable case
-    let _unreachable_case_err = Error::UnreachableCase(
+    let _unreachable_case_err = Error::UnreachableFunctionCase(
         // name: unreachable_name_id,
          FuncSig { name: unreachable_name_id, args: vec![undef_id] },
     );
@@ -483,7 +492,7 @@ fn test_err_list_reporting_with_stacking() {
         message: "junk",
         err: vec_to_list(vec![
             Error::Missing(UndefinedName { id: undef_id }),
-            Error::UnreachableCase(
+            Error::UnreachableFunctionCase(
                 
                 FuncSig {name: unreachable_name_id, args: vec![undef_id] },
             ),
