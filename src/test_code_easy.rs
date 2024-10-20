@@ -245,3 +245,27 @@ fn test_arg_reading() {
     // Step 3: Run the translated code and call the "main" function with the arguments
     assert!(code.run_compare("main", vec![Value::Bool(false),Value::Bool(true)],Value::Bool(true)).unwrap());
 }
+
+#[test]
+fn test_match_scope() {
+    // Step 1: Define the source code (a function that does nothing)
+    let source_code = r#"
+        def main() {
+            a=match 2 {
+                2 => {
+                    a=1;
+                    a+1
+                },
+                _ => 0,
+            };
+
+            a
+        }
+    "#;
+
+    // Step 2: Compile the source code to a `Code` object
+    let code = compile_source_to_code(source_code);
+
+    // Step 3: Run the translated code and call the "main" function with the arguments
+    assert!(code.run_compare("main", vec![],Value::Int(2)).unwrap());
+}

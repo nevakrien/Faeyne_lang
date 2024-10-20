@@ -1,4 +1,5 @@
 
+use ast::ast::FuncBlock;
 use crate::reporting::missing_error;
 use crate::reporting::unreachable_func_error;
 use ast::ast::Literal;
@@ -265,6 +266,7 @@ fn translate_value(v:&AstValue,name_space:&mut dyn NameSpace,handle: &mut TransH
 		AstValue::Match(m) => translate_match(m,name_space,handle,tail)?,
 
 		AstValue::Variable(id) => name_space.get(handle,*id)?,
+		AstValue::BuildIn(_) => unreachable!("build in op should never be made as a value in the ast"),
 	    _ => todo!(),
 	};
 	Ok(())
@@ -335,7 +337,7 @@ fn translate_match(m:&MatchStatment,name_space:&mut dyn NameSpace,handle:&mut Tr
 	ans.span = m.debug_span;
 
 	let in_id = handle.code.len();
-	handle.code.push(Operation::PopTo(100000000));//trap instraction
+	handle.code.push(Operation::PushFrom(100000000));//trap instraction
 
 	let mut return_spots = Vec::new();
 
@@ -343,15 +345,15 @@ fn translate_match(m:&MatchStatment,name_space:&mut dyn NameSpace,handle:&mut Tr
 	    for c in rest {
 	    	match &c.pattern {
 	    	    MatchPattern::Literal(v) => {
-	    	    	let val = literal_to_IRValue(v,handle.table);
+	    	    	let val = literal_to_ir_value(v,handle.table);
 	    	    	ans.map.insert(val,handle.code.len());
 	    	    	match &c.result {
 		    			MatchOut::Value(v) =>translate_value(v,&mut scope,handle,tail)?,
-		    			MatchOut::Block(_) => todo!(),
+		    			MatchOut::Block(block) => translate_block(block,&mut scope,handle,tail)?,
 		    		}
 
 	    	    	return_spots.push(handle.code.len());
-	    			handle.code.push(Operation::PopTo(100000000));//trap instraction 
+	    			handle.code.push(Operation::PushFrom(100000000));//trap instraction 
 	    	    }
 	    	    MatchPattern::Variable(_) => todo!(),
 	    	    MatchPattern::Wildcard => {
@@ -363,11 +365,11 @@ fn translate_match(m:&MatchStatment,name_space:&mut dyn NameSpace,handle:&mut Tr
 	    
 	    match &last.pattern {
 	    	 MatchPattern::Literal(v) => {
-	    	    	let val = literal_to_IRValue(v,handle.table);
+	    	    	let val = literal_to_ir_value(v,handle.table);
 	    	    	ans.map.insert(val,handle.code.len());
 	    	    	match &last.result {
 		    			MatchOut::Value(v) =>translate_value(v,&mut scope,handle,tail)?,
-		    			MatchOut::Block(_) => todo!(),
+		    			MatchOut::Block(block) => translate_block(block,&mut scope,handle,tail)?,
 		    		}
 		    },
 	    	MatchPattern::Variable(_) => todo!(),
@@ -376,7 +378,7 @@ fn translate_match(m:&MatchStatment,name_space:&mut dyn NameSpace,handle:&mut Tr
 	    	
 	    		match &last.result {
 	    			MatchOut::Value(v) =>translate_value(v,&mut scope,handle,tail)?,
-	    			MatchOut::Block(_) => todo!(),
+	    			MatchOut::Block(block) => translate_block(block,&mut scope,handle,tail)?,
 	    		}
 	    	}
 	    }
@@ -391,8 +393,43 @@ fn translate_match(m:&MatchStatment,name_space:&mut dyn NameSpace,handle:&mut Tr
 	Ok(())
 }
 
-#[allow(non_snake_case)]
-fn literal_to_IRValue(l: &Literal,table:&StringTable) -> IRValue<'static> {
+fn translate_block(block:&FuncBlock,name_space:&mut dyn NameSpace,handle:&mut TransHandle,tail:CallType) -> Result<(),ErrList> {
+	for x in block.body.iter() {
+		match &x{
+			Statment::Match(m) =>{
+				translate_match(m,name_space,handle,FullCall)?;
+				handle.code.push(Operation::PopDump);
+				handle.code.push(Operation::PushNil);
+			},
+			Statment::Assign(id, val) => {
+				translate_value(val,name_space,handle,FullCall)?;
+				name_space.set(handle,*id);
+			},
+			Statment::Call(call) => {
+				translate_call_raw(call,name_space,handle,FullCall)?;
+				handle.code.push(Operation::PopDump);
+				handle.code.push(Operation::PushNil);
+			}
+		}
+	}
+
+	match &block.ret {
+	    None =>  handle.code.push(Operation::PushNil),
+	    Some(ret) => match ret{
+	    	Ret::Exp(val) => {
+	    		translate_value(val,name_space,handle,TailCall)?;
+	    		handle.code.push(Operation::Return);
+
+	    	},
+	    	Ret::Imp(val) => translate_value(val,name_space,handle,tail)?
+	    },
+	}
+
+	Ok(())
+}
+
+
+fn literal_to_ir_value(l: &Literal,table:&StringTable) -> IRValue<'static> {
 	match l {
 		Literal::Int(i) => IRValue::Int(*i),
         Literal::Float(f) => IRValue::Float(*f),
