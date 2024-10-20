@@ -1,6 +1,8 @@
 #![cfg(test)]
 
 
+use crate::reporting::sig_error;
+use crate::reporting::report_err_list;
 use crate::translate::compile_source_to_code;
 use std::sync::Arc;
 use crate::value::Value;
@@ -106,4 +108,29 @@ fn test_parens() {
 
     // Step 3: Run the translated code and call the "main" function with the arguments
     assert!(code.run_compare("main", vec![],Value::Bool(true)).unwrap());
+}
+
+#[test]
+fn test_add_err() {
+    // Step 1: Define the source code (a function that does nothing)
+    let source_code = r#"
+        def main() {
+            1+:ok
+        }
+    "#;
+
+    // Step 2: Compile the source code to a `Code` object
+    let code = compile_source_to_code(source_code);
+    let _error = sig_error();
+    
+    
+    let res = code.run("main", vec![]);
+    match res {
+        Ok(()) => panic!("should have type errored"),
+        Err(e) => {
+            assert!(matches!(e,ref _error));
+            report_err_list(&e,source_code,&code.table.try_read().unwrap())
+        }
+    }
+
 }
