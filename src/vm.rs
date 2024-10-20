@@ -401,6 +401,12 @@ impl<'code> Context<'code> {
             PushGlobal(id) => self.push_global(*id),
             PushLocal(id) => self.push_local(*id),
 
+            PopDump => {
+                let _ = self.stack.pop_value().ok_or_else(|| bug_error("over poping dump"))?;
+                Ok(())
+            },
+
+
             Return => self.big_ret(),
             
             Call(span) => self.call(*span),
@@ -540,6 +546,8 @@ pub enum Operation {
     PushFrom(usize),
     PushGlobal(usize),
     PushLocal(usize),
+
+    PopDump,
 
 
     // PopArgTo(usize),

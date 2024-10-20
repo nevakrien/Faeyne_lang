@@ -1,4 +1,6 @@
 
+use ast::ast::FValue;
+use ast::ast::FunctionCall;
 use ast::ast::Value as AstValue;
 use ast::lexer::Lexer;
 use ast::parser::ProgramParser;
@@ -88,7 +90,11 @@ pub fn translate_func<'a>(func:&FuncDec,table:&StringTable<'a>) -> Result<FuncHo
 		match x{
 			Statment::Match(_) => todo!(),
 			Statment::Assign(_, _) => todo!(),
-			Statment::Call(_) => todo!(),
+			Statment::Call(call) => {
+				translate_call_raw(call,&mut handle,FullCall)?;
+				handle.code.push(Operation::PopDump);
+				handle.code.push(Operation::PushNil);
+			}
 		}
 	}
 
@@ -112,7 +118,7 @@ struct TransHandle<'a> {
 
 #[inline]
 fn translate_ret_func(
-	x:&Option<Ret>,_tail:CallType,
+	x:&Option<Ret>,tail:CallType,
 	
 	handle:&mut TransHandle
 
@@ -122,14 +128,14 @@ fn translate_ret_func(
 	    	handle.code.push(Operation::PushNil);
 	    },
 	    Some(r) => {
-	    	translate_value(r.get_value(),handle)?;
+	    	translate_value(r.get_value(),handle,tail)?;
 	    }
 	}
 	handle.code.push(Operation::Return);
 	Ok(())
 }
 
-fn translate_value(v:&AstValue,handle: &mut TransHandle ) -> Result<(),ErrList> {
+fn translate_value(v:&AstValue,handle: &mut TransHandle,_tail:CallType) -> Result<(),ErrList> {
 	match v {
 		AstValue::Nil => handle.code.push(Operation::PushNil),
 		AstValue::Bool(b) => handle.code.push(Operation::PushBool(*b)),
@@ -146,6 +152,26 @@ fn translate_value(v:&AstValue,handle: &mut TransHandle ) -> Result<(),ErrList> 
 	    _ => todo!(),
 	};
 	Ok(())
+}
+
+fn translate_call_raw(call:&FunctionCall,handle: &mut TransHandle,tail:CallType) -> Result<(),ErrList> {
+	handle.code.push(Operation::PushTerminator);
+	for a in call.args.iter() {
+		translate_value(a,handle,FullCall)?;
+	}
+
+	match call.name {
+		FValue::SelfRef(span) => match tail {
+			TailCall => handle.code.push(Operation::CallThis),
+			FullCall => {
+				handle.code.push(Operation::PushThis);
+				handle.code.push(Operation::Call(span));
+			}
+		}
+		_ => todo!(),
+	}
+
+	Ok(())	
 }
 
 // This function handles the process of taking source code and returning a `Code` object.
