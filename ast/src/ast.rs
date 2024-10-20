@@ -5,7 +5,7 @@ use crate::id::*;
 // use crate::system::preload_table;
 //names are represented as a u32 which is a key into our table names
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Clone)]
 pub enum Statment {
     Assign(u32, Value),
     Call(FunctionCall),
@@ -14,25 +14,25 @@ pub enum Statment {
 
 
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Clone)]
 pub struct FuncDec {
     pub sig: FuncSig,
     pub body: FuncBlock,
 }
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Clone)]
 pub struct FuncSig {
     pub name: u32,     // Function name ID from the StringTable
     pub args: Vec<u32>, // names of args
 }
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Clone)]
 pub struct FuncBlock{
     pub body: Vec<Statment>, 
     pub ret: Option<Ret>,
 }
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Clone)]
 pub enum Ret{
     Imp(Value),
     Exp(Value),
@@ -47,21 +47,21 @@ impl Ret {
     }
 }
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Clone)]
 pub struct Lambda {
     pub sig: Vec<u32>,
     pub body: FuncBlock,
     pub debug_span: Span,
 }
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Clone)]
 pub struct FunctionCall {
     pub name: FValue,     //
     pub args: Vec<Value>, // Arguments to the function call
     pub debug_span: Span,
 }
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Clone)]
 pub enum FValue {
     SelfRef(Span),
     Name(u32),
@@ -71,7 +71,7 @@ pub enum FValue {
     BuildIn(BuildIn),
 }
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Clone)]
 pub enum Value {
     Int(i64),
     Float(f64),
@@ -101,7 +101,7 @@ impl From<FValue> for Value {
     }
 }
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Clone)]
 pub enum Literal {
     Int(i64),
     Float(f64),
@@ -125,7 +125,7 @@ impl From<Literal> for Value {
 
 
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Clone)]
 pub enum MatchPattern {
     Literal(Literal), 
     Variable(u32),   
@@ -134,7 +134,7 @@ pub enum MatchPattern {
 }
 
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Clone)]
 pub struct MatchArm {
     pub pattern: MatchPattern, // The pattern to match
     pub result: MatchOut, // Result of the match arm (a Value or a block)
@@ -142,7 +142,7 @@ pub struct MatchArm {
 
 
 // Result type for match arm
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Clone)]
 pub enum MatchOut {
     Value(Value),
     Block(FuncBlock),
@@ -151,7 +151,7 @@ pub enum MatchOut {
 
 
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Clone)]
 pub struct MatchStatment {
     pub val: Box<Value>,      // The expression being matched
     pub arms: Vec<MatchArm>,  // The match arms
@@ -161,7 +161,7 @@ pub struct MatchStatment {
 //these are expressions that look like match fn {...} 
 //and they make a lamda function that pattrn matches arguments like a regular funtion
 //the intended use is for things like arrays with  arr = match fn {0 => a, 1 => y}; arr(0)==a; 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Clone)]
 pub struct MatchLambda {
     pub arms: Vec<MatchArm>,  
     pub debug_span: Span,
@@ -194,13 +194,13 @@ pub enum BuildIn {
     DoubleXor,
 }
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Clone)]
 pub struct ImportFunc{
     pub path: u32,
     pub name: u32,
 }
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Clone)]
 pub enum OuterExp {
     ImportFunc(ImportFunc),
     FuncDec(FuncDec),

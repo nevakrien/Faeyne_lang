@@ -22,11 +22,11 @@ pub enum Error {
     Sig(SigError),
     ZeroDiv,
 
-    MissingCall(String),
-
-
     Missing(UndefinedName),
-    UnreachableFunctionCase(FuncSig),
+    MissingCall(String),//needed because its not part of program scope
+
+
+    UnreachableFunction(FuncSig),
     UnreachableCase(UnreachableCase),
     NoneCallble(NoneCallble),
     Stacked(InternalError),
@@ -106,6 +106,13 @@ pub fn recursion_error(depth:usize) -> ErrList {
 
 #[cold]
 #[inline(never)]
+pub fn unreachable_func_error(sig:FuncSig) -> ErrList {
+    Error::UnreachableFunction(sig).to_list()
+}
+
+
+#[cold]
+#[inline(never)]
 pub fn match_error(span:Span) -> ErrList {
     Error::Match(MatchError{span}).to_list()
 }
@@ -134,6 +141,12 @@ pub fn tail_stacked_error(message:&'static str,err:ErrList,span:Span) -> ErrList
 #[inline(never)]
 pub fn missing_func_error(name:String) -> ErrList {
     Error::MissingCall(name).to_list()
+}
+
+#[cold]
+#[inline(never)]
+pub fn missing_error(id:u32) -> ErrList {
+    Error::Missing(UndefinedName{id}).to_list()
 }
 
 
@@ -332,7 +345,7 @@ fn emit_error(
                 ))
         },
 
-        Error::UnreachableFunctionCase(  sig ) => {
+        Error::UnreachableFunction(  sig ) => {
             let name_str = table.get_display_str(sig.name).unwrap_or("Unknown name");
             let sig_display = sig.display_with_table(table);
             Diagnostic::error()
@@ -447,7 +460,7 @@ fn test_err_list_reporting() {
     let undef_err = Error::Missing(UndefinedName { id: undef_id });
 
     // Simulate unreachable case
-    let unreachable_case_err = Error::UnreachableFunctionCase(
+    let unreachable_case_err = Error::UnreachableFunction(
         
         FuncSig {name: unreachable_name_id,args:vec![undef_id]}, // Assuming FuncSig has a default or placeholder
     );
@@ -481,7 +494,7 @@ fn test_err_list_reporting_with_stacking() {
     let _undef_err = Error::Missing(UndefinedName { id: undef_id });
 
     // Simulate unreachable case
-    let _unreachable_case_err = Error::UnreachableFunctionCase(
+    let _unreachable_case_err = Error::UnreachableFunction(
         // name: unreachable_name_id,
          FuncSig { name: unreachable_name_id, args: vec![undef_id] },
     );
@@ -492,7 +505,7 @@ fn test_err_list_reporting_with_stacking() {
         message: "junk",
         err: vec_to_list(vec![
             Error::Missing(UndefinedName { id: undef_id }),
-            Error::UnreachableFunctionCase(
+            Error::UnreachableFunction(
                 
                 FuncSig {name: unreachable_name_id, args: vec![undef_id] },
             ),

@@ -1,4 +1,6 @@
 
+use crate::reporting::missing_error;
+use crate::reporting::unreachable_func_error;
 use ast::ast::Literal;
 use crate::reporting::stacked_error;
 use crate::reporting::sig_error;
@@ -13,6 +15,7 @@ use crate::value::VarTable;
 use crate::value::Value as IRValue;
 use crate::vm::{Operation,StaticMatch};
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 
 use ast::ast::{StringTable,FuncDec,OuterExp,Ret,Statment,FValue,FunctionCall,BuildIn,MatchStatment};
 use std::sync::{RwLock,Arc};
@@ -24,6 +27,58 @@ enum CallType{
 	FullCall,
 }
 use CallType::*;
+
+struct TransHandle<'a> {
+	code:&'a mut Vec<Operation>,
+	mut_vars:&'a mut VarTable<'static>,
+	vars:&'a mut VarTable<'static>,
+	table:&'a StringTable<'a>,
+}
+
+trait NameSpace {
+	fn set(&mut self,handle:&mut TransHandle,name:u32) ;
+	fn get(&mut self,handle:&mut TransHandle,name:u32) -> Result<(),ErrList>;
+	// fn del(handle:&mut TransHandle,name:u32);
+}
+
+struct FuncScope<'a> {
+	global_vars: &'a HashMap<u32,usize>,
+	assigns: HashMap<u32,usize>,
+}
+
+impl<'a> FuncScope<'a> {
+	fn new(global_vars: &'a HashMap<u32,usize>,) -> Self {
+		FuncScope{
+			global_vars,
+			assigns:HashMap::new()
+		}
+	}
+}
+
+impl NameSpace for FuncScope<'_> {
+	fn get(&mut self,handle: &mut TransHandle, name: u32) -> Result<(),ErrList> {
+		let op = match self.assigns.get(&name) {
+		    Some(id) => Operation::PushFrom(*id),
+		    None => {
+		    	let id = self.global_vars.get(&name).ok_or_else(|| missing_error(name))?;
+		    	Operation::PushGlobal(*id)
+		    }
+		};
+		handle.code.push(op);
+		Ok(())
+	}
+	fn set(&mut self, handle: &mut TransHandle, name: u32)  {
+		let op = match self.assigns.get(&name) {
+		    Some(id) => Operation::PopTo(*id),
+		    None => {
+		    	let id = handle.mut_vars.len();
+		    	handle.mut_vars.add_ids(&[name]);
+		    	Operation::PopTo(id)
+		    }
+		};
+		handle.code.push(op);
+	}
+}
 
 // enum RetRef<'a> {
 // 	Func(Option<&'a AstValue>),
@@ -48,6 +103,24 @@ pub fn translate_program<'a>(outer:&[OuterExp],table:Arc<RwLock<StringTable<'a>>
 
 	let table_ref = table.read().unwrap();
 
+	//set up allow vars
+	let mut global_vars = HashMap::<u32,usize>::new();
+	for (i,exp) in outer.iter().enumerate() {
+		match exp {
+			OuterExp::ImportFunc(_imp) => todo!(),
+			OuterExp::FuncDec(func) => {
+				match global_vars.entry(func.sig.name) {
+				    Entry::Occupied(_) => {
+				    	return Err(unreachable_func_error(func.sig.clone()));
+				    },
+				    Entry::Vacant(v) => {
+				    	v.insert(i);
+				    },
+				}
+			}
+		};
+	}
+
 	for exp in outer {
 		match exp {
 			OuterExp::ImportFunc(_) => todo!(),
@@ -59,7 +132,8 @@ pub fn translate_program<'a>(outer:&[OuterExp],table:Arc<RwLock<StringTable<'a>>
 				let s = table_ref.get_raw_str(name);
 				name_map.insert(s.into(),index);
 
-				funcs.push(translate_func(func,&table_ref)?);
+				let mut scope = FuncScope::new(&global_vars);
+				funcs.push(translate_func(func,&mut scope,&table_ref)?);
 			},
 		}
 	}
@@ -74,7 +148,8 @@ pub fn translate_program<'a>(outer:&[OuterExp],table:Arc<RwLock<StringTable<'a>>
 	})
 }
 
-pub fn translate_func<'a>(func:&FuncDec,table:&StringTable<'a>) -> Result<FuncHolder<'a>,ErrList> {
+
+pub fn translate_func<'a>(func:&FuncDec,name_space:&mut dyn NameSpace,table:&StringTable<'a>) -> Result<FuncHolder<'a>,ErrList> {
 	let mut vars = VarTable::default();
 	let mut mut_vars = VarTable::default();
 	mut_vars.add_ids(&func.sig.args);
@@ -95,7 +170,10 @@ pub fn translate_func<'a>(func:&FuncDec,table:&StringTable<'a>) -> Result<FuncHo
 				handle.code.push(Operation::PopDump);
 				handle.code.push(Operation::PushNil);
 			},
-			Statment::Assign(_, _) => todo!(),
+			Statment::Assign(id, val) => {
+				translate_value(val,&mut handle,FullCall)?;
+				name_space.set(&mut handle,*id);
+			},
 			Statment::Call(call) => {
 				translate_call_raw(call,&mut handle,FullCall)?;
 				handle.code.push(Operation::PopDump);
@@ -115,12 +193,7 @@ pub fn translate_func<'a>(func:&FuncDec,table:&StringTable<'a>) -> Result<FuncHo
 	
 }
 
-struct TransHandle<'a> {
-	code:&'a mut Vec<Operation>,
-	mut_vars:&'a mut VarTable<'static>,
-	vars:&'a mut VarTable<'static>,
-	table:&'a StringTable<'a>,
-}
+
 
 #[inline]
 fn translate_ret_func(
@@ -250,7 +323,7 @@ fn translate_match(m:&MatchStatment,handle:&mut TransHandle,tail:CallType) -> Re
 	    
 	    match &last.pattern {
 	    	 MatchPattern::Literal(v) => {
-	    	    	let val = literal_to_IRValue(&v,handle.table);
+	    	    	let val = literal_to_IRValue(v,handle.table);
 	    	    	ans.map.insert(val,handle.code.len());
 	    	    	match &last.result {
 		    			MatchOut::Value(v) =>translate_value(v,handle,tail)?,

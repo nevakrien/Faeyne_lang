@@ -157,6 +157,15 @@ impl<'code> VarTable<'code>  {
         }
     }
 
+    pub fn del(&mut self, id: usize) -> Result<(), MissingID> {
+        if let Some(elem) = self.data.get_mut(id) {
+            *elem = None;
+            Ok(())
+        } else {
+            Err(MissingID)
+        }
+    }
+
     pub fn get(&self, id: usize) -> Option<Value<'code>> {
         self.data.get(id)?.clone()
     }

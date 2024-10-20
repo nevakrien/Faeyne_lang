@@ -207,3 +207,29 @@ fn test_match_jumps() {
     // Step 3: Run the translated code and call the "main" function with the arguments
     assert!(code.run_compare("main", vec![],Value::Bool(false)).unwrap());
 }
+
+#[test]
+fn test_assign() {
+    // Step 1: Define the source code (a function that does nothing)
+    let source_code = r#"
+        def main() {
+            a=match 2 {
+                :ok => 2,
+                2 => true,
+                _ => 0,
+            };
+
+            match :five {
+                :ok => 2,
+                2 => true,
+                _ => false,
+            }
+        }
+    "#;
+
+    // Step 2: Compile the source code to a `Code` object
+    let code = compile_source_to_code(source_code);
+
+    // Step 3: Run the translated code and call the "main" function with the arguments
+    assert!(code.run_compare("main", vec![],Value::Bool(false)).unwrap());
+}
