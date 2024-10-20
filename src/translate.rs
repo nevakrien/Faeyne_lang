@@ -47,10 +47,14 @@ struct FuncScope<'a> {
 }
 
 impl<'a> FuncScope<'a> {
-	fn new(global_vars: &'a HashMap<u32,usize>,) -> Self {
+	fn start(global_vars: &'a HashMap<u32,usize>,args:&[u32]) -> Self {
+		let mut assigns = HashMap::new();
+		for (i,name) in args.iter().enumerate() {
+			assigns.insert(*name,i);
+		}
 		FuncScope{
 			global_vars,
-			assigns:HashMap::new()
+			assigns
 		}
 	}
 }
@@ -85,21 +89,21 @@ impl NameSpace for FuncScope<'_> {
 	}
 }
 
-struct MatchScope<'a> {
+struct ChildScope<'a> {
 	parent: &'a dyn NameSpace,
 	assigns: HashMap<u32,usize>,
 }
 
-impl<'a> MatchScope<'a> {
+impl<'a> ChildScope<'a> {
 	fn new(parent: &'a dyn NameSpace,) -> Self {
-		MatchScope{
+		ChildScope{
 			parent,
 			assigns:HashMap::new()
 		}
 	}
 }
 
-impl NameSpace for MatchScope<'_> {
+impl NameSpace for ChildScope<'_> {
 	fn get(&self,handle: &mut TransHandle, name: u32) -> Result<(),ErrList> {
 		match self.assigns.get(&name) {
 		    Some(id) => handle.code.push(Operation::PushFrom(*id)),
@@ -124,22 +128,6 @@ impl NameSpace for MatchScope<'_> {
 	    handle.code.push(op);
 	}
 }
-
-// enum RetRef<'a> {
-// 	Func(Option<&'a AstValue>),
-// 	Block(Option<&'a AstValue>),
-// }
-
-
-// impl<'a> From<&'a Ret> for RetRef<'a> {
-
-// 	fn from(r: &'a Ret) -> Self {
-// 		match r  {
-// 			Ret::Exp(x) => RetRef::Func(Some(x)),
-// 			Ret::Imp(x) => RetRef::Block(Some(x)),
-// 		}
-// 	}
-// }
 
 pub fn translate_program<'a>(outer:&[OuterExp],table:Arc<RwLock<StringTable<'a>>>) ->Result<Code<'a>,ErrList> {
 	let mut funcs = Vec::with_capacity(outer.len());
@@ -177,7 +165,7 @@ pub fn translate_program<'a>(outer:&[OuterExp],table:Arc<RwLock<StringTable<'a>>
 				let s = table_ref.get_raw_str(name);
 				name_map.insert(s.into(),index);
 
-				let mut scope = FuncScope::new(&global_vars);
+				let mut scope = FuncScope::start(&global_vars,&func.sig.args);
 				funcs.push(translate_func(func,&mut scope,&table_ref)?);
 			},
 		}
@@ -341,7 +329,7 @@ fn translate_match(m:&MatchStatment,name_space:&mut dyn NameSpace,handle:&mut Tr
 	translate_value(&m.val,name_space,handle,tail)?;
 
 	//then in the match scope do the rest
-	let mut scope = MatchScope::new(name_space);
+	let mut scope = ChildScope::new(name_space);
 
 	let mut ans = Box::new(StaticMatch::default());
 	ans.span = m.debug_span;
