@@ -40,16 +40,16 @@ pub type StaticFunc = for<'code> fn(&mut ValueStack<'code>,&StringTable<'code>) 
 // #[repr(C)]
 pub struct FuncData<'code> {
     pub num_args: usize,
-    pub mut_vars: VarTable<'code>,
-    pub vars: &'code VarTable<'code>,
+    pub mut_vars_template: &'code VarTable<'code>,
+    pub vars: VarTable<'code>,
     pub code: &'code [Operation],
 }
 
 impl<'code> FuncData<'code> {
-    pub fn new(vars: &'code VarTable<'code>,mut_vars: VarTable<'code>, code: &'code [Operation],num_args:usize) -> FuncData<'code> {
+    pub fn new(vars: VarTable<'code>,mut_vars_template: &'code VarTable<'code>, code: &'code [Operation],num_args:usize) -> FuncData<'code> {
         FuncData::<'code> {
             vars,
-            mut_vars,
+            mut_vars_template,
             code,
             num_args,
             // span,
@@ -165,7 +165,7 @@ impl<'code> Context<'code> {
         call_stack.push(ret);
 
         Context{
-            pos:0,mut_vars:Box::new(func.mut_vars.clone()),
+            pos:0,mut_vars:Box::new(func.mut_vars_template.clone()),
             stack:ValueStack::default(),
             func,global_vars,
             table,call_stack,
@@ -305,7 +305,7 @@ impl<'code> Context<'code> {
 
         let Some(func) = self.pop_function_or_run(span)? else {return Ok(())};
 
-        let mut new_vars = Box::new(func.mut_vars.clone());
+        let mut new_vars = Box::new(func.mut_vars_template.clone());
 
         //set up return 
 
@@ -335,7 +335,7 @@ impl<'code> Context<'code> {
         //get function
         let Some(func) = self.pop_function_or_run(span)? else {return Ok(())};
 
-        self.mut_vars = Box::new(func.mut_vars.clone());
+        self.mut_vars = Box::new(func.mut_vars_template.clone());
 
         self.call_stack.last_mut().unwrap().tail_debug.push(span);
 
@@ -348,7 +348,7 @@ impl<'code> Context<'code> {
     fn call_this(&mut self) -> Result<(),ErrList> {
         self.call_stack.last_mut().unwrap().tail_debug.mark_tailed();
 
-        self.mut_vars = Box::new(self.func.mut_vars.clone());
+        self.mut_vars = Box::new(self.func.mut_vars_template.clone());
         self.pos = 0;
         
         self.set_args()
@@ -368,10 +368,10 @@ impl<'code> Context<'code> {
     }
 
     fn capture_closure(&mut self,maker: &'code FuncMaker) -> Result<(),ErrList> {
-        let mut mut_vars = maker.mut_vars_template.clone();
+        let mut vars = maker.vars.clone();
 
         for i in maker.captures.iter() {
-            mut_vars.set(*i,self.stack.pop_value()
+            vars.set(*i,self.stack.pop_value()
                 .ok_or_else(||{bug_error("over poping")})?)
                 .map_err(|_|{bug_error("missing id")})?;
         }
@@ -382,7 +382,7 @@ impl<'code> Context<'code> {
 
         let func = Value::Func(Arc::new(
             FuncData::new(
-            &maker.vars,mut_vars,&maker.code,maker.num_args //very happy this works not sure why it works tho...
+            vars,&maker.mut_vars_template,&maker.code,maker.num_args //very happy this works not sure why it works tho...
             )
         ));
 
@@ -527,7 +527,7 @@ impl<'code> Context<'code> {
     }
 
     pub fn reset(&mut self) {
-        *self.mut_vars = self.func.mut_vars.clone();
+        *self.mut_vars = self.func.mut_vars_template.clone();
         self.pos=0;
         self.stack = ValueStack::new();
     }
@@ -627,7 +627,7 @@ fn test_vm_push_pop() {
     ]
     .into_boxed_slice(); // Box the slice for FuncData
 
-    let func_data = Arc::new(FuncData::new(&vars,mut_vars, &code,0));
+    let func_data = Arc::new(FuncData::new(vars,&mut_vars, &code,0));
 
     //global vars
     let mut global_vars = VarTable::default();
@@ -704,7 +704,7 @@ fn test_not_gate_match() {
     mut_vars.add_ids(&[0]);
     let vars = VarTable::default();
 
-    let func_data = Arc::new(FuncData::new(&vars, mut_vars, &code,1));
+    let func_data = Arc::new(FuncData::new(vars, &mut_vars, &code,1));
 
     let mut context = Context::new(func_data.clone(), &global_vars, &string_table);
 
@@ -764,7 +764,7 @@ fn test_string_match() {
     let vars = VarTable::default();
 
 
-    let func_data = Arc::new(FuncData::new(&vars, mut_vars, &code,1));
+    let func_data = Arc::new(FuncData::new(vars, &mut_vars, &code,1));
 
     // Global variables (holding some strings)
     let mut global_vars = VarTable::default();
@@ -796,26 +796,26 @@ fn test_capture_closure() {
     let var_a_id = string_table.get_id("var_a");
 
     // Step 2: Setup the VarTable for the function
-    let mut mut_vars_template = VarTable::default();
-    mut_vars_template.add_ids(&[var_a_id]); // Adding the variable to capture
+    let mut vars = VarTable::default();
+    vars.add_ids(&[var_a_id]); // Adding the variable to capture
 
     // Step 3: Create a FuncMaker that defines the closure capturing
     let captures = Box::new([0]); // Capture the variable at position 0 on the stack
-    let vars = VarTable::default();
+    let mut_vars = VarTable::default();
     let code = vec![Operation::Return].into_boxed_slice(); // Simple code that just returns
     let span = Span::default();
 
     let func_maker = FuncMaker {
         captures,
         num_args:0,
-        mut_vars_template,
+        mut_vars_template:VarTable::default(),
         vars: vars.clone(),
         code: code.clone(),
         span,
     };
 
     // Step 4: Create a Context and push a value to the stack
-    let func_data = Arc::new(FuncData::new(&vars, VarTable::default(), &code,0));
+    let func_data = Arc::new(FuncData::new(vars, &mut_vars, &code,0));
     let global_vars = VarTable::default();
     let mut context = Context::new(func_data.clone(), &global_vars, &string_table);
 
@@ -828,7 +828,7 @@ fn test_capture_closure() {
     // Step 6: Verify the result
     let captured_func = context.stack.pop_value().unwrap();
     if let Value::Func(captured_func_data) = captured_func {
-        let captured_value = captured_func_data.mut_vars.get(0).unwrap();
+        let captured_value = captured_func_data.vars.get(0).unwrap();
         assert_eq!(captured_value, Value::Int(42));
     } else {
         panic!("Expected a captured function on the stack");
@@ -853,7 +853,7 @@ fn test_call_function() {
     let span = Span::default();
 
     // Step 4: Create the FuncData and Context
-    let func_data = Arc::new(FuncData::new(&mut_vars, VarTable::default(), &code,0));
+    let func_data = Arc::new(FuncData::new(VarTable::default(),&mut_vars, &code,0));
     let global_vars = VarTable::default();
     let mut context = Context::new(func_data.clone(), &global_vars, &string_table);
 

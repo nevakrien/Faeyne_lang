@@ -37,8 +37,8 @@ impl Code<'_> {
 		for f in self.funcs.iter() {
 			let function = Arc::new(FuncData{
                 num_args:f.num_args,
-                vars:&f.vars,
-	            mut_vars:f.mut_vars_template.clone(),
+                vars:f.vars.clone(),
+	            mut_vars_template:&f.mut_vars_template,
 	            code:&f.code //very happy this works not sure why it works tho...
             });
 			data.push(Some(IRValue::Func(function)))
