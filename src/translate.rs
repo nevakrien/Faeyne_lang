@@ -15,26 +15,27 @@ use ast::ast::{StringTable,FuncDec,OuterExp,Ret,Statment};
 use std::sync::{RwLock,Arc};
 use crate::runtime::{Code,FuncHolder};
 
-enum RetRef<'a> {
-	Func(&'a AstValue),
-	Block(&'a AstValue),
-}
-
 enum CallType{
 	TailCall,
 	FullCall,
 }
 use CallType::*;
 
-impl<'a> From<&'a Ret> for RetRef<'a> {
+// enum RetRef<'a> {
+// 	Func(Option<&'a AstValue>),
+// 	Block(Option<&'a AstValue>),
+// }
 
-	fn from(r: &'a Ret) -> Self {
-		match r  {
-			Ret::Exp(x) => RetRef::Func(x),
-			Ret::Imp(x) => RetRef::Block(x),
-		}
-	}
-}
+
+// impl<'a> From<&'a Ret> for RetRef<'a> {
+
+// 	fn from(r: &'a Ret) -> Self {
+// 		match r  {
+// 			Ret::Exp(x) => RetRef::Func(Some(x)),
+// 			Ret::Imp(x) => RetRef::Block(Some(x)),
+// 		}
+// 	}
+// }
 
 pub fn translate_program<'a>(outer:&[OuterExp],table:Arc<RwLock<StringTable<'a>>>) ->Result<Code<'a>,ErrList> {
 	let mut funcs = Vec::with_capacity(outer.len());
@@ -76,6 +77,12 @@ pub fn translate_func<'a>(func:&FuncDec,_table:&StringTable<'a>) -> Result<FuncH
 
 	let mut code = Vec::default();
 
+	let mut handle = TransHandle{
+		code:&mut code,
+		vars:&mut vars,
+		mut_vars:&mut mut_vars,
+	};
+
 	for x in func.body.body.iter() {
 		match x{
 			Statment::Match(_) => todo!(),
@@ -84,8 +91,7 @@ pub fn translate_func<'a>(func:&FuncDec,_table:&StringTable<'a>) -> Result<FuncH
 		}
 	}
 
-	let ret = func.body.ret.as_ref().map(|x| RetRef::Func(x.get_value()));
-	translate_ret(ret,TailCall,&mut code,&mut mut_vars,&mut vars)?;
+	translate_ret_func(&func.body.ret,TailCall,&mut handle)?;
 	
 	Ok(FuncHolder{
 		code:code.into(),
@@ -96,22 +102,38 @@ pub fn translate_func<'a>(func:&FuncDec,_table:&StringTable<'a>) -> Result<FuncH
 	
 }
 
+struct TransHandle<'a> {
+	code:&'a mut Vec<Operation>,
+	mut_vars:&'a mut VarTable<'static>,
+	vars:&'a mut VarTable<'static>,
+}
+
 #[inline]
-fn translate_ret(
-	x:Option<RetRef>,_tail:CallType,
+fn translate_ret_func(
+	x:&Option<Ret>,_tail:CallType,
 	
-	code:&mut Vec<Operation>,
-	_mut_vars:&mut VarTable,
-	_vars:&mut VarTable,
+	handle:&mut TransHandle
 
 ) -> Result<(),ErrList> {
 	match x {
 	    None => {
-	    	code.push(Operation::PushNil);
-	    	code.push(Operation::Return);
+	    	handle.code.push(Operation::PushNil);
 	    },
-	    Some(_) => todo!(),
+	    Some(r) => {
+	    	translate_value(r.get_value(),handle)?;
+	    }
 	}
+	handle.code.push(Operation::Return);
+	Ok(())
+}
+
+fn translate_value(v:&AstValue,handle: &mut TransHandle ) -> Result<(),ErrList> {
+	match v {
+		AstValue::Nil => handle.code.push(Operation::PushNil),
+		AstValue::Bool(b) => handle.code.push(Operation::PushBool(*b)),
+		AstValue::Atom(a) => handle.code.push(Operation::PushAtom(*a)),
+	    _ => todo!(),
+	};
 	Ok(())
 }
 
@@ -165,4 +187,40 @@ fn test_end_to_end_empty_function() {
 
     // Step 4: Run the translated code and call the "main" function with the arguments
     code.run("main", args).unwrap();
+}
+
+#[test]
+fn test_return_true() {
+    // Step 1: Define the source code (a function that does nothing)
+    let source_code = "
+        def main() {
+            true
+        }
+    ";
+
+    // Step 2: Compile the source code to a `Code` object
+    let code = compile_source_to_code(source_code);
+
+    // Step 3: Run the translated code and call the "main" function with the arguments
+    assert!(code.run_compare("main", vec![],IRValue::Bool(true)).unwrap());
+}
+
+#[test]
+fn test_atom_passing() {
+    // Step 1: Define the source code (a function that does nothing)
+    let source_code = "
+        def main() {
+            :my_atom
+        }
+    ";
+
+    // Step 2: Compile the source code to a `Code` object
+    let code = compile_source_to_code(source_code);
+
+    let atom_id = code.table.try_write().unwrap().get_id(":my_atom");
+    let wrong_atom_id = code.table.try_write().unwrap().get_id(":wrong_atom");
+
+    // Step 3: Run the translated code and call the "main" function with the arguments
+    assert!(code.run_compare("main", vec![],IRValue::Atom(atom_id)).unwrap());
+    assert!(!code.run_compare("main", vec![],IRValue::Atom(wrong_atom_id)).unwrap());
 }
