@@ -141,6 +141,8 @@ fn translate_value(v:&AstValue,handle: &mut TransHandle ) -> Result<(),ErrList> 
 			let s = Arc::new(handle.table.get_escaped_string(*id));
 			handle.code.push(Operation::PushString(s))
 		},
+
+		AstValue::SelfRef(_) => handle.code.push(Operation::PushThis),
 	    _ => todo!(),
 	};
 	Ok(())

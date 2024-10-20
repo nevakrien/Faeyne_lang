@@ -417,6 +417,8 @@ impl<'code> Context<'code> {
             CaptureClosure(maker) => self.capture_closure(maker),
 
             //some utils for small funcs
+            Operation::PushThis => self.stack.push_func(self.func.clone())
+                .map_err(|_| overflow_error()),
 
             PushBool(b) => self.stack.push_bool(*b)
                 .map_err(|_| overflow_error()),
@@ -531,6 +533,7 @@ pub enum Operation {
     Call(Span),//calls a function args are passed through the stack and a single return value is left at the end (args are consumed)
     TailCall(Span),//similar to call but does not push its own vars. instead it drops
     CallThis, //tail call!!! unlike other call methods this one does not apear in the reporting stack
+    PushThis,
     Return,//returns out of the function scope. 
 
     PopTo(usize),
