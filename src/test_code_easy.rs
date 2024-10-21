@@ -441,10 +441,17 @@ fn lambda_passing() {
     context.stack.push_int(3).unwrap();
     let lambda = context.run().unwrap();
 
-    let mut context = Context::new(call_func,&global,table);
-    context.stack.push_value(lambda).unwrap();
+    let mut context = Context::new(call_func.clone(),&global,table);
+    context.stack.push_value(lambda.clone()).unwrap();
     context.stack.push_int(3).unwrap();
     let ans = context.run().unwrap();
     
     assert_eq!(ans, Value::Int(6));
+
+    let mut context = Context::new(call_func,&global,table);
+    context.stack.push_value(lambda).unwrap();
+    context.stack.push_int(2).unwrap();
+    let ans = context.run().unwrap();
+    
+    assert_eq!(ans, Value::Int(5));
 }
