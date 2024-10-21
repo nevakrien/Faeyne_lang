@@ -89,7 +89,6 @@ impl StaticMatch {
 }
 
 pub struct RetData<'code> {
-    ret:usize,
     pos:usize,
     func:Arc<FuncData<'code>>,
     mut_vars:Box<VarTable<'code>>,
@@ -157,7 +156,6 @@ impl<'code> Context<'code> {
         let ret = RetData{
             func:func.clone(),
             pos:func.code.len(),
-            ret:0,
             mut_vars:Box::new(VarTable::default()),
             tail_debug:TailDebug::new_empty(),
         };
@@ -245,12 +243,6 @@ impl<'code> Context<'code> {
         };
         let value = self.stack.pop_value().ok_or_else(|| bug_error("over pop value stack"))?;
 
-        assert!(self.stack.len()>=ret_data.ret);
-        while self.stack.len()>ret_data.ret {
-            self.stack.pop_value().ok_or_else(|| bug_error("impossible"))?;
-        }
-        assert!(self.stack.len()==ret_data.ret);
-
 
         self.stack.push_value(value).map_err(|_|{overflow_error()})?;
         
@@ -314,7 +306,6 @@ impl<'code> Context<'code> {
 
 
         let ret = RetData{
-            ret:self.stack.len(),
             func:self.func.clone(),
             pos:self.pos,
             mut_vars:new_vars,

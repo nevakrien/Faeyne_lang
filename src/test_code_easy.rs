@@ -269,3 +269,25 @@ fn test_match_scope() {
     // Step 3: Run the translated code and call the "main" function with the arguments
     assert!(code.run_compare("main", vec![],Value::Int(2)).unwrap());
 }
+
+#[test]
+fn factorial() {
+    let source_code = r#"
+        def factorial(n) {
+            match n {
+                0 => 1,
+                _ => (n)*self(n-1)
+            }
+        }
+    "#;
+    let code = compile_source_to_code(source_code);
+
+    println!("{:?}",code.funcs[0].code);
+
+    assert!(code.run_compare("factorial", vec![Value::Int(2)],Value::Int(2)).unwrap());
+    assert!(code.run_compare("factorial", vec![Value::Int(1)],Value::Int(1)).unwrap());
+    assert!(code.run_compare("factorial", vec![Value::Int(0)],Value::Int(1)).unwrap());
+
+    assert!(code.run_compare("factorial", vec![Value::Int(4)],Value::Int(24)).unwrap());
+
+}

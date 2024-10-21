@@ -1,5 +1,5 @@
 
-use ast::ast::FuncBlock;
+use codespan::Span;
 use crate::reporting::missing_error;
 use crate::reporting::unreachable_func_error;
 use ast::ast::Literal;
@@ -18,7 +18,7 @@ use crate::vm::{Operation,StaticMatch};
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 
-use ast::ast::{StringTable,FuncDec,OuterExp,Ret,Statment,FValue,FunctionCall,BuildIn,MatchStatment};
+use ast::ast::{StringTable,FuncDec,FuncBlock,OuterExp,Ret,Statment,FValue,FunctionCall,BuildIn,MatchStatment,MatchArm};
 use std::sync::{RwLock,Arc};
 use crate::runtime::{Code,FuncHolder};
 
@@ -267,7 +267,8 @@ fn translate_value(v:&AstValue,name_space:&mut dyn NameSpace,handle: &mut TransH
 
 		AstValue::Variable(id) => name_space.get(handle,*id)?,
 		AstValue::BuildIn(_) => unreachable!("build in op should never be made as a value in the ast"),
-	    _ => todo!(),
+		AstValue::Lambda(_) => todo!(), 
+		AstValue::MatchLambda(_) => todo!(),
 	};
 	Ok(())
 }
@@ -329,19 +330,23 @@ fn translate_call_raw(call:&FunctionCall,name_space:&mut dyn NameSpace,handle: &
 fn translate_match(m:&MatchStatment,name_space:&mut dyn NameSpace,handle:&mut TransHandle,tail:CallType) -> Result<(),ErrList> {
 	//first in the existing name space calculate the match value
 	translate_value(&m.val,name_space,handle,tail)?;
+	translate_match_internal(&m.arms,m.debug_span,name_space,handle,tail)
+}
+
+fn translate_match_internal(arms:&[MatchArm],span:Span,name_space:&mut dyn NameSpace,handle:&mut TransHandle,tail:CallType) -> Result<(),ErrList> {
 
 	//then in the match scope do the rest
 	let mut scope = ChildScope::new(name_space);
 
 	let mut ans = Box::new(StaticMatch::default());
-	ans.span = m.debug_span;
+	ans.span = span;
 
 	let in_id = handle.code.len();
 	handle.code.push(Operation::PushFrom(100000000));//trap instraction
 
 	let mut return_spots = Vec::new();
 
-	if let Some((last, rest)) = m.arms.split_last() {
+	if let Some((last, rest)) = arms.split_last() {
 	    for c in rest {
 	    	match &c.pattern {
 	    	    MatchPattern::Literal(v) => {
@@ -358,7 +363,7 @@ fn translate_match(m:&MatchStatment,name_space:&mut dyn NameSpace,handle:&mut Tr
 	    	    MatchPattern::Variable(_) => todo!(),
 	    	    MatchPattern::Wildcard => {
 	    	    	//todo fix this up to be a proper error type
-	    	    	return Err(stacked_error("while defining match",sig_error(),m.debug_span));
+	    	    	return Err(stacked_error("while defining match",sig_error(),span));
 	    	    }
 	    	}
 	    }
