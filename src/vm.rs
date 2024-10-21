@@ -299,7 +299,7 @@ impl<'code> Context<'code> {
     #[inline]
     fn pop_function_or_run(&mut self,span:Span) -> Result<Option<Arc<FuncData<'code>>>,ErrList> {
         let called = self.stack.pop_value()
-            .ok_or_else(||{bug_error("over poping")}
+            .ok_or_else(||{bug_error("over poping while getting called")}
             )?;
 
         match called {
@@ -419,7 +419,7 @@ impl<'code> Context<'code> {
         // }
         for spot in vars.data.iter_mut().rev() {
             *spot = Some(self.stack.pop_value()
-                .ok_or_else(||{bug_error("over poping")})?);
+                .ok_or_else(||{bug_error("over poping closure close")})?);
         }
 
         #[cfg(feature = "debug_terminators")]
