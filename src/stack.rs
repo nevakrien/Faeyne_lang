@@ -1,4 +1,6 @@
 #[cfg(test)]
+use crate::vm::DataFunc;
+#[cfg(test)]
 use crate::value::VarTable;
 
 
@@ -217,6 +219,7 @@ pub enum ValueTag{
     Func=7,
     WeakFunc=8,
     StaticFunc=9,
+    DataFunc=10,
     
 }
 
@@ -285,7 +288,13 @@ impl<'code,const STACK_CAPACITY:usize> ValueStack<'code, STACK_CAPACITY> {
                     self.stack.push(&aligned_value)?;
                     // std::mem::forget(aligned_value); //stack has sucessfully took ownership of the value
                     self.stack.push(&Aligned::new(ValueTag::StaticFunc))
-                }
+                },
+                Value::DataFunc(f) => {
+                    let aligned_value = Aligned::new(f);
+                    self.stack.push(&aligned_value)?;
+                    std::mem::forget(aligned_value); //stack has sucessfully took ownership of the value
+                    self.stack.push(&Aligned::new(ValueTag::DataFunc))
+                },
             }
         }
     }
@@ -309,6 +318,7 @@ impl<'code,const STACK_CAPACITY:usize> ValueStack<'code, STACK_CAPACITY> {
                 ValueTag::WeakFunc => Some(Value::WeakFunc(self.stack.pop()?.to_inner())),
                 
                 ValueTag::StaticFunc => Some(Value::StaticFunc(self.stack.pop()?.to_inner())),
+                ValueTag::DataFunc => Some(Value::DataFunc(self.stack.pop()?.to_inner())),
 
 
                 ValueTag::Terminator => None,
@@ -540,6 +550,10 @@ fn test_stack_operations() {
 
 
     let mut value_stack = Box::new(ValueStack::<1_000>::new());
+
+    let data_func = Value::DataFunc(DataFunc{inner:Arc::new(|a,b| is_equal_wraped(a,b))});
+    value_stack.push_value(data_func.clone()).unwrap();
+    assert_eq!(value_stack.pop_value(),Some(data_func));
 
     let static_func = Value::StaticFunc(is_equal_wraped);
     value_stack.push_value(static_func.clone()).unwrap();

@@ -1,3 +1,6 @@
+use core::hash::Hasher;
+use core::hash::Hash;
+use core::fmt;
 use crate::basic_ops::call_string;
 use crate::reporting::stacked_error;
 use crate::reporting::match_error;
@@ -31,8 +34,46 @@ use ast::id::ERR_ID;
 #[cfg(test)]
 use ast::get_id;
 
-// pub type DynFFI = dyn Fn(&mut FuncInputs) -> Result<(),ErrList>;
+pub type DynFunc =dyn for<'code> Fn(&mut ValueStack<'code>,&StringTable<'code>) -> Result<(),ErrList>;
 pub type StaticFunc = for<'code> fn(&mut ValueStack<'code>,&StringTable<'code>) -> Result<(),ErrList>;
+
+#[derive(Clone)]
+#[repr(transparent)]
+pub struct DataFunc {
+    pub inner: Arc<DynFunc>
+}
+
+// Implement Debug for DynFunc
+impl fmt::Debug for DataFunc {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let pointer = Arc::as_ptr(&self.inner); // Get the raw pointer from the Arc
+        f.debug_struct("DynFunc")
+            .field("pointer", &format!("{:p}", pointer)) // Format the pointer
+            .finish()
+    }
+}
+
+// Implement PartialEq for DataFunc (== operator)
+impl PartialEq for DataFunc {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.inner, &other.inner) // Compare the raw pointers
+    }
+}
+
+// Implement Eq to complete the Eq trait (since it’s reflexive)
+impl Eq for DataFunc {}
+
+impl Hash for DataFunc {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        let pointer = Arc::as_ptr(&self.inner); // Get the raw pointer from the Arc
+        pointer.hash(state); // Hash the pointer value
+    }
+}
+
+impl From<Arc<DynFunc>> for DataFunc {
+
+    fn from(val: Arc<(dyn for<'code> Fn(&mut ValueStack<'code>, &StringTable<'code>) -> Result<(),ErrList> + 'static)>) -> Self { DataFunc { inner: val }}
+}
 
 
 #[derive(Clone,PartialEq,Debug)]
@@ -272,6 +313,14 @@ impl<'code> Context<'code> {
                 extern_func(&mut self.stack,self.table)
                 .map_err(|err| 
                     stacked_error("while calling external function",err,span)
+                 )?;
+                
+                Ok(None)
+            },
+            Value::DataFunc(extern_func) => {
+                (extern_func.inner)(&mut self.stack,self.table)
+                .map_err(|err| 
+                    stacked_error("while calling external stateful function",err,span)
                  )?;
                 
                 Ok(None)

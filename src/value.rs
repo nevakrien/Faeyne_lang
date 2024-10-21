@@ -1,6 +1,6 @@
 use core::hash::Hasher;
 use core::hash::Hash;
-use crate::vm::StaticFunc;
+use crate::vm::{StaticFunc,DataFunc};
 use crate::vm::FuncData;
 use std::sync::Weak;
 use std::sync::Arc;
@@ -18,7 +18,7 @@ pub enum Value<'code> {
     Func(Arc<FuncData<'code>>)=7,
     WeakFunc(Weak<FuncData<'code>>)=8,
     StaticFunc(StaticFunc)=9,
-    
+    DataFunc(DataFunc)=10,
 }
 
 impl PartialEq for Value<'_> {
@@ -29,6 +29,7 @@ impl PartialEq for Value<'_> {
             (Value::WeakFunc(weak_a), Value::WeakFunc(weak_b)) => weak_a.as_ptr()==weak_b.as_ptr(),
             (Value::WeakFunc(weak), Value::Func(func)) | (Value::Func(func), Value::WeakFunc(weak)) => weak.as_ptr()==Arc::as_ptr(func),
             (Value::Func(a), Value::Func(b)) => Arc::as_ptr(a) == Arc::as_ptr(b),
+            (Value::DataFunc(a), Value::DataFunc(b)) => a==b,
             (Value::StaticFunc(a),Value::StaticFunc(b)) => a==b,
             (Value::Nil, Value::Nil) => true,
             (Value::Bool(a), Value::Bool(b)) => a == b,
@@ -74,6 +75,7 @@ impl Hash for Value<'_> {
                 state.write_usize(ptr as usize);
             }
             Value::StaticFunc(func) => func.hash(state),
+            Value::DataFunc(func) => func.hash(state),
         }
     }
 }

@@ -78,6 +78,8 @@ pub fn to_string_debug<'code>(value: &Value<'code>, table: &StringTable<'code>) 
         Value::Func(func) => format!("func({:p})", Arc::as_ptr(func)),
         Value::WeakFunc(weak_func) => format!("weak_func({:p})", weak_func.as_ptr()),
         Value::StaticFunc(static_func) => format!("static_func({:p})", static_func as *const _),
+        Value::DataFunc(d) => format!("data_func({:?})", d),
+
     }
 }
 
@@ -93,6 +95,8 @@ pub fn to_string_runtime<'code>(value: &Value<'code>, table: &StringTable<'code>
         Value::Func(func) => format!("func({:p})", Arc::as_ptr(func)),
         Value::WeakFunc(weak_func) => format!("weak_func({:p})", weak_func.as_ptr()),
         Value::StaticFunc(static_func) => format!("static_func({:p})", static_func as *const _),
+        Value::DataFunc(d) => format!("data_func({:?})", d),
+
     }
 }
 
@@ -192,7 +196,7 @@ fn to_bool(value: &Value<'_>) -> bool {
         Value::Int(i) => *i > 0,
         Value::Float(f) => *f > 0.0,
         Value::String(s) => !s.is_empty(),
-        Value::Atom(_) | Value::Func(_) | Value::WeakFunc(_) | Value::StaticFunc(_) => true,
+        Value::Atom(_) | Value::Func(_) | Value::WeakFunc(_) | Value::StaticFunc(_) | Value::DataFunc(_)=> true,
     }
 }
 
