@@ -487,3 +487,22 @@ fn match_lambda_err() {
 
     code.run("main", vec![Value::Int(1)]).unwrap();
 }
+
+#[test]
+fn test_recursive_lambda_string_accumulation() {
+    let source_code = r#"
+        def main() {
+            f = fn(x, acc) {
+                match x {
+                    0 => acc,
+                    _ => { acc + ''+x + self(x - 1, acc) }
+                }
+            };
+            result = f(5, "");
+            result
+        }
+    "#;
+    let code = compile_source_to_code(source_code);
+
+    assert!(code.run_compare("main", vec![], Value::String(Arc::new("54321".to_string()))).unwrap());
+}
