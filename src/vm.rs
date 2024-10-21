@@ -391,7 +391,8 @@ impl<'code> Context<'code> {
         //get function
         let Some(func) = self.pop_function_or_run(span)? else {return Ok(())};
 
-        self.mut_vars = Box::new(func.mut_vars_template.clone());
+        // self.mut_vars = Box::new(func.mut_vars_template.clone());
+        self.mut_vars.become_copy(func.mut_vars_template);
 
         self.call_stack.last_mut().unwrap().tail_debug.push(span);
 
@@ -404,7 +405,9 @@ impl<'code> Context<'code> {
     fn call_this(&mut self) -> Result<(),ErrList> {
         self.call_stack.last_mut().unwrap().tail_debug.mark_tailed();
 
-        self.mut_vars = Box::new(self.func.mut_vars_template.clone());
+        // self.mut_vars = Box::new(self.func.mut_vars_template.clone());
+        self.mut_vars.become_copy(self.func.mut_vars_template);
+        
         self.pos = 0;
         
         self.set_args()

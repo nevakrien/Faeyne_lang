@@ -175,5 +175,21 @@ impl<'code> VarTable<'code>  {
     pub fn get_debug_id(&self, id: usize) -> Option<u32> {
         self.names.get(id).copied()
     }
+
+    pub fn become_copy(&mut self, other: &Self) {
+        self.names.clear();
+        self.data.clear();
+
+        if self.names.capacity() < other.names.len() {
+            self.names.reserve(other.names.len() - self.names.capacity());
+        }
+        if self.data.capacity() < other.data.len() {
+            self.data.reserve(other.data.len() - self.data.capacity());
+        }
+
+        // Copy names from the other VarTable
+        self.names.extend_from_slice(&other.names);
+        self.data.extend_from_slice(&other.data);
+    }
 }
 
