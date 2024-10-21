@@ -198,7 +198,7 @@ fn test_stack() {
 }
 
 #[repr(transparent)]
-pub struct ValueStack<'code, const STACK_CAPACITY: usize = 1_000>{
+pub struct ValueStack<'code, const STACK_CAPACITY: usize = 100_000>{
     stack:Stack<STACK_CAPACITY>,
     phantom: PhantomData<Value<'code>>,
 

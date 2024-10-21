@@ -340,7 +340,7 @@ impl<'code> Context<'code> {
             .map(|x| self.table.get_raw_str(*x))
             .collect();
 
-            println!("loading mut_vars {:?}",names);
+            println!("\nloading mut_vars {:?}",names);
         }
 
         for i in (0.. self.func.num_args).rev() {
