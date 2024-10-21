@@ -2,6 +2,7 @@
 
 
 
+use ast::id::*;
 use ast::id::STRING_OUT_OF_BOUNDS;
 use ast::get_id;
 use crate::reporting::zero_div_error;
@@ -915,4 +916,26 @@ pub fn call_string<'code>(string:Arc<String>,stack: &mut ValueStack<'code>, _tab
     }
     .map_err(|_| stacked_error(ERR_MESSAGE, overflow_error(), span))
     
+}
+
+#[inline]
+pub fn get_type_atom_id(v:&Value) -> u32 {
+    match v {
+        Value::Nil=>get_id!(":nil"),
+        Value::Bool(_)=>get_id!(":bool"),
+        Value::Int(_)=>get_id!(":int"),
+        Value::Float(_)=>get_id!(":float"),
+        Value::Atom(_)=>get_id!(":atom"),
+        Value::String(_)=>get_id!(":string"),
+        
+        Value::Func(_) | Value::WeakFunc(_) | Value::StaticFunc(_) | Value::DataFunc(_) => get_id!(":func"),
+    }
+}
+
+pub fn get_type<'code>(stack: &mut ValueStack<'code>, _table: &StringTable<'code>) -> Result<(),ErrList> {
+    let v = stack.pop_value().ok_or_else(sig_error)?;
+    stack.pop_terminator().ok_or_else(sig_error)?;
+
+    stack.push_atom(get_type_atom_id(&v)).unwrap();
+    Ok(())
 }

@@ -27,6 +27,7 @@ pub fn system<'code>(stack: &mut ValueStack<'code>, _table: &StringTable<'code>)
         get_id!(":make_dir") => create_dir_fn,
         get_id!(":delete_dir") => delete_dir_fn,
         get_id!(":read_dir") => read_dir_fn,
+        get_id!(":type") => get_type,
         _ => {return Err(sig_error());},
     };
 
