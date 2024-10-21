@@ -1,24 +1,18 @@
 
 use codespan::Span;
-use crate::reporting::missing_error;
-use crate::reporting::unreachable_func_error;
-use ast::ast::Literal;
-use crate::reporting::stacked_error;
-use crate::reporting::sig_error;
-use ast::ast::MatchOut;
-use ast::ast::MatchPattern;
 use ast::ast::Value as AstValue;
 use ast::lexer::Lexer;
 use ast::parser::ProgramParser;
+use ast::ast::{StringTable,FuncDec,FuncBlock,OuterExp,Ret,Statment,FValue,FunctionCall,BuildIn,MatchStatment,MatchArm,MatchOut,MatchPattern,Literal};
 
-use crate::reporting::{report_parse_error,report_err_list,ErrList};
+
+use crate::reporting::{report_parse_error,report_err_list,ErrList,stacked_error,sig_error,missing_error,unreachable_func_error};
 use crate::value::VarTable;
 use crate::value::Value as IRValue;
 use crate::vm::{Operation,StaticMatch};
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 
-use ast::ast::{StringTable,FuncDec,FuncBlock,OuterExp,Ret,Statment,FValue,FunctionCall,BuildIn,MatchStatment,MatchArm};
 use std::sync::{RwLock,Arc};
 use crate::runtime::{Code,FuncHolder};
 
@@ -286,7 +280,7 @@ fn translate_call_raw(call:&FunctionCall,name_space:&mut dyn NameSpace,handle: &
 		translate_value(a,name_space,handle,FullCall)?;
 	}
 
-	match call.name {
+	match &call.name {
 		FValue::SelfRef(_) => match tail {
 			TailCall => handle.code.push(Operation::CallThis),
 			FullCall => {
@@ -295,12 +289,23 @@ fn translate_call_raw(call:&FunctionCall,name_space:&mut dyn NameSpace,handle: &
 			}
 		},	
 		FValue::Name(id) => {
-			name_space.get(handle,id)?;
+			name_space.get(handle,*id)?;
 			match tail {
 				TailCall => handle.code.push(Operation::TailCall(call.debug_span)),
 				CallType::FullCall => handle.code.push(Operation::Call(call.debug_span)),
 			}
 		},
+
+		FValue::FuncCall(call2) => {
+			translate_call_raw(call2,name_space,handle,FullCall)?;
+			match tail {
+				TailCall => handle.code.push(Operation::TailCall(call.debug_span)),
+				CallType::FullCall => handle.code.push(Operation::Call(call.debug_span)),
+			}
+		},
+
+		FValue::Lambda(_) | FValue::MatchLambda(_) => todo!(),
+
 		FValue::BuildIn(op) => match op {
 			BuildIn::Add => handle.code.push(Operation::Add(call.debug_span)),
 			BuildIn::Sub => handle.code.push(Operation::Sub(call.debug_span)),
@@ -328,7 +333,6 @@ fn translate_call_raw(call:&FunctionCall,name_space:&mut dyn NameSpace,handle: &
 			BuildIn::DoubleOr => handle.code.push(Operation::DoubleOr(call.debug_span)),
 
 		},
-		FValue::FuncCall(_) | FValue::Lambda(_) | FValue::MatchLambda(_) => todo!(),
 	}
 
 	Ok(())	

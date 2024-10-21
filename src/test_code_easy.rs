@@ -313,3 +313,29 @@ fn factorial() {
     assert!(code.run_compare("factorial", vec![Value::Int(4)],Value::Int(24)).unwrap());
 
 }
+
+#[test]
+fn factorial_effishent() {
+    let source_code = r#"
+        def _factorial(ag,n) {
+            match n {
+                0 => ag,
+                _ => (n)*_factorial(ag,n-1)
+            }
+        }
+
+        def factorial(n) {
+            1 |> _factorial(n)
+        }
+    "#;
+    let code = compile_source_to_code(source_code);
+
+    println!("{:?}",code.funcs[0].code);
+
+    assert!(code.run_compare("factorial", vec![Value::Int(2)],Value::Int(2)).unwrap());
+    assert!(code.run_compare("factorial", vec![Value::Int(1)],Value::Int(1)).unwrap());
+    assert!(code.run_compare("factorial", vec![Value::Int(0)],Value::Int(1)).unwrap());
+
+    assert!(code.run_compare("factorial", vec![Value::Int(4)],Value::Int(24)).unwrap());
+
+}
