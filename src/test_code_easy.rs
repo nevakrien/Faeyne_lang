@@ -436,11 +436,12 @@ fn lambda_passing() {
 
     let table = &*code.table.read().unwrap();
 
-
+    //capture a lambda
     let mut context = Context::new(capture_val,&global,table);
     context.stack.push_int(3).unwrap();
     let lambda = context.run().unwrap();
 
+    //run it
     let mut context = Context::new(call_func.clone(),&global,table);
     context.stack.push_value(lambda.clone()).unwrap();
     context.stack.push_int(3).unwrap();
@@ -448,10 +449,41 @@ fn lambda_passing() {
     
     assert_eq!(ans, Value::Int(6));
 
+    //run again
     let mut context = Context::new(call_func,&global,table);
     context.stack.push_value(lambda).unwrap();
     context.stack.push_int(2).unwrap();
     let ans = context.run().unwrap();
     
     assert_eq!(ans, Value::Int(5));
+}
+
+#[test]
+fn match_lambda_err() {
+    // Step 1: Define the source code (a function that does nothing)
+    let source_code = r#"
+        def main(x) {
+            f = match fn {
+                1 => 0,
+                2 => 0,
+            };
+            f(x);
+            f(x+1);
+        }
+    "#;
+
+    // Step 2: Compile the source code to a `Code` object
+    let code = compile_source_to_code(source_code);
+    let _error = sig_error();
+    
+    let res = code.run("main", vec![Value::Int(2)]);
+    match res {
+        Ok(()) => panic!("should have type errored"),
+        Err(e) => {
+            assert!(matches!(e,ref _error));//weird this works
+            report_err_list(&e,source_code,&code.table.try_read().unwrap())
+        }
+    }
+
+    code.run("main", vec![Value::Int(1)]).unwrap();
 }

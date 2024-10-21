@@ -1,4 +1,5 @@
 
+use ast::ast::MatchLambda;
 use crate::vm::FuncMaker;
 use codespan::Span;
 use ast::ast::Value as AstValue;
@@ -386,7 +387,7 @@ fn translate_value(v:&AstValue,name_space:&mut dyn NameSpace,handle: &mut TransH
 		AstValue::Variable(id) => name_space.get(handle,*id)?,
 		AstValue::BuildIn(_) => unreachable!("build in op should never be made as a value in the ast"),
 		AstValue::Lambda(l) => translate_lambda(l,name_space,handle,tail)?, 
-		AstValue::MatchLambda(_) => todo!(),
+		AstValue::MatchLambda(ml) => translate_match_lambda(ml,name_space,handle,tail)?, 
 	};
 	Ok(())
 }
@@ -435,7 +436,13 @@ fn translate_call_raw(call:&FunctionCall,name_space:&mut dyn NameSpace,handle: &
 				CallType::FullCall => handle.code.push(Operation::Call(call.debug_span)),
 			}
 		},   
-		FValue::MatchLambda(_) => todo!(),
+		FValue::MatchLambda(ml)  => {
+			translate_match_lambda(ml,name_space,handle,tail)?;
+			match tail {
+				TailCall => handle.code.push(Operation::TailCall(call.debug_span)),
+				CallType::FullCall => handle.code.push(Operation::Call(call.debug_span)),
+			}
+		},   
 
 		FValue::BuildIn(op) => match op {
 			BuildIn::Add => handle.code.push(Operation::Add(call.debug_span)),
@@ -603,6 +610,48 @@ fn translate_lambda(l:&Lambda,name_space:&mut dyn NameSpace,handle:&mut TransHan
 	let maker = Box::new(FuncMaker{
 		holder,
 		span:l.debug_span
+	});
+	
+	handle.code.push(Operation::CaptureClosure(maker));
+	Ok(())
+}
+
+fn translate_match_lambda(ml:&MatchLambda,name_space:&mut dyn NameSpace,handle:&mut TransHandle,_tail:CallType) -> Result<(),ErrList> {
+	//use the hack that 0 would NEVER be a name used by an identifier
+	let mut scope = LambdaScope::start(name_space,&[0]);
+
+	let mut vars = VarTable::default();
+	let mut mut_vars = VarTable::default();
+	mut_vars.add_ids(&[0]);
+
+	let mut code = vec![Operation::PushFrom(0)];
+
+	let mut child_handle = TransHandle{
+		code:&mut code,
+		vars:&mut vars,
+		mut_vars:&mut mut_vars,
+		table: handle.table
+	};
+
+
+	translate_match_internal(&ml.arms,ml.debug_span,&mut scope,&mut child_handle,TailCall)?;
+	code.push(Operation::Return);
+	std::mem::drop(scope);
+    
+    let holder = FuncHolder{
+    	code: code.into(),vars,mut_vars_template:mut_vars,num_args:1
+    };
+
+    #[cfg(feature = "debug_terminators")]
+    handle.code.push(Operation::PushTerminator);
+
+	for name in &holder.vars.names{
+		name_space.get(handle,*name)?;
+	}
+
+	let maker = Box::new(FuncMaker{
+		holder,
+		span:ml.debug_span
 	});
 	
 	handle.code.push(Operation::CaptureClosure(maker));
