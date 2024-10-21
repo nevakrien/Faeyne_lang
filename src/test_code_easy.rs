@@ -506,3 +506,52 @@ fn test_recursive_lambda_string_accumulation() {
 
     assert!(code.run_compare("main", vec![], Value::String(Arc::new("54321".to_string()))).unwrap());
 }
+
+#[test]
+fn bug_main_rev() {
+    let source_code = r#"
+        def rev(id,ag,source) {
+            match id>=0{
+                true => {
+                    ag=ag+source(id);
+                    rev(id-1,ag,source)
+                },
+                false => ag,
+            }
+        }
+
+        def reverse_string(s) {
+            #type check
+            match ''+s == s {
+                true => rev(s(:len) -1,'',s),
+                false => :err
+            }
+        }
+    "#;
+
+    let code = compile_source_to_code(source_code);
+
+    let table = code.table.try_read().unwrap();
+    let names:Vec<&str> = code.funcs[0]
+    .mut_vars_template.names.iter()
+    .map(|x| table.get_raw_str(*x))
+    .collect();
+    
+    println!("func 0:\n{:?}",names); 
+    println!("{:?}",code.funcs[0].code);
+
+
+
+    let table = code.table.try_read().unwrap();
+    let names:Vec<&str> = code.funcs[1]
+    .mut_vars_template.names.iter()
+    .map(|x| table.get_raw_str(*x))
+    .collect();
+    
+    println!("func 1:\n{:?}",names);   
+    println!("{:?}",code.funcs[1].code);
+
+    println!("\n\n");
+
+    code.run("reverse_string",vec![Value::String("hey there".to_string().into())]).unwrap();
+}

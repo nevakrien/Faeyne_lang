@@ -430,14 +430,14 @@ fn translate_call_raw(call:&FunctionCall,name_space:&mut dyn NameSpace,handle: &
 		},
 
 		FValue::Lambda(l) => {
-			translate_lambda(l,name_space,handle,tail)?;
+			translate_lambda(l,name_space,handle,FullCall)?;
 			match tail {
 				TailCall => handle.code.push(Operation::TailCall(call.debug_span)),
 				CallType::FullCall => handle.code.push(Operation::Call(call.debug_span)),
 			}
 		},   
 		FValue::MatchLambda(ml)  => {
-			translate_match_lambda(ml,name_space,handle,tail)?;
+			translate_match_lambda(ml,name_space,handle,FullCall)?;
 			match tail {
 				TailCall => handle.code.push(Operation::TailCall(call.debug_span)),
 				CallType::FullCall => handle.code.push(Operation::Call(call.debug_span)),
@@ -478,7 +478,7 @@ fn translate_call_raw(call:&FunctionCall,name_space:&mut dyn NameSpace,handle: &
 
 fn translate_match(m:&MatchStatment,name_space:&mut dyn NameSpace,handle:&mut TransHandle,tail:CallType) -> Result<(),ErrList> {
 	//first in the existing name space calculate the match value
-	translate_value(&m.val,name_space,handle,tail)?;
+	translate_value(&m.val,name_space,handle,FullCall)?;
 	translate_match_internal(&m.arms,m.debug_span,name_space,handle,tail)
 }
 
@@ -509,6 +509,7 @@ fn translate_match_internal(arms:&[MatchArm],span:Span,name_space:&mut dyn NameS
 	    	    	return_spots.push(handle.code.len());
 	    			handle.code.push(Operation::PushFrom(100000000));//trap instraction 
 	    	    }
+
 	    	    MatchPattern::Variable(_) => todo!(),
 	    	    MatchPattern::Wildcard => {
 	    	    	//todo fix this up to be a proper error type
@@ -547,7 +548,10 @@ fn translate_match_internal(arms:&[MatchArm],span:Span,name_space:&mut dyn NameS
 	Ok(())
 }
 
-fn translate_block(block:&FuncBlock,name_space:&mut dyn NameSpace,handle:&mut TransHandle,tail:CallType) -> Result<(),ErrList> {
+fn translate_block(block:&FuncBlock,parent_name_space:&mut dyn NameSpace,handle:&mut TransHandle,tail:CallType) -> Result<(),ErrList> {
+	let mut scope = ChildScope::new(parent_name_space);
+	let name_space = &mut scope;
+
 	for x in block.body.iter() {
 		match &x{
 			Statment::Match(m) =>{

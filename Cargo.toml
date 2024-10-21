@@ -26,8 +26,9 @@ smallvec = "1.13.2"
 
 [features]
 default = []
+debug_mode=["debug_print_vm","debug_terminators"]
 debug_terminators = []
-
+debug_print_vm = []
 
 
 [profile.release]

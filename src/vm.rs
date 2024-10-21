@@ -334,12 +334,27 @@ impl<'code> Context<'code> {
     } 
 
     fn set_args(&mut self) -> Result<(),ErrList> {
+        #[cfg(feature = "debug_print_vm")]{
+            let names:Vec<&str> = self.func
+            .mut_vars_template.names.iter()
+            .map(|x| self.table.get_raw_str(*x))
+            .collect();
+
+            println!("loading mut_vars {:?}",names);
+        }
+
         for i in (0.. self.func.num_args).rev() {
             let value = self.stack.pop_value().ok_or_else(sig_error)?;
             self.mut_vars.set(i,value).map_err(|_| bug_error("poping arg to no where"))?;
         }
 
-        self.stack.pop_terminator().ok_or_else(sig_error)
+        self.stack.pop_terminator().ok_or_else(sig_error)?;
+
+        #[cfg(feature = "debug_print_vm")]
+        println!("loading mut_vars {:?}",self.mut_vars.data);
+
+        
+        Ok(())
     }
 
     fn call(&mut self,span:Span) -> Result<(),ErrList> {
@@ -438,6 +453,9 @@ impl<'code> Context<'code> {
     
 
     pub fn handle_op(&mut self,op:&'code Operation) -> Result<(),ErrList> {
+        #[cfg(feature = "debug_print_vm")] 
+        println!("handeling op: {:?}",op);
+
         match op {
             NoOp => Ok(()),
 
@@ -552,6 +570,10 @@ impl<'code> Context<'code> {
     pub fn next_op(&mut self) -> Result<bool,ErrList>{
         if self.pos>=self.func.code.len() {return Ok(false);}
         let op = &self.func.code[self.pos];
+
+        #[cfg(feature = "debug_print_vm")]
+        println!("currently at pos {}",self.pos);
+
         self.pos+=1;
 
         match self.handle_op(op) {
