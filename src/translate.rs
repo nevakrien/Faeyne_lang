@@ -293,7 +293,14 @@ fn translate_call_raw(call:&FunctionCall,name_space:&mut dyn NameSpace,handle: &
 				handle.code.push(Operation::PushThis);
 				handle.code.push(Operation::Call(call.debug_span));
 			}
-		},		
+		},	
+		FValue::Name(id) => {
+			name_space.get(handle,id)?;
+			match tail {
+				TailCall => handle.code.push(Operation::TailCall(call.debug_span)),
+				CallType::FullCall => handle.code.push(Operation::Call(call.debug_span)),
+			}
+		},
 		FValue::BuildIn(op) => match op {
 			BuildIn::Add => handle.code.push(Operation::Add(call.debug_span)),
 			BuildIn::Sub => handle.code.push(Operation::Sub(call.debug_span)),
@@ -321,7 +328,7 @@ fn translate_call_raw(call:&FunctionCall,name_space:&mut dyn NameSpace,handle: &
 			BuildIn::DoubleOr => handle.code.push(Operation::DoubleOr(call.debug_span)),
 
 		},
-		_ => todo!(),
+		FValue::FuncCall(_) | FValue::Lambda(_) | FValue::MatchLambda(_) => todo!(),
 	}
 
 	Ok(())	
