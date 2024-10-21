@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 
+use crate::vm::Context;
 use crate::reporting::sig_error;
 use crate::reporting::report_err_list;
 use crate::translate::compile_source_to_code;
@@ -382,4 +383,68 @@ fn factorial_effishent() {
 
     assert!(code.run_compare("factorial", vec![Value::Int(4)],Value::Int(24)).unwrap());
 
+}
+
+#[test]
+fn factorial_lambda() {
+    let source_code = r#"
+        def main(x) {
+            x|> fn(n) -> {
+                match n {
+                    0 => 1,
+                    _ => (n)*self(n-1)
+                }
+            }()
+        }
+    "#;
+    let code = compile_source_to_code(source_code);
+
+    println!("{:?}",code.funcs[0].code);
+    // code.run_map("main", vec![Value::Int(2)],|v| println!("my value {:?}",v)).unwrap();
+
+    assert!(code.run_compare("main", vec![Value::Int(2)],Value::Int(2)).unwrap());
+    assert!(code.run_compare("main", vec![Value::Int(1)],Value::Int(1)).unwrap());
+    assert!(code.run_compare("main", vec![Value::Int(0)],Value::Int(1)).unwrap());
+
+    assert!(code.run_compare("main", vec![Value::Int(4)],Value::Int(24)).unwrap());
+
+}
+
+#[test]
+fn lambda_passing() {
+    let source_code = r#"
+        def capture_val(v) {
+            fn (x) {x+v}
+        }
+
+        def call_func(f,x) {
+            f(x)
+        }
+    "#;
+    
+    let code = compile_source_to_code(source_code);
+
+    //somehow run capture_val SAVE the function then use call_func to see the captures are right
+    let global = code.get_global();
+    
+
+    let capture_val = *code.name_map.get("capture_val").unwrap();
+    let Some(Value::Func(capture_val)) = global.get(capture_val) else { todo!() };
+
+    let call_func = *code.name_map.get("call_func").unwrap();
+    let Some(Value::Func(call_func)) = global.get(call_func) else { todo!() };
+
+    let table = &*code.table.read().unwrap();
+
+
+    let mut context = Context::new(capture_val,&global,table);
+    context.stack.push_int(3).unwrap();
+    let lambda = context.run().unwrap();
+
+    let mut context = Context::new(call_func,&global,table);
+    context.stack.push_value(lambda).unwrap();
+    context.stack.push_int(3).unwrap();
+    let ans = context.run().unwrap();
+    
+    assert_eq!(ans, Value::Int(6));
 }

@@ -1,3 +1,4 @@
+use crate::runtime::FuncHolder;
 use core::hash::Hasher;
 use core::hash::Hash;
 use core::fmt;
@@ -102,11 +103,11 @@ impl<'code> FuncData<'code> {
 
 #[derive(Clone,PartialEq,Debug)]
 pub struct FuncMaker {
-    pub num_args : usize,
-    pub captures: Box<[usize]>,
-    pub mut_vars_template: VarTable<'static>,
-    pub vars: VarTable<'static>,
-    pub code: Box<[Operation]>,
+    // pub num_args : usize,
+    // pub mut_vars_template: VarTable<'static>,
+    // pub vars: VarTable<'static>,
+    // pub code: Box<[Operation]>,
+    pub holder:FuncHolder<'static>,
     pub span: Span,
 }
 
@@ -408,12 +409,17 @@ impl<'code> Context<'code> {
     }
 
     fn capture_closure(&mut self,maker: &'code FuncMaker) -> Result<(),ErrList> {
-        let mut vars = maker.vars.clone();
+        let holder = &maker.holder;
+        let mut vars = holder.vars.clone();
 
-        for i in maker.captures.iter() {
-            vars.set(*i,self.stack.pop_value()
-                .ok_or_else(||{bug_error("over poping")})?)
-                .map_err(|_|{bug_error("missing id")})?;
+        // for i in maker.captures.iter() {
+        //     vars.set(*i,self.stack.pop_value()
+        //         .ok_or_else(||{bug_error("over poping")})?)
+        //         .map_err(|_|{bug_error("missing id")})?;
+        // }
+        for spot in vars.data.iter_mut().rev() {
+            *spot = Some(self.stack.pop_value()
+                .ok_or_else(||{bug_error("over poping")})?);
         }
 
         #[cfg(feature = "debug_terminators")]
@@ -422,7 +428,7 @@ impl<'code> Context<'code> {
 
         let func = Value::Func(Arc::new(
             FuncData::new(
-            vars,&maker.mut_vars_template,&maker.code,maker.num_args //very happy this works not sure why it works tho...
+            vars,&holder.mut_vars_template,&holder.code,holder.num_args //very happy this works not sure why it works tho...
             )
         ));
 
@@ -840,17 +846,17 @@ fn test_capture_closure() {
     vars.add_ids(&[var_a_id]); // Adding the variable to capture
 
     // Step 3: Create a FuncMaker that defines the closure capturing
-    let captures = Box::new([0]); // Capture the variable at position 0 on the stack
     let mut_vars = VarTable::default();
     let code = vec![Operation::Return].into_boxed_slice(); // Simple code that just returns
     let span = Span::default();
 
     let func_maker = FuncMaker {
-        captures,
-        num_args:0,
-        mut_vars_template:VarTable::default(),
-        vars: vars.clone(),
-        code: code.clone(),
+        holder:FuncHolder{
+            num_args:0,
+            mut_vars_template:VarTable::default(),
+            vars: vars.clone(),
+            code: code.clone(),
+        },
         span,
     };
 

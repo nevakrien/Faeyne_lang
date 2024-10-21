@@ -1,10 +1,11 @@
 
+use crate::vm::FuncMaker;
 use codespan::Span;
 use ast::ast::Value as AstValue;
 use ast::lexer::Lexer;
 use ast::parser::ProgramParser;
 use ast::ast::{
-	StringTable,FuncDec,FuncBlock,OuterExp,Ret,Statment,
+	StringTable,FuncBlock,OuterExp,Ret,Statment,
 	FValue,FunctionCall,BuildIn,
 	MatchStatment,MatchArm,MatchOut,MatchPattern,Literal,
 	Lambda
@@ -175,10 +176,14 @@ struct LambdaScope<'a> {
 }
 
 impl<'a> LambdaScope<'a> {
-    fn new(parent: &'a mut dyn NameSpace) -> Self {
+    fn start(parent: &'a mut dyn NameSpace,args:&[u32]) -> Self {
+        let mut map = HashMap::new();
+		for (i,name) in args.iter().enumerate() {
+			map.insert(*name,LambdaVar::Mut(i));
+		}
         LambdaScope {
             parent,
-            map: HashMap::new(),
+            map
         }
     }
 }
@@ -280,7 +285,7 @@ pub fn translate_program<'a>(outer:&[OuterExp],table:Arc<RwLock<StringTable<'a>>
 				name_map.insert(s.into(),index);
 
 				let mut scope = FuncScope::start(&global_vars,&func.sig.args);
-				funcs.push(translate_func(func,&mut scope,&table_ref)?);
+				funcs.push(translate_func(&func.sig.args,&func.body,&mut scope,&table_ref)?);
 			},
 		}
 	}
@@ -296,10 +301,10 @@ pub fn translate_program<'a>(outer:&[OuterExp],table:Arc<RwLock<StringTable<'a>>
 }
 
 
-fn translate_func<'a>(func:&FuncDec,name_space:&mut dyn NameSpace,table:&StringTable<'a>) -> Result<FuncHolder<'a>,ErrList> {
+fn translate_func<'a>(args:&[u32],body:&FuncBlock,name_space:&mut dyn NameSpace,table:&StringTable<'a>) -> Result<FuncHolder<'static>,ErrList> {
 	let mut vars = VarTable::default();
 	let mut mut_vars = VarTable::default();
-	mut_vars.add_ids(&func.sig.args);
+	mut_vars.add_ids(&args);
 
 	let mut code = Vec::default();
 
@@ -310,7 +315,7 @@ fn translate_func<'a>(func:&FuncDec,name_space:&mut dyn NameSpace,table:&StringT
 		table
 	};
 
-	for x in func.body.body.iter() {
+	for x in body.body.iter() {
 		match x{
 			Statment::Match(m) =>{
 				translate_match(m,name_space,&mut handle,FullCall)?;
@@ -329,13 +334,13 @@ fn translate_func<'a>(func:&FuncDec,name_space:&mut dyn NameSpace,table:&StringT
 		}
 	}
 
-	translate_ret_func(&func.body.ret,TailCall,name_space,&mut handle)?;
+	translate_ret_func(&body.ret,TailCall,name_space,&mut handle)?;
 	
 	Ok(FuncHolder{
 		code:code.into(),
 		mut_vars_template:mut_vars,
 		vars,
-		num_args:func.sig.args.len()
+		num_args:args.len()
 	})
 	
 }
@@ -423,7 +428,13 @@ fn translate_call_raw(call:&FunctionCall,name_space:&mut dyn NameSpace,handle: &
 			}
 		},
 
-		FValue::Lambda(l) => translate_lambda(l,name_space,handle,tail)?,   
+		FValue::Lambda(l) => {
+			translate_lambda(l,name_space,handle,tail)?;
+			match tail {
+				TailCall => handle.code.push(Operation::TailCall(call.debug_span)),
+				CallType::FullCall => handle.code.push(Operation::Call(call.debug_span)),
+			}
+		},   
 		FValue::MatchLambda(_) => todo!(),
 
 		FValue::BuildIn(op) => match op {
@@ -576,9 +587,26 @@ fn literal_to_ir_value(l: &Literal,table:&StringTable) -> IRValue<'static> {
 	}
 }
 
-fn translate_lambda(_l:&Lambda,name_space:&mut dyn NameSpace,_handle:&mut TransHandle,_tail:CallType) -> Result<(),ErrList> {
-	let _scope = LambdaScope::new(name_space);
-	todo!()
+fn translate_lambda(l:&Lambda,name_space:&mut dyn NameSpace,handle:&mut TransHandle,_tail:CallType) -> Result<(),ErrList> {
+	let mut scope = LambdaScope::start(name_space,&l.sig);
+	let holder = translate_func(&l.sig,&l.body,&mut scope,handle.table)
+		.map_err(|e| stacked_error("while defining lambda",e,l.debug_span))?;
+	std::mem::drop(scope);
+        
+    #[cfg(feature = "debug_terminators")]
+    handle.code.push(Operation::PushTerminator);
+
+	for name in &holder.vars.names{
+		name_space.get(handle,*name)?;
+	}
+
+	let maker = Box::new(FuncMaker{
+		holder,
+		span:l.debug_span
+	});
+	
+	handle.code.push(Operation::CaptureClosure(maker));
+	Ok(())
 }
 
 // This function handles the process of taking source code and returning a `Code` object.
