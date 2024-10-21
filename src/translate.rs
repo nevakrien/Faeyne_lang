@@ -35,11 +35,6 @@ struct TransHandle<'a> {
 	table:&'a StringTable<'a>,
 }
 
-enum CaptureType {
-	Global(usize),
-	Local
-}
-
 trait NameSpace {
 	fn set(&mut self,handle:&mut TransHandle,name:u32);
 
@@ -48,6 +43,11 @@ trait NameSpace {
 
 	//called by lambda and does NOT mutate anything. does not rely on handle in any way 
 	fn capture(&self,name:u32) -> Result<CaptureType,ErrList>;
+}
+
+enum CaptureType {
+	Global(usize),
+	Local
 }
 
 struct FuncScope<'a> {
@@ -610,42 +610,4 @@ pub fn compile_source_to_code(source_code: &str) -> Code<'_> {
     }
 }
 
-#[test]
-fn test_end_to_end_empty_function() {
-    // Step 1: Define the source code (a function that does nothing)
-    let source_code = "
-        def main(a, b, c) {
-            # This function does nothing and returns immediately
-        }
-    ";
-
-    // Step 2: Compile the source code to a `Code` object
-    let code = compile_source_to_code(source_code);
-
-    // Step 3: Setup the initial arguments for the "main" function (arbitrary values)
-    let args = vec![
-        IRValue::Nil,        // c = Nil (or None equivalent)
-        IRValue::Int(1),     // a = 1
-        IRValue::Bool(true), // b = true
-    ];
-
-    // Step 4: Run the translated code and call the "main" function with the arguments
-    code.run("main", args).unwrap();
-}
-
-#[test]
-fn test_return_true() {
-    // Step 1: Define the source code (a function that does nothing)
-    let source_code = "
-        def main() {
-            true
-        }
-    ";
-
-    // Step 2: Compile the source code to a `Code` object
-    let code = compile_source_to_code(source_code);
-
-    // Step 3: Run the translated code and call the "main" function with the arguments
-    assert!(code.run_compare("main", vec![],IRValue::Bool(true)).unwrap());
-}
 

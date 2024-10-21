@@ -8,7 +8,47 @@ use std::sync::Arc;
 use crate::value::Value;
 
 #[test]
-fn test_atom_passing() {
+fn end_to_end_empty_function() {
+    // Step 1: Define the source code (a function that does nothing)
+    let source_code = "
+        def main(a, b, c) {
+            # This function does nothing and returns immediately
+        }
+    ";
+
+    // Step 2: Compile the source code to a `Code` object
+    let code = compile_source_to_code(source_code);
+
+    // Step 3: Setup the initial arguments for the "main" function (arbitrary values)
+    let args = vec![
+        Value::Nil,        // c = Nil (or None equivalent)
+        Value::Int(1),     // a = 1
+        Value::Bool(true), // b = true
+    ];
+
+    // Step 4: Run the translated code and call the "main" function with the arguments
+    code.run("main", args).unwrap();
+}
+
+#[test]
+fn return_true() {
+    // Step 1: Define the source code (a function that does nothing)
+    let source_code = "
+        def main() {
+            true
+        }
+    ";
+
+    // Step 2: Compile the source code to a `Code` object
+    let code = compile_source_to_code(source_code);
+
+    // Step 3: Run the translated code and call the "main" function with the arguments
+    assert!(code.run_compare("main", vec![],Value::Bool(true)).unwrap());
+}
+
+
+#[test]
+fn atom_passing() {
     // Step 1: Define the source code (a function that does nothing)
     let source_code = "
         def main() {
@@ -28,7 +68,7 @@ fn test_atom_passing() {
 }
 
 #[test]
-fn test_string_escaping() {
+fn string_escaping() {
     // Step 1: Define the source code (a function that does nothing)
     let source_code = r#"
         def main() {
@@ -46,7 +86,7 @@ fn test_string_escaping() {
 }
 
 #[test]
-fn test_return_self() {
+fn return_self() {
     // Step 1: Define the source code (a function that does nothing)
     let source_code = r#"
         def main() {
@@ -63,7 +103,7 @@ fn test_return_self() {
 }
 
 #[test]
-fn test_1_p_1() {
+fn test_1_plus_1() {
     // Step 1: Define the source code (a function that does nothing)
     let source_code = r#"
         def main() {
@@ -79,7 +119,7 @@ fn test_1_p_1() {
 }
 
 #[test]
-fn test_add_sub() {
+fn add_sub() {
     // Step 1: Define the source code (a function that does nothing)
     let source_code = r#"
         def main() {
@@ -95,7 +135,7 @@ fn test_add_sub() {
 }
 
 #[test]
-fn test_parens() {
+fn parens() {
     // Step 1: Define the source code (a function that does nothing)
     let source_code = r#"
         def main() {
@@ -111,7 +151,7 @@ fn test_parens() {
 }
 
 #[test]
-fn test_add_err() {
+fn add_err() {
     // Step 1: Define the source code (a function that does nothing)
     let source_code = r#"
         def main() {
@@ -136,7 +176,7 @@ fn test_add_err() {
 }
 
 #[test]
-fn test_match_err() {
+fn match_err() {
     // Step 1: Define the source code (a function that does nothing)
     let source_code = r#"
         def main() {
@@ -183,7 +223,7 @@ fn test_match() {
 }
 
 #[test]
-fn test_match_jumps() {
+fn match_jumps() {
     // Step 1: Define the source code (a function that does nothing)
     let source_code = r#"
         def main() {
@@ -209,7 +249,7 @@ fn test_match_jumps() {
 }
 
 #[test]
-fn test_assign() {
+fn assign() {
     // Step 1: Define the source code (a function that does nothing)
     let source_code = r#"
         def main() {
@@ -231,7 +271,7 @@ fn test_assign() {
 }
 
 #[test]
-fn test_arg_reading() {
+fn arg_reading() {
     // Step 1: Define the source code (a function that does nothing)
     let source_code = r#"
         def main(a,b) {
@@ -247,7 +287,7 @@ fn test_arg_reading() {
 }
 
 #[test]
-fn test_match_scope() {
+fn match_scope() {
     // Step 1: Define the source code (a function that does nothing)
     let source_code = r#"
         def main() {
