@@ -3,7 +3,12 @@ use codespan::Span;
 use ast::ast::Value as AstValue;
 use ast::lexer::Lexer;
 use ast::parser::ProgramParser;
-use ast::ast::{StringTable,FuncDec,FuncBlock,OuterExp,Ret,Statment,FValue,FunctionCall,BuildIn,MatchStatment,MatchArm,MatchOut,MatchPattern,Literal};
+use ast::ast::{
+	StringTable,FuncDec,FuncBlock,OuterExp,Ret,Statment,
+	FValue,FunctionCall,BuildIn,
+	MatchStatment,MatchArm,MatchOut,MatchPattern,Literal,
+	Lambda
+};
 
 
 use crate::reporting::{report_parse_error,report_err_list,ErrList,stacked_error,sig_error,missing_error,unreachable_func_error};
@@ -30,10 +35,19 @@ struct TransHandle<'a> {
 	table:&'a StringTable<'a>,
 }
 
+enum CaptureType {
+	Global(usize),
+	Local
+}
+
 trait NameSpace {
-	fn set(&mut self,handle:&mut TransHandle,name:u32) ;
-	fn get(&self,handle:&mut TransHandle,name:u32) -> Result<(),ErrList>;
-	// fn del(handle:&mut TransHandle,name:u32);
+	fn set(&mut self,handle:&mut TransHandle,name:u32);
+
+	//called by child which DOES mutate the parent scope. but does so in a safe way
+	fn get(&mut self,handle:&mut TransHandle,name:u32) -> Result<(),ErrList>;
+
+	//called by lambda and does NOT mutate anything. does not rely on handle in any way 
+	fn capture(&self,name:u32) -> Result<CaptureType,ErrList>;
 }
 
 struct FuncScope<'a> {
@@ -55,7 +69,7 @@ impl<'a> FuncScope<'a> {
 }
 
 impl NameSpace for FuncScope<'_> {
-	fn get(&self,handle: &mut TransHandle, name: u32) -> Result<(),ErrList> {
+	fn get(&mut self,handle: &mut TransHandle, name: u32) -> Result<(),ErrList> {
 		let op = match self.assigns.get(&name) {
 		    Some(id) => Operation::PushFrom(*id),
 		    None => {
@@ -69,28 +83,37 @@ impl NameSpace for FuncScope<'_> {
 	fn set(&mut self, handle: &mut TransHandle, name: u32) {
 	    let op = match self.assigns.entry(name) {
 	        Entry::Occupied(entry) => {
-	            // If the key exists, use the existing id
 	            Operation::PopTo(*entry.get())
 	        }
 	        Entry::Vacant(spot) => {
-	            // If the key doesn't exist, insert the new id
+
 	            let id = handle.mut_vars.len();
 	            handle.mut_vars.add_ids(&[name]);
-	            spot.insert(id);  // This is the step you were missing
+	            spot.insert(id);
 	            Operation::PopTo(id)
 	        }
 	    };
 	    handle.code.push(op);
 	}
+
+	fn capture(&self,name:u32) -> Result<CaptureType,ErrList> {
+		match self.assigns.get(&name) {
+		    Some(_id) => Ok(CaptureType::Local),
+		    None => {
+		    	let id = self.global_vars.get(&name).ok_or_else(|| missing_error(name))?;
+		    	Ok(CaptureType::Global(*id))
+		    }
+		}
+	}
 }
 
 struct ChildScope<'a> {
-	parent: &'a dyn NameSpace,
+	parent: &'a mut dyn NameSpace,
 	assigns: HashMap<u32,usize>,
 }
 
 impl<'a> ChildScope<'a> {
-	fn new(parent: &'a dyn NameSpace,) -> Self {
+	fn new(parent: &'a mut dyn NameSpace,) -> Self {
 		ChildScope{
 			parent,
 			assigns:HashMap::new()
@@ -99,7 +122,7 @@ impl<'a> ChildScope<'a> {
 }
 
 impl NameSpace for ChildScope<'_> {
-	fn get(&self,handle: &mut TransHandle, name: u32) -> Result<(),ErrList> {
+	fn get(&mut self,handle: &mut TransHandle, name: u32) -> Result<(),ErrList> {
 		match self.assigns.get(&name) {
 		    Some(id) => handle.code.push(Operation::PushFrom(*id)),
 		    None => self.parent.get(handle,name)?,
@@ -109,20 +132,116 @@ impl NameSpace for ChildScope<'_> {
 	fn set(&mut self, handle: &mut TransHandle, name: u32) {
 	    let op = match self.assigns.entry(name) {
 	        Entry::Occupied(entry) => {
-	            // If the key exists, use the existing id
 	            Operation::PopTo(*entry.get())
 	        }
 	        Entry::Vacant(spot) => {
-	            // If the key doesn't exist, insert the new id
+
 	            let id = handle.mut_vars.len();
 	            handle.mut_vars.add_ids(&[name]);
-	            spot.insert(id);  // This is the step you were missing
+	            spot.insert(id); 
 	            Operation::PopTo(id)
 	        }
 	    };
 	    handle.code.push(op);
 	}
+
+	fn capture(&self,name:u32) -> Result<CaptureType,ErrList> {
+		match self.assigns.get(&name) {
+		    Some(_id) => Ok(CaptureType::Local),
+		    None => self.parent.capture(name),
+		}
+	}
 }
+
+enum LambdaVar {
+    Mut(usize),         
+    Captured(usize),
+    Global(usize),        
+}
+
+impl LambdaVar {		
+	fn get_op(&self) -> Operation{
+		match self {
+	    	LambdaVar::Global(id) => Operation::PushGlobal(*id),
+	    	LambdaVar::Mut(id) => Operation::PushFrom(*id),
+	    	LambdaVar::Captured(id) =>  Operation::PushLocal(*id),
+	    }
+	}
+}
+
+struct LambdaScope<'a> {
+    parent: &'a mut dyn NameSpace,
+    map: HashMap<u32, LambdaVar>,
+}
+
+impl<'a> LambdaScope<'a> {
+    fn new(parent: &'a mut dyn NameSpace) -> Self {
+        LambdaScope {
+            parent,
+            map: HashMap::new(),
+        }
+    }
+}
+
+impl NameSpace for LambdaScope<'_> {
+	fn get(&mut self,handle:&mut TransHandle,name:u32) -> Result<(),ErrList> {
+		let op = match self.map.entry(name) {
+		    Entry::Occupied(entry) => entry.get().get_op(),
+		    Entry::Vacant(spot) => {
+		    	let value = match self.parent.capture(name)?{
+		    		CaptureType::Global(id) => LambdaVar::Global(id),
+		    		CaptureType::Local => {
+		    			let id = handle.vars.names.len();
+		    			handle.vars.add_ids(&[name]);
+		    			LambdaVar::Captured(id)
+		    		}
+		    	};
+		    	let ans = value.get_op();
+		    	spot.insert(value);
+
+		    	ans
+		    }
+		};
+
+		handle.code.push(op);
+		Ok(())
+	}
+
+    fn set(&mut self,handle:&mut TransHandle,name:u32)  {
+    	let op = match self.map.entry(name) {
+    	   Entry::Occupied(mut entry) => match entry.get() {
+    	       LambdaVar::Mut(id) => Operation::PopTo(*id),
+    	       _ => {
+    	       	 let id = handle.mut_vars.len();
+	             handle.mut_vars.add_ids(&[name]);
+    	       	 entry.insert(LambdaVar::Mut(id));
+    	       	 Operation::PopTo(id)
+    	       }
+    	   },
+    	   Entry::Vacant(spot) => {
+	            // If the key doesn't exist, insert the new id
+	            let id = handle.mut_vars.len();
+	            handle.mut_vars.add_ids(&[name]);
+	            spot.insert(LambdaVar::Mut(id)); 
+	            Operation::PopTo(id)
+	        }
+    	};
+
+    	handle.code.push(op);
+
+    }
+	fn capture(&self,name:u32) -> Result<CaptureType,ErrList> {
+		match self.map.get(&name) {
+		    None => self.parent.capture(name), 
+		    Some(v) => match v {
+		    	LambdaVar::Global(id) => Ok(CaptureType::Global(*id)),
+		    	LambdaVar::Mut(_) | LambdaVar::Captured(_) => Ok(CaptureType::Local),
+		    }
+		}
+	}
+}
+
+
 
 pub fn translate_program<'a>(outer:&[OuterExp],table:Arc<RwLock<StringTable<'a>>>) ->Result<Code<'a>,ErrList> {
 	let mut funcs = Vec::with_capacity(outer.len());
@@ -261,7 +380,7 @@ fn translate_value(v:&AstValue,name_space:&mut dyn NameSpace,handle: &mut TransH
 
 		AstValue::Variable(id) => name_space.get(handle,*id)?,
 		AstValue::BuildIn(_) => unreachable!("build in op should never be made as a value in the ast"),
-		AstValue::Lambda(_) => todo!(), 
+		AstValue::Lambda(l) => translate_lambda(l,name_space,handle,tail)?, 
 		AstValue::MatchLambda(_) => todo!(),
 	};
 	Ok(())
@@ -304,7 +423,8 @@ fn translate_call_raw(call:&FunctionCall,name_space:&mut dyn NameSpace,handle: &
 			}
 		},
 
-		FValue::Lambda(_) | FValue::MatchLambda(_) => todo!(),
+		FValue::Lambda(l) => translate_lambda(l,name_space,handle,tail)?,   
+		FValue::MatchLambda(_) => todo!(),
 
 		FValue::BuildIn(op) => match op {
 			BuildIn::Add => handle.code.push(Operation::Add(call.debug_span)),
@@ -454,6 +574,11 @@ fn literal_to_ir_value(l: &Literal,table:&StringTable) -> IRValue<'static> {
         Literal::Bool(b) => IRValue::Bool(*b),
         Literal::Nil => IRValue::Nil,
 	}
+}
+
+fn translate_lambda(_l:&Lambda,name_space:&mut dyn NameSpace,_handle:&mut TransHandle,_tail:CallType) -> Result<(),ErrList> {
+	let _scope = LambdaScope::new(name_space);
+	todo!()
 }
 
 // This function handles the process of taking source code and returning a `Code` object.
