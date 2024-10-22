@@ -10,6 +10,7 @@ default-run="faeyne_lang"
 [dependencies]
 arrayvec = "0.7.6"
 ast = { path = "ast" }
+clap = "4.5.20"
 
 
 codespan = "0.11.1"
