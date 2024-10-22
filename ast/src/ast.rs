@@ -3,36 +3,36 @@ use std::collections::HashMap;
 use codespan::Span;
 use crate::id::*;
 // use crate::system::preload_table;
-//names are represented as a usize which is a key into our table names
+//names are represented as a u32 which is a key into our table names
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Clone)]
 pub enum Statment {
-    Assign(usize, Value),
+    Assign(u32, Value),
     Call(FunctionCall),
     Match(MatchStatment), // New case for match statements
 }
 
 
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Clone)]
 pub struct FuncDec {
     pub sig: FuncSig,
     pub body: FuncBlock,
 }
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Clone)]
 pub struct FuncSig {
-    pub name: usize,     // Function name ID from the StringTable
-    pub args: Vec<usize>, // names of args
+    pub name: u32,     // Function name ID from the StringTable
+    pub args: Vec<u32>, // names of args
 }
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Clone)]
 pub struct FuncBlock{
     pub body: Vec<Statment>, 
     pub ret: Option<Ret>,
 }
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Clone)]
 pub enum Ret{
     Imp(Value),
     Exp(Value),
@@ -47,38 +47,38 @@ impl Ret {
     }
 }
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Clone)]
 pub struct Lambda {
-    pub sig: Vec<usize>,
+    pub sig: Vec<u32>,
     pub body: FuncBlock,
     pub debug_span: Span,
 }
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Clone)]
 pub struct FunctionCall {
     pub name: FValue,     //
     pub args: Vec<Value>, // Arguments to the function call
     pub debug_span: Span,
 }
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Clone)]
 pub enum FValue {
     SelfRef(Span),
-    Name(usize),
+    Name(u32),
     FuncCall(Box<FunctionCall>),
     Lambda(Box<Lambda>),
     MatchLambda(Box<MatchLambda>),
     BuildIn(BuildIn),
 }
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Clone)]
 pub enum Value {
     Int(i64),
     Float(f64),
     Bool(bool),
-    Atom(usize),
-    String(usize),
-    Variable(usize),
+    Atom(u32),
+    String(u32),
+    Variable(u32),
     SelfRef(Span),
     FuncCall(FunctionCall),
     Lambda(Box<Lambda>),
@@ -101,12 +101,12 @@ impl From<FValue> for Value {
     }
 }
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Clone)]
 pub enum Literal {
     Int(i64),
     Float(f64),
-    Atom(usize),
-    String(usize),
+    Atom(u32),
+    String(u32),
     Bool(bool),
     Nil,
 }
@@ -125,16 +125,16 @@ impl From<Literal> for Value {
 
 
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Clone)]
 pub enum MatchPattern {
     Literal(Literal), 
-    Variable(usize),   
+    Variable(u32),   
     Wildcard,          // The `_` pattern
     //Tuple(Vec<MatchPattern>), // Matching a tuple
 }
 
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Clone)]
 pub struct MatchArm {
     pub pattern: MatchPattern, // The pattern to match
     pub result: MatchOut, // Result of the match arm (a Value or a block)
@@ -142,7 +142,7 @@ pub struct MatchArm {
 
 
 // Result type for match arm
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Clone)]
 pub enum MatchOut {
     Value(Value),
     Block(FuncBlock),
@@ -151,7 +151,7 @@ pub enum MatchOut {
 
 
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Clone)]
 pub struct MatchStatment {
     pub val: Box<Value>,      // The expression being matched
     pub arms: Vec<MatchArm>,  // The match arms
@@ -161,7 +161,7 @@ pub struct MatchStatment {
 //these are expressions that look like match fn {...} 
 //and they make a lamda function that pattrn matches arguments like a regular funtion
 //the intended use is for things like arrays with  arr = match fn {0 => a, 1 => y}; arr(0)==a; 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Clone)]
 pub struct MatchLambda {
     pub arms: Vec<MatchArm>,  
     pub debug_span: Span,
@@ -194,13 +194,13 @@ pub enum BuildIn {
     DoubleXor,
 }
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Clone)]
 pub struct ImportFunc{
-    pub path: usize,
-    pub name: usize,
+    pub path: u32,
+    pub name: u32,
 }
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Clone)]
 pub enum OuterExp {
     ImportFunc(ImportFunc),
     FuncDec(FuncDec),
@@ -208,7 +208,7 @@ pub enum OuterExp {
 
 #[derive(Debug,PartialEq,Clone)]
 pub struct StringTable<'input> {
-    map: HashMap<&'input str, usize>,
+    map: HashMap<&'input str, u32>,
     vec: Vec<&'input str>,
 }
 
@@ -228,11 +228,11 @@ impl<'input> StringTable<'input> {
     }
 
     // Returns the ID of the string, inserting it if it doesn't exist.
-    pub fn get_id(&mut self, s: &'input str) -> usize {
+    pub fn get_id(&mut self, s: &'input str) -> u32 {
         if let Some(&id) = self.map.get(s) {
             id
         } else {
-            let id = self.vec.len();
+            let id = self.vec.len() as u32;
             self.vec.push(s);
             self.map.insert(s, id);
             id
@@ -240,7 +240,7 @@ impl<'input> StringTable<'input> {
     }
 
     // Returns the ID of the string, inserting it if it doesn't exist.
-    pub fn check_id(&mut self, s: &'input str) -> Option<usize> {
+    pub fn check_id(&self, s: &'input str) -> Option<u32> {
         if let Some(&id) = self.map.get(s) {
             Some(id)
         } else {
@@ -248,26 +248,25 @@ impl<'input> StringTable<'input> {
         }
     }
 
-    pub fn get_existing_id(&self, s: &'input str) -> usize {
+    pub fn get_existing_id(&self, s: &'input str) -> u32 {
         self.map[s]
     }
 
     // Returns the string corresponding to an ID, or an error if the ID is out of bounds.
-    pub fn get_string(&self, id: usize) -> Option<&'input str> {
-        self.vec.get(id).copied()
+    pub fn get_raw_str(&self, id: u32) -> &'input str {
+        self.vec.get(id as usize).copied().unwrap()
     }
 
     // Returns the string corresponding to an ID, or an error if the ID is out of bounds.
-    pub fn get_escaped_string(&self, id: usize) -> String {
-        self.vec.get(id).map(|r|unescape(&r[1..r.len()-1]).unwrap()).unwrap()
+    pub fn get_display_str(&self, id: u32) -> Option<&'input str> {
+        self.vec.get(id as usize).copied()
     }
 
-    pub fn compare_to(&self, id: usize,s: &str) -> bool {
-        match self.get_string(id) {
-            None => unreachable!("attempting to compare to a non existing entry"),
-            Some(x) => x==s,
-        }
+    // Returns the string corresponding to an ID, or an error if the ID is out of bounds.
+    pub fn get_escaped_string(&self, id: u32) -> String {
+        self.vec.get(id as usize).map(|r|unescape(&r[1..r.len()-1]).unwrap()).unwrap()
     }
+
 }
 
 
@@ -282,11 +281,11 @@ fn test_string_table() {
 
 
     // Check that we can retrieve "hello" by its ID
-    let retrieved_hello = table.get_string(id_hello).unwrap();
+    let retrieved_hello = table.get_raw_str(id_hello);
     assert_eq!(retrieved_hello, "hello");
 
     // Check that we can retrieve "world" by its ID
-    let retrieved_world = table.get_string(id_world).unwrap();
+    let retrieved_world = table.get_raw_str(id_world);
     assert_eq!(retrieved_world, "world");
 
     // Ensure that inserting "hello" again returns the same ID

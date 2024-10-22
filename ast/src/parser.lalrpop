@@ -82,25 +82,25 @@ extern {
 
 //### basic types:
 
-Atom: usize = {
+Atom: u32 = {
     <start: @L> "atom" <end: @R> => {
         table.get_id(&input[start..end])
     }
 };
 
-String: usize = {
+String: u32 = {
     <start: @L> "string" <end: @R> => {
         table.get_id(&input[start..end])
     }
 };
 
-PoisonString: usize = {
+PoisonString: u32 = {
     <start: @L> "poison_str" <end: @R> => {
         table.get_id(&input[start..end])
     }
 };
 
-OverflowedInt: (usize,f64) = {
+OverflowedInt: (u32,f64) = {
     <start: @L> <f:"overvlow_int"> <end: @R> => {
         let id = table.get_id(&input[start..end]);
         (id,f)
@@ -108,7 +108,7 @@ OverflowedInt: (usize,f64) = {
 };
 
 
-Name: usize = {
+Name: u32 = {
     <start: @L> "name" <end: @R> => {
         table.get_id(&input[start..end])
     }
@@ -400,13 +400,13 @@ pub FuncSig: FuncSig = {
     <name:Name> <args:ArgList> => FuncSig{name, args},
 };
 
-ArgList: Vec<usize> = {
+ArgList: Vec<u32> = {
     "(" <args:CommaSepArgs> ")" => args,
 
     "(" ")" => vec![],
 };
 
-CommaSepArgs: Vec<usize> = {
+CommaSepArgs: Vec<u32> = {
     <args:CommaSepArgs> "," <arg:Name> => {
         let mut arguments = args;
         arguments.push(arg);
@@ -468,7 +468,7 @@ MatchOut : MatchOut = {
 
 MatchPattern : MatchPattern = {
     <l:Literal> => MatchPattern::Literal(l), 
-    <n:Name> => match table.compare_to(n,"_") {
+    <n:Name> => match table.get_raw_str(n)=="_" {
             true => MatchPattern::Wildcard,
             false => MatchPattern::Variable(n),
     },

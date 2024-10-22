@@ -1,11 +1,12 @@
-pub mod ir;
-pub mod basic_ops;
 pub mod reporting;
-
-pub mod translate;
-pub mod system;
-pub mod runners;
-
+pub mod value;
+pub mod vm;
+pub mod basic_ops;
 pub mod stack;
 
-mod test_code;
+pub mod translate;
+pub mod runtime;
+
+pub mod system;
+
+mod test_code_easy;

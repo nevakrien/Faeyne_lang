@@ -1,407 +1,941 @@
-use crate::ir::GcPointer;
-use ast::ast::StringTable;
-use ast::ast::BuildIn;
-use crate::ir::Value;
-use crate::reporting::*;
-use ast::get_id;
+// use crate::stack::{ValueStack};
+
+
 
 use ast::id::*;
+use ast::id::STRING_OUT_OF_BOUNDS;
+use ast::get_id;
+use crate::reporting::zero_div_error;
+use crate::reporting::sig_error;
+use crate::reporting::stacked_error;
+use crate::reporting::NoneCallble;
+use crate::reporting::overflow_error;
+use crate::reporting::bug_error;
+use codespan::Span;
+use std::sync::Arc;
+use crate::reporting::{ErrList,Error};
 
-pub fn get_type_ffi(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
-    if args.len() != 1 {
-        Err(Error::Sig(SigError {}).to_list())
-    } else {
-        Ok(get_type(args[0].clone()))
+use crate::value::Value;
+
+use ast::ast::StringTable;
+use crate::stack::ValueStack;
+
+
+#[cfg(test)]
+use crate::reporting::report_err_list;
+
+#[inline(always)]
+fn _is_equal<'code>(stack:&mut ValueStack<'code>,_table:&StringTable<'code>) -> Result<bool, ErrList> {
+    let a = stack.pop_value().ok_or_else(|| bug_error("over popping"))?;
+    let b = stack.pop_value().ok_or_else(|| bug_error("over popping"))?;
+
+    #[cfg(feature = "debug_terminators")]
+    stack.pop_terminator().ok_or_else(|| bug_error("failed to pop terminator"))?;
+    
+    Ok(a==b)
+}
+
+#[inline(always)]
+pub fn is_equal<'code>(stack:&mut ValueStack<'code>,table:&StringTable<'code>,span:Span) -> Result<bool, ErrList> {
+    _is_equal(stack,table).map_err(|err|{
+        stacked_error("while using is equal",err,span)
+        // Error::Stacked(InternalError{
+        //     message:"while using is equal",
+        //     err,
+        //     span:span,
+        // }).to_list()
+    })
+}
+
+
+pub fn is_equal_value<'code>(stack:&mut ValueStack<'code>,table:&StringTable<'code>,span:Span) -> Result<(), ErrList> {
+    match is_equal(stack,table,span){
+        Ok(b) => {
+            stack.push_bool(b).map_err(|_| overflow_error())
+        },
+        Err(e) => Err(e),
     }
 }
 
-pub fn get_type(v: Value<'_>) -> Value<'_> {
-    Value::Atom(get_type_id(v))
-}
 
-pub fn get_type_id(v: Value<'_>) -> usize {
-    match v {
-        Value::Nil => get_id!(":nil"),
-        Value::Bool(_) => get_id!(":bool"),
-        Value::String(_) => get_id!(":string"),
-        Value::Int(_) => get_id!(":int"),
-        Value::Float(_) => get_id!(":float"),
-        Value::Atom(_) => get_id!(":atom"),
-        Value::Func(_) => get_id!(":func"),
+pub fn is_not_equal_value<'code>(stack:&mut ValueStack<'code>,table:&StringTable<'code>,span:Span) -> Result<(), ErrList> {
+    match is_equal(stack,table,span){
+        Ok(b) => {
+            stack.push_bool(!b).map_err(|_| overflow_error())
+        },
+        Err(e) => Err(e),
     }
 }
 
-pub fn to_bool(v: &Value<'_>) -> bool {
-    match v {
-        Value::Bool(b) => *b,
-        Value::Int(i) => *i != 0,
-        Value::Float(f) => *f != 0.0,
+//can never ever fail because that would imply we can fail reporting an error
+pub fn to_string_debug<'code>(value: &Value<'code>, table: &StringTable<'code>) -> String {
+    match value {
+        Value::Nil => "nil".to_string(),
+        Value::Bool(b) => format!("bool({})", b),
+        Value::Int(i) => format!("int({})", i),
+        Value::Float(f) => format!("float({})", f),
+        Value::Atom(atom_id) => format!("atom({})", table.get_raw_str(*atom_id)),
+        Value::String(s) => format!("string(\"{}\")", s),
+        Value::Func(func) => format!("func({:p})", Arc::as_ptr(func)),
+        Value::WeakFunc(weak_func) => format!("weak_func({:p})", weak_func.as_ptr()),
+        Value::StaticFunc(static_func) => format!("static_func({:p})", static_func as *const _),
+        Value::DataFunc(d) => format!("data_func({:?})", d),
+
+    }
+}
+
+//can never ever fail because that would imply we can fail reporting an error
+pub fn to_string_runtime<'code>(value: &Value<'code>, table: &StringTable<'code>) -> String {
+    match value {
+        Value::Nil => "nil".to_string(),
+        Value::Bool(b) => format!("{}", b),
+        Value::Int(i) => format!("{}", i),
+        Value::Float(f) => format!("{}", f),
+        Value::Atom(atom_id) => table.get_raw_str(*atom_id).to_string(),
+        Value::String(s) => s.to_string(),
+        Value::Func(func) => format!("func({:p})", Arc::as_ptr(func)),
+        Value::WeakFunc(weak_func) => format!("weak_func({:p})", weak_func.as_ptr()),
+        Value::StaticFunc(static_func) => format!("static_func({:p})", static_func as *const _),
+        Value::DataFunc(d) => format!("data_func({:?})", d),
+
+    }
+}
+
+
+#[cold]
+#[inline(never)]
+pub fn non_callble_error<'code>(span:Span,called:&Value<'code>,table:&StringTable<'code>) -> ErrList {
+    let value = to_string_debug(called,table);
+    Error::NoneCallble(NoneCallble{span,value}).to_list()
+}
+
+pub fn is_equal_wraped<'code>(stack:&mut ValueStack<'code>,_table:&StringTable<'code>) -> Result<(), ErrList> {
+    let a = stack.pop_value().ok_or_else(|| Error::Bug("over popping").to_list())?;
+    let b = stack.pop_value().ok_or_else(|| Error::Bug("over popping").to_list())?;
+    stack.pop_terminator().ok_or_else(|| Error::Bug("failed to pop terminator").to_list())?;
+    stack.push_bool(a==b).map_err(|_| Error::Bug("impossible push fail").to_list())
+}
+
+#[test]
+fn test_is_equal() {
+
+    let mut value_stack = ValueStack::new();
+    let string_table = StringTable::new();
+
+    let mock_span = Span::default();
+
+
+    // let mut func_inputs = FuncInputs {
+    //     stack: value_stack,
+    //     table: &string_table,
+    // };
+
+    //equal explictly terminated atoms
+    let atom_a = Value::Atom(1); 
+    let atom_b = Value::Atom(1); 
+
+    #[cfg(feature = "debug_terminators")]
+    value_stack.push_terminator().unwrap(); //with a terminator
+    value_stack.push_value(atom_a).unwrap();
+    value_stack.push_value(atom_b).unwrap();
+
+    is_equal_value(&mut value_stack,&string_table,mock_span).unwrap();
+
+    let result = value_stack.pop_bool().unwrap();
+    assert!(result);
+
+
+    //non equal implictly terminated atoms
+
+    let atom_a = Value::Atom(2);
+    let atom_b = Value::Atom(1); 
+    value_stack.push_value(atom_a).unwrap();
+    value_stack.push_value(atom_b).unwrap();
+
+    is_equal_value(&mut value_stack,&string_table,mock_span).unwrap();
+    
+
+    let result = value_stack.pop_bool().unwrap();
+    assert!(!result);
+
+    //atom and nil
+
+    let atom_a = Value::Atom(2); 
+    let nil = Value::Nil; 
+    value_stack.push_value(atom_a).unwrap();
+    value_stack.push_value(nil).unwrap();
+
+    is_equal_value(&mut value_stack,&string_table,mock_span).unwrap();
+    
+
+    #[cfg(feature = "debug_terminators")]{
+        let result = value_stack.pop_bool().unwrap();
+        assert!(!result);
+
+        //too many values
+        value_stack.push_value(Value::Nil).unwrap();
+        value_stack.push_value(Value::Nil).unwrap();
+        value_stack.push_value(Value::Nil).unwrap();
+
+        let res = is_equal_value(&mut value_stack,&string_table,mock_span);
+        assert!(res.is_err());
+
+        //to few values
+        value_stack.push_terminator().unwrap();
+        let res = is_equal_value(&mut value_stack,&string_table,mock_span);
+        assert!(res.is_err());
+    }
+
+}
+
+
+#[inline]
+fn to_bool(value: &Value<'_>) -> bool {
+    match value {
         Value::Nil => false,
-        Value::String(p) => !p.is_empty(),
-        _ => true, // default to truthy for other types
+        Value::Bool(b) => *b,
+        Value::Int(i) => *i > 0,
+        Value::Float(f) => *f > 0.0,
+        Value::String(s) => !s.is_empty(),
+        Value::Atom(_) | Value::Func(_) | Value::WeakFunc(_) | Value::StaticFunc(_) | Value::DataFunc(_)=> true,
     }
 }
 
-pub fn is_equal<'ctx>(v1: &Value<'ctx>, v2: &Value<'ctx>) -> bool {
-    match (v1, v2) {
-        (Value::Int(i1), Value::Int(i2)) => i1 == i2,
-        (Value::Float(f1), Value::Float(f2)) => f1 == f2,
-        (Value::Int(i), Value::Float(f)) | (Value::Float(f), Value::Int(i)) => (*i as f64) == *f,
-        (Value::Atom(a), Value::Atom(b)) => a == b,
-        (Value::Bool(a), Value::Bool(b)) => a == b,
-        (Value::String(a), Value::String(b)) => a == b,
-        (Value::Nil, Value::Nil) => true,
-        (Value::Func(f1),Value::Func(f2)) => f1==f2,
-        _ => false, // Type mismatch or unsupported types
-    }
+pub fn logical_and<'code>(stack: &mut ValueStack<'code>,_table:&StringTable<'code>, span: Span) -> Result<(), ErrList> {
+    let a = stack.pop_value().ok_or_else(|| stacked_error("while calling &&", bug_error("over popping"), span))?;
+    let b = stack.pop_value().ok_or_else(|| stacked_error("while calling &&", bug_error("over popping"), span))?;
+
+    #[cfg(feature = "debug_terminators")]
+    stack.pop_terminator().ok_or_else(|| stacked_error("while calling &&", bug_error("failed to pop terminator"), span))?;
+
+    let result = to_bool(&a) && to_bool(&b);
+    stack.push_bool(result).map_err(|_| stacked_error("while calling &&", overflow_error(), span))
 }
 
-pub fn to_string<'ctx>(value: &Value<'ctx>, table: &StringTable<'ctx>) -> String {
-    match value {
-        Value::Atom(id) => table
-            .get_string(*id)
-            .unwrap_or("<unknown atom>")
-            .to_string(),
-        Value::Int(x) => format!("{}", x),
-        Value::Float(x) => format!("{}", x),
-        Value::String(s) => s.to_string(),
-        _ => format!("{:?}", value), // For other types
-    }
+pub fn logical_or<'code>(stack: &mut ValueStack<'code>,_table:&StringTable<'code>, span: Span) -> Result<(), ErrList> {
+    let a = stack.pop_value().ok_or_else(|| stacked_error("while calling ||",bug_error("over popping"), span))?;
+    let b = stack.pop_value().ok_or_else(|| stacked_error("while calling ||", bug_error("over popping"), span))?;
+
+    #[cfg(feature = "debug_terminators")]
+    stack.pop_terminator().ok_or_else(|| stacked_error("while calling ||", bug_error("failed to pop terminator"), span))?;
+
+    let result = to_bool(&a) || to_bool(&b);
+    stack.push_bool(result).map_err(|_| stacked_error("while calling ||", overflow_error(), span))
 }
 
-pub fn try_string<'a>(x: &'a Value<'_>) -> Result<&'a str,ErrList> {
-    let Value::String(gc) = x else { return Err(Error::Sig(SigError {}).to_list()); };
-    Ok(gc)
+pub fn logical_xor<'code>(stack: &mut ValueStack<'code>,_table:&StringTable<'code>, span: Span) -> Result<(), ErrList> {
+    let a = stack.pop_value().ok_or_else(|| stacked_error("while calling ^^", bug_error("over popping"), span))?;
+    let b = stack.pop_value().ok_or_else(|| stacked_error("while calling ^^", bug_error("over popping"), span))?;
+
+    #[cfg(feature = "debug_terminators")]
+    stack.pop_terminator().ok_or_else(|| stacked_error("while calling ^^", bug_error("failed to pop terminator"), span))?;
+
+    let result = to_bool(&a) ^ to_bool(&b);
+    stack.push_bool(result).map_err(|_| stacked_error("while calling ^^", overflow_error(), span))
 }
 
-pub fn try_int(x: &Value<'_>) -> Result<i64,ErrList> {
-    let Value::Int(i) = x else { return Err(Error::Sig(SigError {}).to_list()); };
-    Ok(*i)
+#[test]
+fn test_logical_operations() {
+    let mut value_stack = ValueStack::new();
+    let string_table = StringTable::new();
+    let mock_span = Span::default();
+
+    // Test to_bool function
+    assert!(!to_bool(&Value::Nil));
+    assert!(!to_bool(&Value::Bool(false)));
+    assert!(to_bool(&Value::Bool(true)));
+    assert!(to_bool(&Value::Int(1)));
+    assert!(!to_bool(&Value::Int(0)));
+    assert!(to_bool(&Value::Float(1.0)));
+    assert!(!to_bool(&Value::Float(0.0)));
+    assert!(to_bool(&Value::String("non-empty".to_string().into())));
+    assert!(!to_bool(&Value::String("".to_string().into())));
+    assert!(to_bool(&Value::Atom(1)));
+
+    // Test logical AND (&&)
+    value_stack.push_value(Value::Bool(true)).unwrap();
+    value_stack.push_value(Value::Bool(true)).unwrap();
+    logical_and(&mut value_stack,&string_table, mock_span).unwrap();
+    let result = value_stack.pop_bool().unwrap();
+    assert!(result);
+
+    value_stack.push_value(Value::Bool(true)).unwrap();
+    value_stack.push_value(Value::Bool(false)).unwrap();
+    logical_and(&mut value_stack,&string_table, mock_span).unwrap();
+    let result = value_stack.pop_bool().unwrap();
+    assert!(!result);
+
+    // Test logical OR (||)
+    value_stack.push_value(Value::Bool(false)).unwrap();
+    value_stack.push_value(Value::Bool(true)).unwrap();
+    logical_or(&mut value_stack,&string_table, mock_span).unwrap();
+    let result = value_stack.pop_bool().unwrap();
+    assert!(result);
+
+    value_stack.push_value(Value::Bool(false)).unwrap();
+    value_stack.push_value(Value::Bool(false)).unwrap();
+    logical_or(&mut value_stack,&string_table, mock_span).unwrap();
+    let result = value_stack.pop_bool().unwrap();
+    assert!(!result);
+
+    // Test logical XOR (^^)
+    value_stack.push_value(Value::Bool(true)).unwrap();
+    value_stack.push_value(Value::Bool(false)).unwrap();
+    logical_xor(&mut value_stack,&string_table, mock_span).unwrap();
+    let result = value_stack.pop_bool().unwrap();
+    assert!(result);
+
+    value_stack.push_value(Value::Bool(true)).unwrap();
+    value_stack.push_value(Value::Bool(true)).unwrap();
+    logical_xor(&mut value_stack,&string_table, mock_span).unwrap();
+    let result = value_stack.pop_bool().unwrap();
+    assert!(!result);
+
+    value_stack.push_value(Value::Bool(false)).unwrap();
+    value_stack.push_value(Value::Bool(false)).unwrap();
+    logical_xor(&mut value_stack,&string_table, mock_span).unwrap();
+    let result = value_stack.pop_bool().unwrap();
+    assert!(!result);
 }
 
-pub fn nerfed_to_string(value: &Value<'_>) -> String {
-    match value {
-        Value::Atom(id) => format!("Atom<{}>", id),
-        Value::Int(x) => format!("{}", x),
-        Value::Float(x) => format!("{}", x),
-        Value::String(s) => s.to_string(),
-        _ => format!("{:?}", value), // For other types
-    }
+pub fn smaller<'code>(stack: &mut ValueStack<'code>, _table: &StringTable<'code>, span: Span) -> Result<(), ErrList> {
+    let b = stack.pop_value().ok_or_else(|| stacked_error("while calling <", bug_error("over popping"), span))?;
+    let a = stack.pop_value().ok_or_else(|| stacked_error("while calling <", bug_error("over popping"), span))?;
+
+
+    #[cfg(feature = "debug_terminators")]
+    stack.pop_terminator().ok_or_else(|| stacked_error("while calling <", bug_error("failed to pop terminator"), span))?;
+
+    let result = match (a, b) {
+        (Value::Int(a), Value::Int(b)) => a < b,
+        (Value::Float(a), Value::Float(b)) => a < b,
+        (Value::Int(a), Value::Float(b)) => (a as f64) < b,
+        (Value::Float(a), Value::Int(b)) => a < (b as f64),
+        _ => return Err(stacked_error("while calling <", bug_error("invalid comparison"), span)),
+    };
+    stack.push_bool(result).map_err(|_| stacked_error("while calling <", overflow_error(), span))
 }
 
-pub fn call_string(s:GcPointer<String>,args:Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
-    if args.len() != 1 {
-        return Err(Error::Sig(SigError {}).to_list());
-    }
-    if let Value::Atom(get_id!(":len")) = args[0] {
-        return Ok(Value::Int(s.len() as i64));
-    }
-    let i = try_int(&args[0])?;
-    match s.chars().nth(i as usize) {
-        Some(c) => Ok(Value::String(GcPointer::new(c.to_string()))), 
-        None => Ok(Value::Atom(get_id!(":string_out_of_bounds"))),
-    }
+pub fn bigger<'code>(stack: &mut ValueStack<'code>, _table: &StringTable<'code>, span: Span) -> Result<(), ErrList> {
+    let b = stack.pop_value().ok_or_else(|| stacked_error("while calling >", bug_error("over popping"), span))?;
+    let a = stack.pop_value().ok_or_else(|| stacked_error("while calling >", bug_error("over popping"), span))?;
+
+    #[cfg(feature = "debug_terminators")]
+    stack.pop_terminator().ok_or_else(|| stacked_error("while calling >", bug_error("failed to pop terminator"), span))?;
+
+    let result = match (a, b) {
+        (Value::Int(a), Value::Int(b)) => a > b,
+        (Value::Float(a), Value::Float(b)) => a > b,
+        (Value::Int(a), Value::Float(b)) => (a as f64) > b,
+        (Value::Float(a), Value::Int(b)) => a > (b as f64),
+        _ => return Err(stacked_error("while calling >", bug_error("invalid comparison"), span)),
+    };
+    stack.push_bool(result).map_err(|_| stacked_error("while calling >", overflow_error(), span))
 }
 
-// Arithmetic Functions
+pub fn smaller_eq<'code>(stack: &mut ValueStack<'code>, _table: &StringTable<'code>, span: Span) -> Result<(), ErrList> {
+    let b = stack.pop_value().ok_or_else(|| stacked_error("while calling <=", bug_error("over popping"), span))?;
+    let a = stack.pop_value().ok_or_else(|| stacked_error("while calling <=", bug_error("over popping"), span))?;
 
-pub fn buildin_add(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
-    if args.len() != 2 {
-        return Err(Error::Sig(SigError {}).to_list());
-    }
-    let a = &args[0];
-    let b = &args[1];
+    #[cfg(feature = "debug_terminators")]
+    stack.pop_terminator().ok_or_else(|| stacked_error("while calling <=", bug_error("failed to pop terminator"), span))?;
 
-    match (a, b) {
-        (Value::String(s1), Value::String(s2)) => {
-            let mut ans = String::with_capacity(s1.len() + s2.len());
-            ans.push_str(s1);
-            ans.push_str(s2);
-            Ok(Value::String(ans.into()))
-        }
-        (Value::String(s1), b) => {
-            let s2 = nerfed_to_string(b);
-            let mut ans = String::with_capacity(s1.len() + s2.len());
-            ans.push_str(s1);
-            ans.push_str(&s2);
-            Ok(Value::String(ans.into()))
-        }
-        (Value::Int(i1), Value::Int(i2)) => Ok(Value::Int(i1 + i2)),
-        (Value::Float(f1), Value::Float(f2)) => Ok(Value::Float(f1 + f2)),
-        (Value::Int(i), Value::Float(f)) => Ok(Value::Float(*i as f64 + f)),
-        (Value::Float(f), Value::Int(i)) => Ok(Value::Float(f + *i as f64)),
-        _ => Err(Error::Sig(SigError {}).to_list()),
-    }
+    let result = match (a, b) {
+        (Value::Int(a), Value::Int(b)) => a <= b,
+        (Value::Float(a), Value::Float(b)) => a <= b,
+        (Value::Int(a), Value::Float(b)) => (a as f64) <= b,
+        (Value::Float(a), Value::Int(b)) => a <= (b as f64),
+        _ => return Err(stacked_error("while calling <=", bug_error("invalid comparison"), span)),
+    };
+    stack.push_bool(result).map_err(|_| stacked_error("while calling <=", overflow_error(), span))
 }
 
-pub fn buildin_sub(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
-    if args.len() != 2 {
-        return Err(Error::Sig(SigError {}).to_list());
-    }
-    let a = &args[0];
-    let b = &args[1];
+pub fn bigger_eq<'code>(stack: &mut ValueStack<'code>, _table: &StringTable<'code>, span: Span) -> Result<(), ErrList> {
+    let b = stack.pop_value().ok_or_else(|| stacked_error("while calling >=", bug_error("over popping"), span))?;
+    let a = stack.pop_value().ok_or_else(|| stacked_error("while calling >=", bug_error("over popping"), span))?;
 
-    match (a, b) {
-        (Value::Int(i1), Value::Int(i2)) => Ok(Value::Int(i1 - i2)),
-        (Value::Float(f1), Value::Float(f2)) => Ok(Value::Float(f1 - f2)),
-        (Value::Int(i), Value::Float(f)) => Ok(Value::Float(*i as f64 - f)),
-        (Value::Float(f), Value::Int(i)) => Ok(Value::Float(f - *i as f64)),
-        _ => Err(Error::Sig(SigError {}).to_list()),
-    }
+    #[cfg(feature = "debug_terminators")]
+    stack.pop_terminator().ok_or_else(|| stacked_error("while calling >=", bug_error("failed to pop terminator"), span))?;
+
+    let result = match (a, b) {
+        (Value::Int(a), Value::Int(b)) => a >= b,
+        (Value::Float(a), Value::Float(b)) => a >= b,
+        (Value::Int(a), Value::Float(b)) => (a as f64) >= b,
+        (Value::Float(a), Value::Int(b)) => a >= (b as f64),
+        _ => return Err(stacked_error("while calling >=", bug_error("invalid comparison"), span)),
+    };
+    stack.push_bool(result).map_err(|_| stacked_error("while calling >=", overflow_error(), span))
 }
 
-pub fn buildin_mul(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
-    if args.len() != 2 {
-        return Err(Error::Sig(SigError {}).to_list());
-    }
-    let a = &args[0];
-    let b = &args[1];
+#[test]
+fn test_comparison_operations() {
+    let mut value_stack = ValueStack::new();
+    let string_table = StringTable::new();
+    let mock_span = Span::default();
 
-    match (a, b) {
-        (Value::Int(i1), Value::Int(i2)) => Ok(Value::Int(i1 * i2)),
-        (Value::Float(f1), Value::Float(f2)) => Ok(Value::Float(f1 * f2)),
-        (Value::Int(i), Value::Float(f)) => Ok(Value::Float(*i as f64 * f)),
-        (Value::Float(f), Value::Int(i)) => Ok(Value::Float(f * *i as f64)),
-        _ => Err(Error::Sig(SigError {}).to_list()),
-    }
+    // Test Smaller (<)
+    value_stack.push_value(Value::Int(1)).unwrap();
+    value_stack.push_value(Value::Int(2)).unwrap();
+    smaller(&mut value_stack, &string_table, mock_span).unwrap();
+    let result = value_stack.pop_bool().unwrap();
+    assert!(result);
+
+    // Test Bigger (>)
+    value_stack.push_value(Value::Int(3)).unwrap();
+    value_stack.push_value(Value::Int(2)).unwrap();
+    bigger(&mut value_stack, &string_table, mock_span).unwrap();
+    let result = value_stack.pop_bool().unwrap();
+    assert!(result);
+
+    // Test SmallerEq (<=)
+    value_stack.push_value(Value::Int(2)).unwrap();
+    value_stack.push_value(Value::Int(2)).unwrap();
+    smaller_eq(&mut value_stack, &string_table, mock_span).unwrap();
+    let result = value_stack.pop_bool().unwrap();
+    assert!(result);
+
+    // Test BiggerEq (>=)
+    value_stack.push_value(Value::Float(3.0)).unwrap();
+    value_stack.push_value(Value::Int(3)).unwrap();
+    bigger_eq(&mut value_stack, &string_table, mock_span).unwrap();
+    let result = value_stack.pop_bool().unwrap();
+    assert!(result);
 }
 
-pub fn buildin_div(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
-    if args.len() != 2 {
-        return Err(Error::Sig(SigError {}).to_list());
-    }
-    let a = &args[0];
-    let b = &args[1];
+#[cold]
+pub fn pow<'code>(stack: &mut ValueStack<'code>, _table: &StringTable<'code>, span: Span) -> Result<(), ErrList> {
+    let b = stack.pop_value().ok_or_else(|| stacked_error("while calling **", bug_error("over popping"), span))?;
+    let a = stack.pop_value().ok_or_else(|| stacked_error("while calling **", bug_error("over popping"), span))?;
 
-    match (a, b) {
-        (Value::Int(i1), Value::Int(i2)) => {
-            if *i2 == 0 {
-                Err(Error::Sig(SigError {}).to_list())
-            } else if i1 % i2 == 0 {
-                Ok(Value::Int(i1 / i2))
+    #[cfg(feature = "debug_terminators")]
+    stack.pop_terminator().ok_or_else(|| stacked_error("while calling pow", bug_error("failed to pop terminator"), span))?;
+
+    let result = match (a, b) {
+        (Value::Int(a), Value::Int(b)) => Value::Int(a.pow(b as u32)),
+        (Value::Float(a), Value::Float(b)) => Value::Float(a.powf(b)),
+        (Value::Int(a), Value::Float(b)) => Value::Float((a as f64).powf(b)),
+        (Value::Float(a), Value::Int(b)) => Value::Float(a.powf(b as f64)),
+
+        _ => return Err(stacked_error("while calling pow", sig_error(), span)),
+    };
+    stack.push_value(result).map_err(|_| stacked_error("while calling pow", overflow_error(), span))
+}
+
+pub fn mul<'code>(stack: &mut ValueStack<'code>, _table: &StringTable<'code>, span: Span) -> Result<(), ErrList> {
+    let b = stack.pop_value().ok_or_else(|| stacked_error("while calling *", bug_error("over popping"), span))?;
+    let a = stack.pop_value().ok_or_else(|| stacked_error("while calling *", bug_error("over popping"), span))?;
+
+    #[cfg(feature = "debug_terminators")]
+    stack.pop_terminator().ok_or_else(|| stacked_error("while calling *", bug_error("failed to pop terminator"), span))?;
+
+    let result = match (a, b) {
+        (Value::Int(a), Value::Int(b)) => Value::Int(a * b),
+        (Value::Float(a), Value::Float(b)) => Value::Float(a * b),
+        (Value::Int(a), Value::Float(b)) => Value::Float((a as f64) * b),
+        (Value::Float(a), Value::Int(b)) => Value::Float(a * (b as f64)),
+        _ => return Err(stacked_error("while calling *", sig_error(), span)),
+    };
+    stack.push_value(result).map_err(|_| stacked_error("while calling *", overflow_error(), span))
+}
+
+pub fn sub<'code>(stack: &mut ValueStack<'code>, _table: &StringTable<'code>, span: Span) -> Result<(), ErrList> {
+    let b = stack.pop_value().ok_or_else(|| stacked_error("while calling -", bug_error("over popping"), span))?;
+    let a = stack.pop_value().ok_or_else(|| stacked_error("while calling -", bug_error("over popping"), span))?;
+
+    #[cfg(feature = "debug_terminators")]
+    stack.pop_terminator().ok_or_else(|| stacked_error("while calling -", bug_error("failed to pop terminator"), span))?;
+
+    let result = match (a, b) {
+        (Value::Int(a), Value::Int(b)) => Value::Int(a - b),
+        (Value::Float(a), Value::Float(b)) => Value::Float(a - b),
+        (Value::Int(a), Value::Float(b)) => Value::Float((a as f64) - b),
+        (Value::Float(a), Value::Int(b)) => Value::Float(a - (b as f64)),
+        _ => return Err(stacked_error("while calling -", sig_error(), span)),
+    };
+    stack.push_value(result).map_err(|_| stacked_error("while calling -", overflow_error(), span))
+}
+
+#[test]
+fn test_arithmetic_operations() {
+    let mut value_stack = ValueStack::new();
+    let string_table = StringTable::new();
+    let mock_span = Span::default();
+
+    // Test Pow
+    value_stack.push_value(Value::Int(2)).unwrap();
+    value_stack.push_value(Value::Int(3)).unwrap();
+    pow(&mut value_stack, &string_table, mock_span).unwrap();
+    let result = value_stack.pop_value().unwrap();
+    assert_eq!(result, Value::Int(8));
+
+    // Test Mul (*)
+    value_stack.push_value(Value::Int(3)).unwrap();
+    value_stack.push_value(Value::Int(4)).unwrap();
+    mul(&mut value_stack, &string_table, mock_span).unwrap();
+    let result = value_stack.pop_value().unwrap();
+    assert_eq!(result, Value::Int(12));
+
+    // Test Sub (-)
+    value_stack.push_value(Value::Int(10)).unwrap();
+    value_stack.push_value(Value::Int(4)).unwrap();
+    sub(&mut value_stack, &string_table, mock_span).unwrap();
+    let result = value_stack.pop_value().unwrap();
+    assert_eq!(result, Value::Int(6));
+}
+
+pub fn div<'code>(stack: &mut ValueStack<'code>, _table: &StringTable<'code>, span: Span) -> Result<(), ErrList> {
+    let b = stack.pop_value().ok_or_else(|| stacked_error("while calling /", bug_error("over popping"), span))?;
+    let a = stack.pop_value().ok_or_else(|| stacked_error("while calling /", bug_error("over popping"), span))?;
+
+    #[cfg(feature = "debug_terminators")]
+    stack.pop_terminator().ok_or_else(|| stacked_error("while calling /", bug_error("failed to pop terminator"), span))?;
+
+    let result = match (a, b) {
+        (Value::Int(a), Value::Int(b)) => {
+            if b == 0 {
+                return Err(stacked_error("while calling /", zero_div_error(), span));
+            }
+            if a % b == 0 {
+                Value::Int(a / b)
             } else {
-                Ok(Value::Float(*i1 as f64 / *i2 as f64))
+                Value::Float((a as f64) / (b as f64))
             }
         }
-        (Value::Float(f1), Value::Float(f2)) => Ok(Value::Float(f1 / f2)),
-        (Value::Int(i), Value::Float(f)) => Ok(Value::Float(*i as f64 / f)),
-        (Value::Float(f), Value::Int(i)) => Ok(Value::Float(*f / *i as f64)),
-        _ => Err(Error::Sig(SigError {}).to_list()),
-    }
-}
-
-pub fn buildin_int_div(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
-    if args.len() != 2 {
-        return Err(Error::Sig(SigError {}).to_list());
-    }
-    if let (Value::Int(i1), Value::Int(i2)) = (&args[0], &args[1]) {
-        if *i2 == 0 {
-            Err(Error::Sig(SigError {}).to_list())
-        } else {
-            Ok(Value::Int(i1 / i2))
+        (Value::Float(a), Value::Float(b)) => {
+            if b == 0.0 {
+                return Err(stacked_error("while calling /", zero_div_error(), span));
+            }
+            Value::Float(a / b)
         }
-    } else {
-        Err(Error::Sig(SigError {}).to_list())
-    }
-}
-
-pub fn buildin_modulo(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
-    if args.len() != 2 {
-        return Err(Error::Sig(SigError {}).to_list());
-    }
-    if let (Value::Int(i1), Value::Int(i2)) = (&args[0], &args[1]) {
-        if *i2 == 0 {
-            Err(Error::Sig(SigError {}).to_list())
-        } else {
-            Ok(Value::Int(i1 % i2))
+        (Value::Int(a), Value::Float(b)) => {
+            if b == 0.0 {
+                return Err(stacked_error("while calling /", zero_div_error(), span));
+            }
+            Value::Float((a as f64) / b)
         }
-    } else {
-        Err(Error::Sig(SigError {}).to_list())
-    }
+        (Value::Float(a), Value::Int(b)) => {
+            if b == 0 {
+                return Err(stacked_error("while calling /", zero_div_error(), span));
+            }
+            Value::Float(a / (b as f64))
+        }
+        _ => return Err(stacked_error("while calling /", sig_error(), span)),
+    };
+    stack.push_value(result).map_err(|_| stacked_error("while calling /", overflow_error(), span))
 }
 
-pub fn buildin_pow(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
-    if args.len() != 2 {
-        return Err(Error::Sig(SigError {}).to_list());
-    }
-    let a = &args[0];
-    let b = &args[1];
+pub fn modulo<'code>(stack: &mut ValueStack<'code>, _table: &StringTable<'code>, span: Span) -> Result<(), ErrList> {
+    let b = stack.pop_value().ok_or_else(|| stacked_error("while calling %", bug_error("over popping"), span))?;
+    let a = stack.pop_value().ok_or_else(|| stacked_error("while calling %", bug_error("over popping"), span))?;
 
-    match (a, b) {
-        (Value::Int(i1), Value::Int(i2)) => {
-            if *i2 >= 0 {
-                Ok(Value::Int(i1.pow(*i2 as u32)))
+    #[cfg(feature = "debug_terminators")]
+    stack.pop_terminator().ok_or_else(|| stacked_error("while calling %", bug_error("failed to pop terminator"), span))?;
+
+    let result = match (a, b) {
+        (Value::Int(a), Value::Int(b)) => {
+            if b == 0 {
+                return Err(stacked_error("while calling %", zero_div_error(), span));
+            }
+            Value::Int(a % b)
+        }
+        (Value::Float(a), Value::Float(b)) => {
+            if b == 0.0 {
+                return Err(stacked_error("while calling %", zero_div_error(), span));
+            }
+            Value::Float(a % b)
+        }
+        (Value::Int(a), Value::Float(b)) => {
+            if b == 0.0 {
+                return Err(stacked_error("while calling %", zero_div_error(), span));
+            }
+            Value::Float((a as f64) % b)
+        }
+        (Value::Float(a), Value::Int(b)) => {
+            if b == 0 {
+                return Err(stacked_error("while calling %", zero_div_error(), span));
+            }
+            Value::Float(a % (b as f64))
+        }
+        _ => return Err(stacked_error("while calling %", sig_error(), span)),
+    };
+    stack.push_value(result).map_err(|_| stacked_error("while calling %", overflow_error(), span))
+}
+
+pub fn int_div<'code>(stack: &mut ValueStack<'code>, _table: &StringTable<'code>, span: Span) -> Result<(), ErrList> {
+    let b = stack.pop_value().ok_or_else(|| stacked_error("while calling //", bug_error("over popping"), span))?;
+    let a = stack.pop_value().ok_or_else(|| stacked_error("while calling //", bug_error("over popping"), span))?;
+
+    #[cfg(feature = "debug_terminators")]
+    stack.pop_terminator().ok_or_else(|| stacked_error("while calling //", bug_error("failed to pop terminator"), span))?;
+
+    let result = match (a, b) {
+        (Value::Int(a), Value::Int(b)) => {
+            if b == 0 {
+                return Err(stacked_error("while calling //", zero_div_error(), span));
+            }
+            Value::Int(a / b)
+        }
+        (Value::Float(a), Value::Float(b)) => {
+            if b == 0.0 {
+                return Err(stacked_error("while calling //", zero_div_error(), span));
+            }
+            Value::Int((a / b).floor() as i64)
+        }
+        (Value::Int(a), Value::Float(b)) => {
+            if b == 0.0 {
+                return Err(stacked_error("while calling //", zero_div_error(), span));
+            }
+            Value::Int(((a as f64) / b).floor() as i64)
+        }
+        (Value::Float(a), Value::Int(b)) => {
+            if b == 0 {
+                return Err(stacked_error("while calling //", zero_div_error(), span));
+            }
+            Value::Int((a / (b as f64)).floor() as i64)
+        }
+        _ => return Err(stacked_error("while calling //", sig_error(), span)),
+    };
+    stack.push_value(result).map_err(|_| stacked_error("while calling //", overflow_error(), span))
+}
+
+#[test]
+fn test_division_operations() {
+    let mut value_stack = ValueStack::new();
+    let string_table = StringTable::new();
+    let mock_span = Span::default();
+
+    // Test Div (/)
+    value_stack.push_value(Value::Int(10)).unwrap();
+    value_stack.push_value(Value::Int(2)).unwrap();
+    div(&mut value_stack, &string_table, mock_span).unwrap();
+    let result = value_stack.pop_value().unwrap();
+    assert_eq!(result, Value::Int(5));
+
+    value_stack.push_value(Value::Int(10)).unwrap();
+    value_stack.push_value(Value::Int(3)).unwrap();
+    div(&mut value_stack, &string_table, mock_span).unwrap();
+    let result = value_stack.pop_value().unwrap();
+    assert_eq!(result, Value::Float(10.0 / 3.0));
+
+    // Test Modulo (%)
+    value_stack.push_value(Value::Int(10)).unwrap();
+    value_stack.push_value(Value::Int(3)).unwrap();
+    modulo(&mut value_stack, &string_table, mock_span).unwrap();
+    let result = value_stack.pop_value().unwrap();
+    assert_eq!(result, Value::Int(1));
+
+    // Test IntDiv (//)
+    value_stack.push_value(Value::Float(10.0)).unwrap();
+    value_stack.push_value(Value::Float(3.0)).unwrap();
+    int_div(&mut value_stack, &string_table, mock_span).unwrap();
+    let result = value_stack.pop_value().unwrap();
+    assert_eq!(result, Value::Int(3));
+}
+
+#[cold]
+pub fn bitwise_and<'code>(stack: &mut ValueStack<'code>, _table: &StringTable<'code>, span: Span) -> Result<(), ErrList> {
+    let b = stack.pop_value().ok_or_else(|| stacked_error("while calling &", bug_error("over popping"), span))?;
+    let a = stack.pop_value().ok_or_else(|| stacked_error("while calling &", bug_error("over popping"), span))?;
+
+    #[cfg(feature = "debug_terminators")]
+    stack.pop_terminator().ok_or_else(|| stacked_error("while calling &", bug_error("failed to pop terminator"), span))?;
+
+    let result = match (a, b) {
+        (Value::Int(a), Value::Int(b)) => Value::Int(a & b),
+        (Value::Bool(a), Value::Bool(b)) => Value::Bool(a & b),
+        _ => return Err(stacked_error("while calling &", sig_error(), span)),
+    };
+    stack.push_value(result).map_err(|_| stacked_error("while calling &", overflow_error(), span))
+}
+
+#[cold]
+pub fn bitwise_or<'code>(stack: &mut ValueStack<'code>, _table: &StringTable<'code>, span: Span) -> Result<(), ErrList> {
+    let b = stack.pop_value().ok_or_else(|| stacked_error("while calling |", bug_error("over popping"), span))?;
+    let a = stack.pop_value().ok_or_else(|| stacked_error("while calling |", bug_error("over popping"), span))?;
+
+    #[cfg(feature = "debug_terminators")]
+    stack.pop_terminator().ok_or_else(|| stacked_error("while calling |", bug_error("failed to pop terminator"), span))?;
+
+    let result = match (a, b) {
+        (Value::Int(a), Value::Int(b)) => Value::Int(a | b),
+        (Value::Bool(a), Value::Bool(b)) => Value::Bool(a | b),
+        _ => return Err(stacked_error("while calling |", sig_error(), span)),
+    };
+    stack.push_value(result).map_err(|_| stacked_error("while calling |", overflow_error(), span))
+}
+
+#[cold]
+pub fn bitwise_xor<'code>(stack: &mut ValueStack<'code>, _table: &StringTable<'code>, span: Span) -> Result<(), ErrList> {
+    let b = stack.pop_value().ok_or_else(|| stacked_error("while calling ^", bug_error("over popping"), span))?;
+    let a = stack.pop_value().ok_or_else(|| stacked_error("while calling ^", bug_error("over popping"), span))?;
+
+    #[cfg(feature = "debug_terminators")]
+    stack.pop_terminator().ok_or_else(|| stacked_error("while calling ^", bug_error("failed to pop terminator"), span))?;
+
+    let result = match (a, b) {
+        (Value::Int(a), Value::Int(b)) => Value::Int(a ^ b),
+        (Value::Bool(a), Value::Bool(b)) => Value::Bool(a ^ b),
+        _ => return Err(stacked_error("while calling ^", sig_error(), span)),
+    };
+    stack.push_value(result).map_err(|_| stacked_error("while calling ^", overflow_error(), span))
+}
+
+#[test]
+fn test_bitwise_operations() {
+    let mut value_stack = ValueStack::new();
+    let string_table = StringTable::new();
+    let mock_span = Span::default();
+
+    // Test Bitwise AND (&)
+    value_stack.push_value(Value::Int(6)).unwrap();
+    value_stack.push_value(Value::Int(3)).unwrap();
+    bitwise_and(&mut value_stack, &string_table, mock_span).unwrap();
+    let result = value_stack.pop_value().unwrap();
+    assert_eq!(result, Value::Int(2));
+
+    value_stack.push_value(Value::Bool(true)).unwrap();
+    value_stack.push_value(Value::Bool(false)).unwrap();
+    bitwise_and(&mut value_stack, &string_table, mock_span).unwrap();
+    let result = value_stack.pop_value().unwrap();
+    assert_eq!(result, Value::Bool(false));
+
+    // Test Bitwise OR (|)
+    value_stack.push_value(Value::Int(6)).unwrap();
+    value_stack.push_value(Value::Int(3)).unwrap();
+    bitwise_or(&mut value_stack, &string_table, mock_span).unwrap();
+    let result = value_stack.pop_value().unwrap();
+    assert_eq!(result, Value::Int(7));
+
+    value_stack.push_value(Value::Bool(true)).unwrap();
+    value_stack.push_value(Value::Bool(false)).unwrap();
+    bitwise_or(&mut value_stack, &string_table, mock_span).unwrap();
+    let result = value_stack.pop_value().unwrap();
+    assert_eq!(result, Value::Bool(true));
+
+    // Test Bitwise XOR (^)
+    value_stack.push_value(Value::Int(6)).unwrap();
+    value_stack.push_value(Value::Int(3)).unwrap();
+    bitwise_xor(&mut value_stack, &string_table, mock_span).unwrap();
+    let result = value_stack.pop_value().unwrap();
+    assert_eq!(result, Value::Int(5));
+
+    value_stack.push_value(Value::Bool(true)).unwrap();
+    value_stack.push_value(Value::Bool(false)).unwrap();
+    bitwise_xor(&mut value_stack, &string_table, mock_span).unwrap();
+    let result = value_stack.pop_value().unwrap();
+    assert_eq!(result, Value::Bool(true));
+}
+
+pub fn add<'code>(stack: &mut ValueStack<'code>, _table: &StringTable<'code>, span: Span) -> Result<(), ErrList> {
+    let b = stack.pop_value().ok_or_else(|| stacked_error("while calling +", sig_error(), span))?;
+    let a = stack.pop_value().ok_or_else(|| stacked_error("while calling +", sig_error(), span))?;
+
+    #[cfg(feature = "debug_terminators")]
+    stack.pop_terminator().ok_or_else(|| stacked_error("while calling +", sig_error(), span))?;
+
+    let result = match (a, b) {
+        // Numeric addition for Ints and Floats
+        (Value::Int(a), Value::Int(b)) => Value::Int(a + b),
+        (Value::Float(a), Value::Float(b)) => Value::Float(a + b),
+        (Value::Int(a), Value::Float(b)) => Value::Float((a as f64) + b),
+        (Value::Float(a), Value::Int(b)) => Value::Float(a + (b as f64)),
+
+        // String concatenation
+        (Value::String(mut s1), Value::String(s2)) => {
+            if let Some(s1_mut) = Arc::get_mut(&mut s1) {
+                s1_mut.push_str(&s2);
+                Value::String(s1)
             } else {
-                Ok(Value::Float((*i1 as f64).powf(*i2 as f64)))
+                let mut ans = String::with_capacity(s1.len() + s2.len());
+                ans.push_str(&s1);
+                ans.push_str(&s2);
+                Value::String(ans.into())
             }
         }
-        (Value::Float(f1), Value::Float(f2)) => Ok(Value::Float(f1.powf(*f2))),
-        (Value::Int(i), Value::Float(f)) => Ok(Value::Float((*i as f64).powf(*f))),
-        (Value::Float(f), Value::Int(i)) => Ok(Value::Float(f.powf(*i as f64))),
-        _ => Err(Error::Sig(SigError {}).to_list()),
+        (Value::String(mut s1), b) => {
+            let s2 = to_string_runtime(&b, _table);
+            if let Some(s1_mut) = Arc::get_mut(&mut s1) {
+                s1_mut.push_str(&s2);
+                Value::String(s1)
+            } else {
+                let mut ans = String::with_capacity(s1.len() + s2.len());
+                ans.push_str(&s1);
+                ans.push_str(&s2);
+                Value::String(ans.into())
+            }
+        }
+        (a, Value::String(mut s2)) => {
+            let s1 = to_string_runtime(&a, _table);
+            if let Some(s2_mut) = Arc::get_mut(&mut s2) {
+                s2_mut.insert_str(0, &s1);
+                Value::String(s2)
+            } else {
+                let mut ans = String::with_capacity(s1.len() + s2.len());
+                ans.push_str(&s1);
+                ans.push_str(&s2);
+                Value::String(ans.into())
+            }
+        }
+        _ => return Err(stacked_error("while calling +", sig_error(), span)),
+    };
+    stack.push_value(result).map_err(|_| stacked_error("while calling +", overflow_error(), span))
+}
+
+
+
+
+#[test]
+fn test_add_operation() {
+    let mut value_stack = ValueStack::new();
+    let string_table = StringTable::new();
+    let mock_span = Span::default();
+
+    // Test numeric addition for Ints and Floats
+    value_stack.push_value(Value::Int(5)).unwrap();
+    value_stack.push_value(Value::Int(3)).unwrap();
+    add(&mut value_stack, &string_table, mock_span).unwrap();
+    let result = value_stack.pop_value().unwrap();
+    assert_eq!(result, Value::Int(8));
+
+    value_stack.push_value(Value::Float(2.5)).unwrap();
+    value_stack.push_value(Value::Float(1.5)).unwrap();
+    add(&mut value_stack, &string_table, mock_span).unwrap();
+    let result = value_stack.pop_value().unwrap();
+    assert_eq!(result, Value::Float(4.0));
+
+    value_stack.push_value(Value::Int(2)).unwrap();
+    value_stack.push_value(Value::Float(3.5)).unwrap();
+    add(&mut value_stack, &string_table, mock_span).unwrap();
+    let result = value_stack.pop_value().unwrap();
+    assert_eq!(result, Value::Float(5.5));
+
+    // Test string concatenation
+    value_stack.push_value(Value::String("Hello".to_string().into())).unwrap();
+    value_stack.push_value(Value::String(" World".to_string().into())).unwrap();
+    add(&mut value_stack, &string_table, mock_span).unwrap();
+    let result = value_stack.pop_value().unwrap();
+    assert_eq!(result, Value::String("Hello World".to_string().into()));
+
+    value_stack.push_value(Value::String("Hello".to_string().into())).unwrap();
+    value_stack.push_value(Value::Int(123)).unwrap();
+    add(&mut value_stack, &string_table, mock_span).unwrap();
+    let result = value_stack.pop_value().unwrap();
+    assert_eq!(result, Value::String("Hello123".to_string().into()));
+}
+
+
+
+#[test]
+fn test_chained_operations() {
+    let mut value_stack = ValueStack::new();
+    let string_table = StringTable::new();
+    let mock_span = Span::default();
+
+    // Chain operations: 5 + 3 - 2
+    value_stack.push_value(Value::Int(5)).unwrap();
+    value_stack.push_value(Value::Int(3)).unwrap();
+    add(&mut value_stack, &string_table, mock_span).unwrap(); // Stack: [8]
+
+    value_stack.push_value(Value::Int(2)).unwrap();
+    sub(&mut value_stack, &string_table, mock_span).unwrap(); // Stack: [6]
+    let result = value_stack.pop_value().unwrap();
+    assert_eq!(result, Value::Int(6));
+
+    // Chain operations: (2 * 3) + (4 / 2)
+    value_stack.push_value(Value::Int(2)).unwrap();
+    value_stack.push_value(Value::Int(3)).unwrap();
+    mul(&mut value_stack, &string_table, mock_span).unwrap(); // Stack: [6]
+
+    #[cfg(feature = "debug_terminators")]
+    value_stack.push_terminator().unwrap();
+    value_stack.push_value(Value::Int(4)).unwrap();
+    value_stack.push_value(Value::Int(2)).unwrap();
+    div(&mut value_stack, &string_table, mock_span).unwrap(); // Stack: [6, 2]
+
+    add(&mut value_stack, &string_table, mock_span).unwrap(); // Stack: [8]
+    let result = value_stack.pop_value().unwrap();
+    assert_eq!(result, Value::Int(8));
+
+    // Chain operations with strings: "Hello" + " " + "World" + 123
+    value_stack.push_value(Value::String("Hello".to_string().into())).unwrap();
+    value_stack.push_value(Value::String(" ".to_string().into())).unwrap();
+    add(&mut value_stack, &string_table, mock_span).unwrap(); // Stack: ["Hello "]
+
+
+    value_stack.push_value(Value::String("World".to_string().into())).unwrap();
+    add(&mut value_stack, &string_table, mock_span).unwrap(); // Stack: ["Hello World"]
+
+
+    value_stack.push_value(Value::Int(123)).unwrap();
+    add(&mut value_stack, &string_table, mock_span).unwrap(); // Stack: ["Hello World123"]
+    let result = value_stack.pop_value().unwrap();
+    assert_eq!(result, Value::String("Hello World123".to_string().into()));
+}
+
+#[test]
+fn test_division_by_zero() {
+    let mut value_stack = ValueStack::new();
+    let string_table = StringTable::new();
+    let mock_span = Span::new(0, 10);
+
+    // Test division by zero with integers
+    value_stack.push_value(Value::Int(10)).unwrap();
+    value_stack.push_value(Value::Int(0)).unwrap();
+    let result = div(&mut value_stack, &string_table, mock_span);
+    assert!(result.is_err());
+    if let Err(err_list) = result {
+        report_err_list(&err_list, "10 / 0", &string_table);
+    }
+
+    // Test division by zero with floats
+    value_stack.push_value(Value::Float(10.0)).unwrap();
+    value_stack.push_value(Value::Float(0.0)).unwrap();
+    let result = div(&mut value_stack, &string_table, mock_span);
+    assert!(result.is_err());
+    if let Err(err_list) = result {
+        report_err_list(&err_list, "10.0 / 0.0", &string_table);
     }
 }
 
-// Comparison Functions
+pub fn call_string<'code>(string:Arc<String>,stack: &mut ValueStack<'code>, _table: &StringTable<'code>, span: Span) -> Result<(), ErrList> {
+    const ERR_MESSAGE: &str = "while calling a string"; 
+    let arg = stack.pop_value().ok_or_else(|| stacked_error(ERR_MESSAGE, sig_error(), span))?;
+    stack.pop_terminator().ok_or_else(|| stacked_error(ERR_MESSAGE, sig_error(), span))?;
 
-pub fn buildin_equal(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
-    if args.len() != 2 {
-        return Err(Error::Sig(SigError {}).to_list());
+    match arg {
+        Value::Atom( get_id!(":len")) => {
+            stack.push_int(string.len() as i64)
+        },
+        Value::Int(i) => {
+           match string.chars().nth(i as usize) {
+                Some(c) =>stack.push_string(Arc::new(c.to_string())), 
+                None => stack.push_atom(get_id!(":string_out_of_bounds"))
+            }
+        },
+        _ => {return Err(stacked_error(ERR_MESSAGE, sig_error(), span));},
     }
-    Ok(Value::Bool(is_equal(&args[0], &args[1])))
+    .map_err(|_| stacked_error(ERR_MESSAGE, overflow_error(), span))
+    
 }
 
-pub fn buildin_not_equal(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
-    if args.len() != 2 {
-        return Err(Error::Sig(SigError {}).to_list());
-    }
-    Ok(Value::Bool(!is_equal(&args[0], &args[1])))
-}
-
-pub fn buildin_smaller(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
-    if args.len() != 2 {
-        return Err(Error::Sig(SigError {}).to_list());
-    }
-    match (&args[0], &args[1]) {
-        (Value::Int(i1), Value::Int(i2)) => Ok(Value::Bool(i1 < i2)),
-        (Value::Float(f1), Value::Float(f2)) => Ok(Value::Bool(f1 < f2)),
-        (Value::Int(i), Value::Float(f)) => Ok(Value::Bool((*i as f64) < *f)),
-        (Value::Float(f), Value::Int(i)) => Ok(Value::Bool(*f < *i as f64)),
-        _ => Err(Error::Sig(SigError {}).to_list()),
-    }
-}
-
-pub fn buildin_bigger(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
-    if args.len() != 2 {
-        return Err(Error::Sig(SigError {}).to_list());
-    }
-    match (&args[0], &args[1]) {
-        (Value::Int(i1), Value::Int(i2)) => Ok(Value::Bool(i1 > i2)),
-        (Value::Float(f1), Value::Float(f2)) => Ok(Value::Bool(f1 > f2)),
-        (Value::Int(i), Value::Float(f)) => Ok(Value::Bool((*i as f64) > *f)),
-        (Value::Float(f), Value::Int(i)) => Ok(Value::Bool(*f > *i as f64)),
-        _ => Err(Error::Sig(SigError {}).to_list()),
+#[inline]
+pub fn get_type_atom_id(v:&Value) -> u32 {
+    match v {
+        Value::Nil=>get_id!(":nil"),
+        Value::Bool(_)=>get_id!(":bool"),
+        Value::Int(_)=>get_id!(":int"),
+        Value::Float(_)=>get_id!(":float"),
+        Value::Atom(_)=>get_id!(":atom"),
+        Value::String(_)=>get_id!(":string"),
+        
+        Value::Func(_) | Value::WeakFunc(_) | Value::StaticFunc(_) | Value::DataFunc(_) => get_id!(":func"),
     }
 }
 
-pub fn buildin_smaller_eq(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
-    if args.len() != 2 {
-        return Err(Error::Sig(SigError {}).to_list());
-    }
-    match (&args[0], &args[1]) {
-        (Value::Int(i1), Value::Int(i2)) => Ok(Value::Bool(i1 <= i2)),
-        (Value::Float(f1), Value::Float(f2)) => Ok(Value::Bool(f1 <= f2)),
-        (Value::Int(i), Value::Float(f)) => Ok(Value::Bool((*i as f64) <= *f)),
-        (Value::Float(f), Value::Int(i)) => Ok(Value::Bool(*f <= *i as f64)),
-        _ => Err(Error::Sig(SigError {}).to_list()),
-    }
-}
+pub fn get_type<'code>(stack: &mut ValueStack<'code>, _table: &StringTable<'code>) -> Result<(),ErrList> {
+    let v = stack.pop_value().ok_or_else(sig_error)?;
+    stack.pop_terminator().ok_or_else(sig_error)?;
 
-pub fn buildin_bigger_eq(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
-    if args.len() != 2 {
-        return Err(Error::Sig(SigError {}).to_list());
-    }
-    match (&args[0], &args[1]) {
-        (Value::Int(i1), Value::Int(i2)) => Ok(Value::Bool(i1 >= i2)),
-        (Value::Float(f1), Value::Float(f2)) => Ok(Value::Bool(f1 >= f2)),
-        (Value::Int(i), Value::Float(f)) => Ok(Value::Bool((*i as f64) >= *f)),
-        (Value::Float(f), Value::Int(i)) => Ok(Value::Bool(*f >= *i as f64)),
-        _ => Err(Error::Sig(SigError {}).to_list()),
-    }
-}
-
-// Bitwise Operations
-
-pub fn buildin_and(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
-    if args.len() != 2 {
-        return Err(Error::Sig(SigError {}).to_list());
-    }
-    if let (Value::Int(i1), Value::Int(i2)) = (&args[0], &args[1]) {
-        Ok(Value::Int(i1 & i2))
-    } else {
-        Err(Error::Sig(SigError {}).to_list())
-    }
-}
-
-pub fn buildin_or(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
-    if args.len() != 2 {
-        return Err(Error::Sig(SigError {}).to_list());
-    }
-    if let (Value::Int(i1), Value::Int(i2)) = (&args[0], &args[1]) {
-        Ok(Value::Int(i1 | i2))
-    } else {
-        Err(Error::Sig(SigError {}).to_list())
-    }
-}
-
-pub fn buildin_xor(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
-    if args.len() != 2 {
-        return Err(Error::Sig(SigError {}).to_list());
-    }
-    if let (Value::Int(i1), Value::Int(i2)) = (&args[0], &args[1]) {
-        Ok(Value::Int(i1 ^ i2))
-    } else {
-        Err(Error::Sig(SigError {}).to_list())
-    }
-}
-
-// Logical Operations
-
-pub fn buildin_double_and(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
-    if args.len() != 2 {
-        return Err(Error::Sig(SigError {}).to_list());
-    }
-    let lhs_bool = to_bool(&args[0]);
-    let rhs_bool = to_bool(&args[1]);
-    Ok(Value::Bool(lhs_bool && rhs_bool))
-}
-
-pub fn buildin_double_or(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
-    if args.len() != 2 {
-        return Err(Error::Sig(SigError {}).to_list());
-    }
-    let lhs_bool = to_bool(&args[0]);
-    let rhs_bool = to_bool(&args[1]);
-    Ok(Value::Bool(lhs_bool || rhs_bool))
-}
-
-pub fn buildin_double_xor(args: Vec<Value<'_>>) -> Result<Value<'_>, ErrList> {
-    if args.len() != 2 {
-        return Err(Error::Sig(SigError {}).to_list());
-    }
-    let lhs_bool = to_bool(&args[0]);
-    let rhs_bool = to_bool(&args[1]);
-    Ok(Value::Bool(lhs_bool ^ rhs_bool))
-}
-
-// Function Mapper
-
-pub fn get_buildin_function(
-    op: BuildIn,
-) -> for<'ctx> fn(Vec<Value<'ctx>>) -> Result<Value<'ctx>, ErrList> {
-    match op {
-        BuildIn::Add => buildin_add,
-        BuildIn::Sub => buildin_sub,
-        BuildIn::Mul => buildin_mul,
-        BuildIn::Div => buildin_div,
-        BuildIn::IntDiv => buildin_int_div,
-        BuildIn::Modulo => buildin_modulo,
-        BuildIn::Pow => buildin_pow,
-
-        BuildIn::Equal => buildin_equal,
-        BuildIn::NotEqual => buildin_not_equal,
-
-        BuildIn::Smaller => buildin_smaller,
-        BuildIn::Bigger => buildin_bigger,
-        BuildIn::SmallerEq => buildin_smaller_eq,
-        BuildIn::BiggerEq => buildin_bigger_eq,
-
-        BuildIn::And => buildin_and,
-        BuildIn::Or => buildin_or,
-        BuildIn::Xor => buildin_xor,
-
-        BuildIn::DoubleAnd => buildin_double_and,
-        BuildIn::DoubleOr => buildin_double_or,
-        BuildIn::DoubleXor => buildin_double_xor,
-    }
+    stack.push_atom(get_type_atom_id(&v)).unwrap();
+    Ok(())
 }

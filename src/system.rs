@@ -1,354 +1,190 @@
-use ast::get_id;
+use crate::vm::DataFunc;
+use std::sync::Arc;
 use ast::id::*;
-use std::io::{Write,Read};
-use std::fs::{read_dir,remove_dir,create_dir,remove_file,OpenOptions,File};
+
+use crate::value::Value;
+use crate::stack::ValueStack;
 
 use crate::reporting::*;
-use crate::ir::*;
+// use crate::ir::*;
 use crate::basic_ops::*;
 use ast::ast::StringTable;
+use ast::get_id;
 
+use std::fs::{File, OpenOptions, remove_file};
+use std::io::{Read, Write};
+use std::fs::{create_dir, read_dir, remove_dir};
 
+pub fn system<'code>(stack: &mut ValueStack<'code>, _table: &StringTable<'code>) -> Result<(), ErrList> {
+    let atom = stack.pop_atom().ok_or_else(sig_error)?;
+    stack.pop_terminator().ok_or_else(sig_error)?;
 
+    let func = match atom {
+        get_id!(":println") => print_fn,
+        get_id!(":read_file") => file_read_fn,
+        get_id!(":write_file") => file_write_fn,
+        get_id!(":delete_file") => file_delete_fn,
+        get_id!(":make_dir") => create_dir_fn,
+        get_id!(":delete_dir") => delete_dir_fn,
+        get_id!(":read_dir") => read_dir_fn,
+        get_id!(":type") => get_type,
+        _ => {return Err(sig_error());},
+    };
 
-pub struct FreeHandle<'ctx> {
-    vars : Vec <*mut DynFFI<'ctx>>
+    stack.push_value(Value::StaticFunc(func)).map_err(|_| overflow_error())?;
+    Ok(())
+}
+
+pub fn print_fn<'code>(stack:&mut ValueStack<'code>,table:&StringTable<'code>) -> Result<(),ErrList>{
+    let value = stack.pop_value().ok_or_else(sig_error)?;
+    stack.pop_terminator().ok_or_else(sig_error)?;
+
+    println!("{:?}",to_string_runtime(&value,table) );
+    stack.push_value(value).unwrap();
+
+    Ok(())
+}
+
+pub fn make_array(v:Vec<Value<'static>>) -> DataFunc {
+    let inner = Arc::new(move |stack: &mut ValueStack, _table: &StringTable|{
+        let Some(id) = stack.pop_int() else {
+            let atom = stack.pop_atom().ok_or_else(sig_error)?;
+            match atom {
+                get_id!(":len") => {
+                    return stack.push_int(v.len().try_into().unwrap()).map_err(|_| overflow_error());
+                },
+                _ => {return Err(sig_error())},
+            }
+        };
+        stack.pop_terminator().ok_or_else(sig_error)?;
+
+        let id :usize = match id.try_into(){
+            Ok(id) =>id,
+            Err(_) => {
+                return stack.push_nil().map_err(|_| overflow_error());
+            },
+        };
+        match v.get(id) {
+            Some(v) => stack.push_value(v.clone()).map_err(|_| overflow_error())?,
+            None => stack.push_nil().map_err(|_| overflow_error())?,
+        }
+        Ok(())
+    });
+    DataFunc{inner}
 }
 
 
-impl<'ctx> Default for FreeHandle<'ctx> {
-    fn default() -> Self {
-        Self::new()
+
+// File Read Function
+pub fn file_read_fn<'code>(stack: &mut ValueStack<'code>, _table: &StringTable<'code>) -> Result<(), ErrList> {
+    let file_name = stack.pop_string().ok_or_else(sig_error)?;
+    stack.pop_terminator().ok_or_else(sig_error)?;
+
+    let mut file = match File::open(&*file_name) {
+        Ok(f) => f,
+        Err(_) => {
+            stack.push_atom(get_id!(":err")).map_err(|_| overflow_error())?;
+            return Ok(());
+        }
+    };
+
+    let mut contents = String::new();
+    if file.read_to_string(&mut contents).is_err() {
+        stack.push_atom(get_id!(":err")).map_err(|_| overflow_error())?;
+        return Ok(());
     }
+
+    stack.push_string(Arc::new(contents)).map_err(|_| overflow_error())?;
+    Ok(())
 }
 
-impl<'ctx> FreeHandle<'ctx>{
-    pub fn new() -> Self {
-        FreeHandle{vars:Vec::new()}
+// File Write Function
+pub fn file_write_fn<'code>(stack: &mut ValueStack<'code>, _table: &StringTable<'code>) -> Result<(), ErrList> {
+    let file_name = stack.pop_string().ok_or_else(sig_error)?;
+    let content = stack.pop_string().ok_or_else(sig_error)?;
+    stack.pop_terminator().ok_or_else(sig_error)?;
+
+    let mut file = match OpenOptions::new().create(true).write(true).open(&*file_name) {
+        Ok(f) => f,
+        Err(_) => {
+            stack.push_atom(get_id!(":err")).map_err(|_| overflow_error())?;
+            return Ok(());
+        }
+    };
+
+    if file.write_all(content.as_bytes()).is_err() {
+        stack.push_atom(get_id!(":err")).map_err(|_| overflow_error())?;
+        return Ok(());
     }
 
-    pub fn make_ref(&mut self,x:Box<DynFFI<'ctx>>) -> &'static DynFFI<'ctx>{
-        let ptr = Box::into_raw(x);
-        self.vars.push(ptr);
-        unsafe{Box::leak(Box::from_raw(ptr))}
+    stack.push_atom(get_id!(":ok")).map_err(|_| overflow_error())?;
+    Ok(())
+}
+
+// File Delete Function
+pub fn file_delete_fn<'code>(stack: &mut ValueStack<'code>, _table: &StringTable<'code>) -> Result<(), ErrList> {
+    let file_name = stack.pop_string().ok_or_else(sig_error)?;
+    stack.pop_terminator().ok_or_else(sig_error)?;
+
+    if remove_file(&*file_name).is_err() {
+        stack.push_atom(get_id!(":err")).map_err(|_| overflow_error())?;
+        return Ok(());
     }
 
-    pub unsafe fn free(self) {
-        for p in self.vars.into_iter().rev() {
-            {
-                _ = Box::from_raw(p);
-            }
+    stack.push_atom(get_id!(":ok")).map_err(|_| overflow_error())?;
+    Ok(())
+}
+
+
+// Directory Creation Function
+pub fn create_dir_fn<'code>(stack: &mut ValueStack<'code>, _table: &StringTable<'code>) -> Result<(), ErrList> {
+    let dir_name = stack.pop_string().ok_or_else(sig_error)?;
+    stack.pop_terminator().ok_or_else(sig_error)?;
+
+    if create_dir(&*dir_name).is_err() {
+        stack.push_atom(get_id!(":err")).map_err(|_| overflow_error())?;
+        return Ok(());
+    }
+
+    stack.push_atom(get_id!(":ok")).map_err(|_| overflow_error())?;
+    Ok(())
+}
+
+// Directory Deletion Function
+pub fn delete_dir_fn<'code>(stack: &mut ValueStack<'code>, _table: &StringTable<'code>) -> Result<(), ErrList> {
+    let dir_name = stack.pop_string().ok_or_else(sig_error)?;
+    stack.pop_terminator().ok_or_else(sig_error)?;
+
+    if remove_dir(&*dir_name).is_err() {
+        stack.push_atom(get_id!(":err")).map_err(|_| overflow_error())?;
+        return Ok(());
+    }
+
+    stack.push_atom(get_id!(":ok")).map_err(|_| overflow_error())?;
+    Ok(())
+}
+
+// Directory Read Function
+pub fn read_dir_fn<'code>(stack: &mut ValueStack<'code>, _table: &StringTable<'code>) -> Result<(), ErrList> {
+    let dir_name = stack.pop_string().ok_or_else(sig_error)?;
+    stack.pop_terminator().ok_or_else(sig_error)?;
+
+    let paths = match read_dir(&*dir_name) {
+        Ok(paths) => paths,
+        Err(_) => {
+            stack.push_atom(get_id!(":err")).map_err(|_| overflow_error())?;
+            return Ok(());
+        }
+    };
+
+    let mut entries = Vec::new();
+    for entry in paths {
+        if let Ok(entry) = entry {
+            entries.push(Value::String(Arc::new(entry.path().display().to_string())));
         }
     }
-}
 
-pub fn get_system<'ctx>(string_table: &'static StringTable<'ctx>) -> (Value<'ctx>,FreeHandle<'ctx>) {
-    let mut handle = FreeHandle::new();
-    let print_fn = {create_ffi_println(string_table,&mut handle)};
-    let to_string_fn = {create_ffi_to_string(string_table,&mut handle)};
-
-    let file_read_fn = {create_ffi_file_read(string_table,&mut handle)};
-    let file_write_fn = {create_ffi_file_write(string_table,&mut handle)};
-    let file_delete_fn = {create_ffi_file_delete(string_table,&mut handle)};
-
-    let ffi_create_dir_fn = {create_ffi_create_dir(string_table,&mut handle)};
-    let ffi_create_read_fn = {create_ffi_read_dir(string_table,&mut handle)};
-    let ffi_create_remove_fn = {create_ffi_remove_dir(string_table,&mut handle)};
-
-    
-
-    let x =  |args: Vec<Value<'ctx>>| -> Result<Value<'ctx>, ErrList> {
-        if args.len() != 1 {
-            return Err(Error::Sig(SigError {}).to_list());
-        }
-
-        let atom = match args[0] {
-            Value::Atom(id) => id,
-            _ => {
-                return Err(Error::Sig(SigError {}).to_list());
-            }
-        };
-
-        match atom {
-            get_id!(":println") => Ok(Value::Func(FunctionHandle::StateFFI(
-                print_fn,
-            ))),
-            get_id!(":to_string") => Ok(Value::Func(FunctionHandle::StateFFI(
-                to_string_fn,
-            ))),
-            
-            get_id!(":type") => Ok(Value::Func(FunctionHandle::FFI(
-                get_type_ffi,
-            ))),
-            
-            get_id!(":read_file") => Ok(Value::Func(FunctionHandle::StateFFI(
-                file_read_fn,
-            ))),
-
-            get_id!(":write_file") => Ok(Value::Func(FunctionHandle::StateFFI(
-                file_write_fn,
-            ))),
-
-            get_id!(":delete_file") => Ok(Value::Func(FunctionHandle::StateFFI(
-                file_delete_fn,
-            ))),
-
-
-            get_id!(":read_dir") => Ok(Value::Func(FunctionHandle::StateFFI(
-                ffi_create_read_fn,
-            ))),
-
-            get_id!(":make_dir") => Ok(Value::Func(FunctionHandle::StateFFI(
-                ffi_create_dir_fn,
-            ))),
-
-            get_id!(":delete_dir") => Ok(Value::Func(FunctionHandle::StateFFI(
-                ffi_create_remove_fn,
-            ))),
-
-            _ => Err(Error::Sig(SigError {}).to_list()),
-        }
-    };
-
-
-    let leaked = handle.make_ref(Box::new(x));
-    (Value::Func(FunctionHandle::StateFFI(leaked)),handle)
-    
-}
-
-fn create_ffi_println<'ctx>(table: &'static StringTable<'ctx>,handle:&mut FreeHandle<'ctx>) ->  &'static DynFFI<'ctx> {
-    let x  =  |args: Vec<Value<'ctx>>| -> Result<Value<'ctx>, ErrList> {
-        // Here we capture the string table reference and print using it
-        if args.len()!=1 {
-        	return Err(Error::Sig(SigError {}).to_list());
-        }
-
-        println!("{}", to_string(&args[0],table));
-        Ok(args[0].clone())
-    };
-
-
-    handle.make_ref(Box::new(x))
-}
-
-fn create_ffi_to_string<'ctx>(table: &'static StringTable<'ctx>,handle:&mut FreeHandle<'ctx>) ->  &'static DynFFI<'ctx> {
-    let x  =  |args: Vec<Value<'ctx>>| -> Result<Value<'ctx>, ErrList> {
-        // Here we capture the string table reference and print using it
-        if args.len()!=1 {
-            return Err(Error::Sig(SigError {}).to_list());
-        }
-
-        match &args[0]{
-            Value::String(s) => Ok(Value::String(s.clone())),
-            _=> Ok(Value::String(GcPointer::new(to_string(&args[0],table))))
-        }
-        
-    };
-
-
-    handle.make_ref(Box::new(x))
-}
-
-
-
-
-#[allow(dead_code,unused_variables,unreachable_code)]
-fn create_ffi_file_read<'ctx>(
-    table: &'static StringTable<'ctx>,
-    handle: &mut FreeHandle<'ctx>,
-) -> &'static DynFFI<'ctx> {
-    let x = |args: Vec<Value<'ctx>>| -> Result<Value<'ctx>, ErrList> {
-        if args.len() != 1 {
-            return Err(Error::Sig(SigError {}).to_list());
-        }
-
-        let file_name = try_string(&args[0])?;
-
-
-        #[cfg(test)]{
-            panic!("tried to read file... this is not allowed in atomated testing");
-        }
-
-        let mut file = match File::open(file_name) {
-            Ok(file) => file,
-            Err(_e) => return Ok(Value::Atom(get_id!(":err"))),
-        };
-
-        let mut contents = String::new();
-        if let Err(_e) = file.read_to_string(&mut contents) {
-            return Ok(Value::Atom(get_id!(":err")));
-        }
-
-        Ok(Value::String(GcPointer::new(contents)))
-    };
-
-    handle.make_ref(Box::new(x))
-}
-
-
-
-#[allow(unused_variables,unreachable_code)]
-fn create_ffi_file_write<'ctx>(
-    table: &'static StringTable<'ctx>,
-    handle: &mut FreeHandle<'ctx>,
-) -> &'static DynFFI<'ctx> {
-    let x = |args: Vec<Value<'ctx>>| -> Result<Value<'ctx>, ErrList> {
-        if args.len() != 2 {
-            return Err(Error::Sig(SigError {}).to_list());
-        }
-
-        let file_name = try_string(&args[0])?;
-        let content = try_string(&args[0])?;
-
-
-        #[cfg(test)] {
-            panic!("tried to write to file... this is not allowed in automated testing");
-        }
-
-        let mut file = match OpenOptions::new().create(true).write(true).open(file_name) {
-            Ok(file) => file,
-            Err(_e) => return Ok(Value::Atom(get_id!(":err"))),
-        };
-
-        if let Err(_e) = file.write_all(content.as_bytes()) {
-            return Ok(Value::Atom(get_id!(":err")));
-        }
-
-        Ok(Value::Atom(get_id!(":ok")))
-    };
-
-    handle.make_ref(Box::new(x))
-}
-
-
-
-#[allow(unused_variables,unreachable_code)]
-fn create_ffi_file_delete<'ctx>(
-    table: &'static StringTable<'ctx>,
-    handle: &mut FreeHandle<'ctx>,
-) -> &'static DynFFI<'ctx> {
-    let x = |args: Vec<Value<'ctx>>| -> Result<Value<'ctx>, ErrList> {
-        if args.len() != 1 {
-            return Err(Error::Sig(SigError {}).to_list());
-        }
-
-        // let path = to_string(&args[0], table);
-        let path = try_string(&args[0])?;
-
-        #[cfg(test)] {
-            panic!("tried to delete a file or directory... this is not allowed in automated testing");
-        }
-
-        // Try deleting as a file first
-        if let Err(_file_err) = remove_file(path) {
-            // // If it's not a file, try deleting as a directory
-            // if let Err(_dir_err) = remove_dir_all(&path) {
-            //     return Ok(Value::Atom(get_id!(":err")));
-            // }
-            return Ok(Value::Atom(get_id!(":err")));
-        }
-
-        Ok(Value::Atom(get_id!(":ok")))
-    };
-
-    handle.make_ref(Box::new(x))
-}
-
-
-
-#[allow(unused_variables,unreachable_code)]
-fn create_ffi_create_dir<'ctx>(
-    table: &'static StringTable<'ctx>,
-    handle: &mut FreeHandle<'ctx>,
-) -> &'static DynFFI<'ctx> {
-    let x = |args: Vec<Value<'ctx>>| -> Result<Value<'ctx>, ErrList> {
-        if args.len() != 1 {
-            return Err(Error::Sig(SigError {}).to_list());
-        }
-
-        let dir_name = try_string(&args[0])?;
-
-        #[cfg(test)] {
-            panic!("tried to create a directory... this is not allowed in automated testing");
-        }
-
-        match create_dir(dir_name) {
-            Ok(_) => Ok(Value::Atom(get_id!(":ok"))),
-            Err(_) => Ok(Value::Atom(get_id!(":err"))),
-        }
-    };
-
-    handle.make_ref(Box::new(x))
-}
-
-
-
-#[allow(unused_variables,unreachable_code)]
-fn create_ffi_remove_dir<'ctx>(
-    table: &'static StringTable<'ctx>,
-    handle: &mut FreeHandle<'ctx>,
-) -> &'static DynFFI<'ctx> {
-    let x = |args: Vec<Value<'ctx>>| -> Result<Value<'ctx>, ErrList> {
-        if args.len() != 1 {
-            return Err(Error::Sig(SigError {}).to_list());
-        }
-
-        let dir_name = try_string(&args[0])?;
-
-        #[cfg(test)] {
-            panic!("tried to remove a directory... this is not allowed in automated testing");
-        }
-
-        match remove_dir(dir_name) {
-            Ok(_) => Ok(Value::Atom(get_id!(":ok"))),
-            Err(_) => Ok(Value::Atom(get_id!(":err"))),
-        }
-    };
-
-    handle.make_ref(Box::new(x))
-}
-
-
-
-#[allow(unused_variables,unreachable_code)]
-fn create_ffi_read_dir<'ctx>(
-    table: &'static StringTable<'ctx>,
-    handle: &mut FreeHandle<'ctx>,
-) -> &'static DynFFI<'ctx> {
-    let x = |args: Vec<Value<'ctx>>| -> Result<Value<'ctx>, ErrList> {
-        if args.len() != 1 {
-            return Err(Error::Sig(SigError {}).to_list());
-        }
-
-        let dir_name = try_string(&args[0])?;
-
-        #[cfg(test)] {
-            panic!("tried to read directory... this is not allowed in automated testing");
-        }
-
-        let paths = match read_dir(dir_name) {
-            Ok(paths) => paths,
-            Err(_) => return Ok(Value::Atom(get_id!(":err"))),
-        };
-
-        let mut entries = Vec::new();
-        for path in paths {
-            if let Ok(entry) = path {
-                entries.push(Value::String(GcPointer::new(entry.path().display().to_string())));
-            }
-        }
-        let list = move |args: Vec<Value<'ctx>>| -> Result<Value<'ctx>, ErrList> {
-            if args.len() != 1 {
-                return Err(Error::Sig(SigError {}).to_list());
-            }
-            match entries.get(try_int(&args[0])? as usize) {
-                None => Ok(Value::Nil),
-                Some(x) => Ok(x.clone()),
-            }
-        };
-
-        Ok(Value::Func(FunctionHandle::DataFFI(GcPointer::new(list))))
-    };
-
-    handle.make_ref(Box::new(x))
+    let list = Value::DataFunc(make_array(entries));
+    stack.push_value(list).map_err(|_| overflow_error())?;
+    Ok(())
 }

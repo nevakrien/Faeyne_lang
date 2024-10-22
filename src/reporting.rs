@@ -1,3 +1,4 @@
+use ast::ast::MatchPattern;
 use codespan::Span;
 
 #[cfg(test)]
@@ -12,19 +13,30 @@ use codespan_reporting::files::SimpleFiles;
 use lalrpop_util::ParseError;
 use ast::lexer::LexTag;
 
-use crate::ir::FuncSig;
+use ast::ast::FuncSig;
 use ast::ast::StringTable;
 
 #[derive(Debug,PartialEq)]
 pub enum Error {
     Match(MatchError),
     Sig(SigError),
+    ZeroDiv,
+
     Missing(UndefinedName),
+    MissingCall(String),//needed because its not part of program scope
+
+
+    UnreachableFunction(FuncSig),
     UnreachableCase(UnreachableCase),
     NoneCallble(NoneCallble),
     Stacked(InternalError),
+    StackedTail(InternalError),
     IllegalSelfRef(IllegalSelfRef),
-    Recursion(RecursionError)
+    
+    Recursion(RecursionError),
+    StackOverflow,
+
+    Bug(&'static str),
     //UndocumentedError,
 }
 
@@ -40,6 +52,8 @@ pub fn vec_to_list(errors: Vec<Error>) -> ErrList {
 }
 
 impl Error {
+    #[cold]
+#[inline(never)]
     pub fn to_list(self) -> LinkedList<Self> {
         let mut l = LinkedList::new();
         l.push_back(self);
@@ -60,7 +74,81 @@ pub fn append_err_list(mut a: Result<(),ErrList>, b:Result<(),ErrList>) -> Resul
     }
 }
 
-pub static MAX_RECURSION :usize=2_500;
+#[cold]
+#[inline(never)]
+pub fn bug_error(message: &'static str) -> ErrList {
+    Error::Bug(message).to_list()
+}
+
+#[cold]
+#[inline(never)]
+pub fn overflow_error() -> ErrList {
+    Error::StackOverflow.to_list() 
+}
+
+#[cold]
+#[inline(never)]
+pub fn sig_error() -> ErrList {
+    Error::Sig(SigError{}).to_list() 
+}
+
+#[cold]
+#[inline(never)]
+pub fn zero_div_error() -> ErrList {
+    Error::ZeroDiv.to_list() 
+}
+
+#[cold]
+#[inline(never)]
+pub fn recursion_error(depth:usize) -> ErrList {
+    Error::Recursion(RecursionError{depth}).to_list()
+}
+
+#[cold]
+#[inline(never)]
+pub fn unreachable_func_error(sig:FuncSig) -> ErrList {
+    Error::UnreachableFunction(sig).to_list()
+}
+
+
+#[cold]
+#[inline(never)]
+pub fn match_error(span:Span) -> ErrList {
+    Error::Match(MatchError{span}).to_list()
+}
+
+#[cold]
+#[inline(never)]
+pub fn stacked_error(message:&'static str,err:ErrList,span:Span) -> ErrList {
+    Error::Stacked(InternalError{
+            message,
+            err,
+            span,
+        }).to_list()
+}
+
+#[cold]
+#[inline(never)]
+pub fn tail_stacked_error(message:&'static str,err:ErrList,span:Span) -> ErrList {
+    Error::StackedTail(InternalError{
+            message,
+            err,
+            span,
+        }).to_list()
+}
+
+#[cold]
+#[inline(never)]
+pub fn missing_func_error(name:String) -> ErrList {
+    Error::MissingCall(name).to_list()
+}
+
+#[cold]
+#[inline(never)]
+pub fn missing_error(id:u32) -> ErrList {
+    Error::Missing(UndefinedName{id}).to_list()
+}
+
 
 #[derive(Debug,PartialEq)]
 pub struct RecursionError{
@@ -86,18 +174,17 @@ pub struct NoneCallble {
 
 #[derive(Debug,PartialEq)]
 pub struct UnreachableCase {
-    pub name : usize,
-    pub sig : FuncSig,
+    pub pattern : MatchPattern,
 }
 
 #[derive(Debug,PartialEq)]
 pub struct UndefinedName {
-    pub id : usize,
+    pub id : u32,
 }
 
 #[derive(Debug,PartialEq)]
 pub struct InternalError {
-    pub message: String,
+    pub message: &'static str,
     pub span : Span,
     pub err : ErrList
 }
@@ -107,7 +194,6 @@ pub struct IllegalSelfRef {
     pub span : Span,
 }
 
-
 pub trait DiagnosticDisplay {
     fn display_with_table(&self, table: &StringTable) -> String;
 }
@@ -115,9 +201,9 @@ pub trait DiagnosticDisplay {
 
 impl DiagnosticDisplay for FuncSig {
     fn display_with_table(&self, table: &StringTable) -> String {
-        let args_names: Vec<_>= self.arg_ids
+        let args_names: Vec<_>= self.args
             .iter()
-            .map(|&id| table.get_string(id).unwrap_or("Unknown"))
+            .map(|&id| table.get_display_str(id).unwrap_or("Unknown"))
             .collect();
 
         format!("[{}]", args_names.join(", "))
@@ -242,11 +328,25 @@ fn emit_error(
         Error::Missing(UndefinedName { id }) => Diagnostic::error()
             .with_message(format!(
                 "Undefined name error: {}",
-                table.get_string(*id).unwrap_or("Unknown name")
+                table.get_display_str(*id).unwrap_or("Unknown name")
             )),
 
-        Error::UnreachableCase(UnreachableCase { name, sig }) => {
-            let name_str = table.get_string(*name).unwrap_or("Unknown name");
+        Error::MissingCall(s) => Diagnostic::error()
+            .with_message(format!(
+                "Attempted to call non existent function: {s}",
+                
+            )),
+
+        Error::UnreachableCase(case) => {//needs more work
+            Diagnostic::error()
+                .with_message(format!(
+                    "the case {:?} is unreachable",
+                    case.pattern
+                ))
+        },
+
+        Error::UnreachableFunction(  sig ) => {
+            let name_str = table.get_display_str(sig.name).unwrap_or("Unknown name");
             let sig_display = sig.display_with_table(table);
             Diagnostic::error()
                 .with_message(format!(
@@ -264,7 +364,7 @@ fn emit_error(
             
 
         Error::Stacked(InternalError { span, err,message }) => {
-            let diagnostic = Diagnostic::error().with_message(message).with_labels(vec![
+            let diagnostic = Diagnostic::error().with_message(*message).with_labels(vec![
                 Label::primary(file_id, span.start().to_usize()..span.end().to_usize())
                     ,
             ]);
@@ -278,6 +378,25 @@ fn emit_error(
 
             return;
         },
+
+         Error::StackedTail(InternalError { span, err,message }) => {
+            let diagnostic = Diagnostic::error().with_message(*message).with_labels(vec![
+                Label::primary(file_id, span.start().to_usize()..span.end().to_usize())
+                    ,
+            ]).with_notes(vec![
+                "Note: some self recursive calls may be missing due to tail call optimization".to_string()
+            ]);
+            term::emit(buffer, config, files, &diagnostic).unwrap();
+
+
+            // Emit each error inside `Error::Stacked` recursively
+            for e in err {
+                emit_error(e, file_id, buffer, config, files, table);
+            }
+
+            return;
+        },
+
         Error::IllegalSelfRef(IllegalSelfRef{span}) => {
             let error = Diagnostic::error()
                 .with_message("Illegal use of Self")
@@ -294,7 +413,26 @@ fn emit_error(
             .with_notes(vec![
                 "This is likely caused by an infinite loop".to_string(),
             ]),
+        Error::Bug(message) => {
+            let diagnostic = Diagnostic::error()
+                .with_message("An internal bug has occurred.")
+                .with_notes(vec![
+                    format!("Details: {}", message),
+                ]);
+            term::emit(buffer, config, files, &diagnostic).unwrap();
+            Diagnostic::help().with_message("This is not your fault, but rather an implementation bug. Please report this to the maintainers.")
+        },
+        Error::StackOverflow => {
+            let diagnostic = Diagnostic::error()
+                .with_message("StackOverflow");
+            term::emit(buffer, config, files, &diagnostic).unwrap();
 
+
+            Diagnostic::help().with_message("probably caused by an infinite loop or excessive memory consumbtion")
+        },
+
+        Error::ZeroDiv => Diagnostic::error()
+            .with_message("attempted to divide by zero"),
     };
 
     // Emit the diagnostic for the current error
@@ -322,10 +460,10 @@ fn test_err_list_reporting() {
     let undef_err = Error::Missing(UndefinedName { id: undef_id });
 
     // Simulate unreachable case
-    let unreachable_case_err = Error::UnreachableCase(UnreachableCase {
-        name: unreachable_name_id,
-        sig: FuncSig {arg_ids:vec![undef_id]}, // Assuming FuncSig has a default or placeholder
-    });
+    let unreachable_case_err = Error::UnreachableFunction(
+        
+        FuncSig {name: unreachable_name_id,args:vec![undef_id]}, // Assuming FuncSig has a default or placeholder
+    );
 
     err_list.push_back(match_err);
     err_list.push_back(sig_err);
@@ -356,21 +494,21 @@ fn test_err_list_reporting_with_stacking() {
     let _undef_err = Error::Missing(UndefinedName { id: undef_id });
 
     // Simulate unreachable case
-    let _unreachable_case_err = Error::UnreachableCase(UnreachableCase {
-        name: unreachable_name_id,
-        sig: FuncSig { arg_ids: vec![undef_id] },
-    });
+    let _unreachable_case_err = Error::UnreachableFunction(
+        // name: unreachable_name_id,
+         FuncSig { name: unreachable_name_id, args: vec![undef_id] },
+    );
 
     // Add an internal error wrapped inside another error (stacked errors)
     let internal_err = Error::Stacked(InternalError {
         span: Span::new(ByteIndex(23), ByteIndex(27)),
-        message: "junk".to_string(),
+        message: "junk",
         err: vec_to_list(vec![
             Error::Missing(UndefinedName { id: undef_id }),
-            Error::UnreachableCase(UnreachableCase {
-                name: unreachable_name_id,
-                sig: FuncSig { arg_ids: vec![undef_id] },
-            }),
+            Error::UnreachableFunction(
+                
+                FuncSig {name: unreachable_name_id, args: vec![undef_id] },
+            ),
 
         ]),
     });

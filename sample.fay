@@ -1,5 +1,9 @@
 #from path import func;
 
+def process_click(event){}
+def update_ui(){}
+def highlight_element(){}
+
 def handler(event) {
     match event {
         :click => {
@@ -71,11 +75,11 @@ def valid_lambda() {
 }
 
 
-def err_in_lamda_def() {
-    f = fn (x) -> {
-        y+x+true
-    };
-}
+#def err_in_lamda_def() {
+#    f = fn (x) -> {
+#        y+x+true
+#    };
+#}
 
 def err_compile_time_in_lamda_def() {
     x=1;

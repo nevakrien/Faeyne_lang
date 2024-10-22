@@ -23,3 +23,8 @@ Cargo.lock
 # Added by cargo
 
 /target
+
+# Add junk and log files to ignore
+asm_output.txt
+perf.data
+perf.data.old
