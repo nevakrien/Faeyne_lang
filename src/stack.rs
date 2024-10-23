@@ -329,6 +329,29 @@ impl<'code,const STACK_CAPACITY:usize> ValueStack<'code, STACK_CAPACITY> {
         }
     }
 
+    #[inline(always)] 
+    pub fn pop(&mut self) -> Option<Value<'code>> {
+        unsafe {
+            match self.stack.pop()?.to_inner() {
+                ValueTag::Nil => Some(Value::Nil),
+                ValueTag::BoolTrue => Some(Value::Bool(true)),
+                ValueTag::BoolFalse => Some(Value::Bool(false)),
+                ValueTag::Int => Some(Value::Int(self.stack.pop()?.to_inner())),
+                ValueTag::Float => Some(Value::Float(self.stack.pop()?.to_inner())),
+                ValueTag::Atom(id) => Some(Value::Atom(id)),
+                ValueTag::String => Some(Value::String(self.stack.pop()?.to_inner())),
+                ValueTag::Func => Some(Value::Func(self.stack.pop()?.to_inner())),
+                ValueTag::WeakFunc => Some(Value::WeakFunc(self.stack.pop()?.to_inner())),
+                
+                ValueTag::StaticFunc => Some(Value::StaticFunc(self.stack.pop()?.to_inner())),
+                ValueTag::DataFunc => Some(Value::DataFunc(self.stack.pop()?.to_inner())),
+
+
+                ValueTag::Terminator => None
+            }
+        }
+    }
+
     #[inline]
     pub fn peak_tag(&mut self) -> Option<ValueTag>{
         unsafe{ self.stack.peak()?.to_inner()}
@@ -515,11 +538,12 @@ impl<const STACK_CAPACITY: usize> Drop for ValueStack<'_, STACK_CAPACITY> {
 
         while self.stack.len != 0 {
             if !cfg!(feature = "debug_print_vm"){
-                self.pop_value();
+                self.pop();
             }
             else {
-                let value = self.pop_value();
+                let value = self.pop();
                 println!("{:?}",value );
+
             }
             
         }
