@@ -321,7 +321,10 @@ impl<'code,const STACK_CAPACITY:usize> ValueStack<'code, STACK_CAPACITY> {
                 ValueTag::DataFunc => Some(Value::DataFunc(self.stack.pop()?.to_inner())),
 
 
-                ValueTag::Terminator => None,
+                ValueTag::Terminator => {
+                    self.push_terminator().unwrap();
+                    None
+                },
             }
         }
     }

@@ -74,12 +74,12 @@ def main(system) {
     d = 1;
 
     matrix = make_matrix(a,b,c,d);
-    #matrix(1)(1) |> system(:println)();
+    matrix(1)(1) |> system(:println)();
 
     matrix = matrix_mul(matrix,matrix) |> system(:println)();
-    #matrix = matrix_mul(matrix,matrix);
-    #matrix |> system(:println)();
+    matrix = matrix_mul(matrix,matrix);
+    matrix |> system(:println)();
 
-    #x = matrix(1)(1);
-    #system(:println)( x )
+    x = matrix(1)(1);
+    system(:println)( x )
 }

@@ -252,7 +252,7 @@ def matrix_main(system) {
 }
 
 def main(system){
-    #matrix_main(system);
+    matrix_main(system);
 
     bug_main(system);
     factorial(4)  |> system(:println)();
