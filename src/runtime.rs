@@ -44,6 +44,18 @@ impl Code<'_> {
 			data.push(Some(IRValue::Func(function)))
 		}
 
+		#[cfg(feature = "debug_print_code_start")]{
+		    for (name, id) in &self.name_map {
+		        let func = &self.funcs[*id];
+		        println!("{}(args={}):\n\n", name,func.num_args);
+		        for op in func.code.iter() {
+		        	println!("{:?}",op);
+		        }
+		    }
+		    println!("\n\n!!!!!!!!!!!!!!\n\n");
+
+		}
+
 		VarTable{data,names:self.names.clone()}
 	}
 

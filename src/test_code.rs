@@ -1,3 +1,13 @@
+#![cfg(test)]
+
+use crate::value::Value;
+use crate::translate::compile_source_to_code;
+
+use crate::system::system;
+
+#[test]
+fn matrix_mul() {
+    let source_code = r#"
 def make_matrix(a,b,c,d) {
     match fn {
         0 => match fn {
@@ -81,5 +91,10 @@ def main(system) {
     #matrix |> system(:println)();
 
     #x = matrix(1)(1);
+    
     #system(:println)( x )
+}"#;
+    let code = compile_source_to_code(source_code);
+
+   	 code.run("main", vec![Value::StaticFunc(system)]).unwrap();
 }

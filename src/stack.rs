@@ -507,8 +507,18 @@ impl<'code,const STACK_CAPACITY:usize> ValueStack<'code, STACK_CAPACITY> {
 impl<const STACK_CAPACITY: usize> Drop for ValueStack<'_, STACK_CAPACITY> {
     fn drop(&mut self) {
         //calling destrutors
+        #[cfg(feature = "debug_print_vm")]
+        println!("droping stack");
+
         while self.stack.len != 0 {
-            self.pop_value();
+            if !cfg!(feature = "debug_print_vm"){
+                self.pop_value();
+            }
+            else {
+                let value = self.pop_value();
+                println!("{:?}",value );
+            }
+            
         }
     }
 }

@@ -321,7 +321,7 @@ fn translate_func<'a>(args:&[u32],body:&FuncBlock,name_space:&mut dyn NameSpace,
 			Statment::Match(m) =>{
 				translate_match(m,name_space,&mut handle,FullCall)?;
 				handle.code.push(Operation::PopDump);
-				handle.code.push(Operation::PushNil);
+				// handle.code.push(Operation::PushNil);
 			},
 			Statment::Assign(id, val) => {
 				translate_value(val,name_space,&mut handle,FullCall)?;
@@ -330,7 +330,7 @@ fn translate_func<'a>(args:&[u32],body:&FuncBlock,name_space:&mut dyn NameSpace,
 			Statment::Call(call) => {
 				translate_call_raw(call,name_space,&mut handle,FullCall)?;
 				handle.code.push(Operation::PopDump);
-				handle.code.push(Operation::PushNil);
+				// handle.code.push(Operation::PushNil);
 			}
 		}
 	}
@@ -557,7 +557,7 @@ fn translate_block(block:&FuncBlock,parent_name_space:&mut dyn NameSpace,handle:
 			Statment::Match(m) =>{
 				translate_match(m,name_space,handle,FullCall)?;
 				handle.code.push(Operation::PopDump);
-				handle.code.push(Operation::PushNil);
+				// handle.code.push(Operation::PushNil);
 			},
 			Statment::Assign(id, val) => {
 				translate_value(val,name_space,handle,FullCall)?;
@@ -566,7 +566,7 @@ fn translate_block(block:&FuncBlock,parent_name_space:&mut dyn NameSpace,handle:
 			Statment::Call(call) => {
 				translate_call_raw(call,name_space,handle,FullCall)?;
 				handle.code.push(Operation::PopDump);
-				handle.code.push(Operation::PushNil);
+				// handle.code.push(Operation::PushNil);
 			}
 		}
 	}
@@ -607,7 +607,7 @@ fn translate_lambda(l:&Lambda,name_space:&mut dyn NameSpace,handle:&mut TransHan
     #[cfg(feature = "debug_terminators")]
     handle.code.push(Operation::PushTerminator);
 
-	for name in &holder.vars.names{
+	for name in holder.vars.names.iter(){
 		name_space.get(handle,*name)?;
 	}
 

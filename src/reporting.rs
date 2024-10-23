@@ -20,6 +20,7 @@ use ast::ast::StringTable;
 pub enum Error {
     Match(MatchError),
     Sig(SigError),
+    ArgNum(ArgNumError),
     ZeroDiv,
 
     Missing(UndefinedName),
@@ -89,6 +90,9 @@ pub fn overflow_error() -> ErrList {
 #[cold]
 #[inline(never)]
 pub fn sig_error() -> ErrList {
+    #[cfg(feature = "panic_on_sig")]
+    panic!("sig error");
+
     Error::Sig(SigError{}).to_list() 
 }
 
@@ -149,6 +153,11 @@ pub fn missing_error(id:u32) -> ErrList {
     Error::Missing(UndefinedName{id}).to_list()
 }
 
+#[cold]
+#[inline(never)]
+pub fn arg_error(expected:usize,got:usize) -> ErrList {
+    Error::ArgNum(ArgNumError{expected,got}).to_list()
+}
 
 #[derive(Debug,PartialEq)]
 pub struct RecursionError{
@@ -180,6 +189,12 @@ pub struct UnreachableCase {
 #[derive(Debug,PartialEq)]
 pub struct UndefinedName {
     pub id : u32,
+}
+
+#[derive(Debug,PartialEq)]
+pub struct ArgNumError {
+    pub got : usize,
+    pub expected : usize,
 }
 
 #[derive(Debug,PartialEq)]
@@ -433,6 +448,8 @@ fn emit_error(
 
         Error::ZeroDiv => Diagnostic::error()
             .with_message("attempted to divide by zero"),
+        Error::ArgNum(e) => Diagnostic::error()
+            .with_message(format!("SigError expected {} args but got {}",e.expected,e.got)),
     };
 
     // Emit the diagnostic for the current error

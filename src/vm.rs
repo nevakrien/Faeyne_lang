@@ -1,3 +1,4 @@
+use crate::reporting::arg_error;
 use crate::runtime::FuncHolder;
 use core::hash::Hasher;
 use core::hash::Hash;
@@ -307,10 +308,16 @@ impl<'code> Context<'code> {
             Value::WeakFunc(wf) => Ok(Some(wf.upgrade().ok_or_else(||{bug_error("weak function failed to upgrade")}
             )?)),
             Value::String(s) => {
+                #[cfg(feature = "debug_print_vm")] 
+                println!("calling string: {:?}",s);
+
                 call_string(s,&mut self.stack,self.table,span)?;
                 Ok(None)
             },
             Value::StaticFunc(extern_func) => {
+                #[cfg(feature = "debug_print_vm")] 
+                println!("calling extern func: {:?}",extern_func);
+                
                 extern_func(&mut self.stack,self.table)
                 .map_err(|err| 
                     stacked_error("while calling external function",err,span)
@@ -319,6 +326,9 @@ impl<'code> Context<'code> {
                 Ok(None)
             },
             Value::DataFunc(extern_func) => {
+                #[cfg(feature = "debug_print_vm")] 
+                println!("calling extern data func: {:?}",extern_func);
+
                 (extern_func.inner)(&mut self.stack,self.table)
                 .map_err(|err| 
                     stacked_error("while calling external stateful function",err,span)
@@ -343,12 +353,19 @@ impl<'code> Context<'code> {
             println!("\nloading mut_vars {:?}",names);
         }
 
+
         for i in (0.. self.func.num_args).rev() {
-            let value = self.stack.pop_value().ok_or_else(sig_error)?;
+            let value = self.stack.pop_value().ok_or_else(|| 
+                arg_error(self.func.num_args,i)
+            )?;
             self.mut_vars.set(i,value).map_err(|_| bug_error("poping arg to no where"))?;
         }
 
-        self.stack.pop_terminator().ok_or_else(sig_error)?;
+        self.stack.pop_terminator().ok_or_else(|| {
+            let mut extra = 0;
+            while self.stack.pop_value().is_some() {extra+=1}; 
+            arg_error(self.func.num_args,self.func.num_args+extra)
+        })?;
 
         #[cfg(feature = "debug_print_vm")]
         println!("loading mut_vars {:?}",self.mut_vars.data);

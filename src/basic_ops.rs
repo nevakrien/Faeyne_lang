@@ -24,6 +24,14 @@ use crate::stack::ValueStack;
 #[cfg(test)]
 use crate::reporting::report_err_list;
 
+pub fn get_arg_vec<'code>(stack:&mut ValueStack<'code>)-> Vec<Value<'code>>{
+    let mut ans = Vec::new();
+    while let Some(v) = stack.pop_value() {
+        ans.push(v);
+    }
+    ans
+}
+
 #[inline(always)]
 fn _is_equal<'code>(stack:&mut ValueStack<'code>,_table:&StringTable<'code>) -> Result<bool, ErrList> {
     let a = stack.pop_value().ok_or_else(|| bug_error("over popping"))?;

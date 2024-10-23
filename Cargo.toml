@@ -27,9 +27,14 @@ smallvec = "1.13.2"
 
 [features]
 default = []
-debug_mode=["debug_print_vm","debug_terminators"]
+debug_mode=["debug_print_vm","debug_terminators","debug_print_code_start","debug_print_stack_destruction"]#,"debug_print_translation"]
 debug_terminators = []
 debug_print_vm = []
+debug_print_code_start= []
+debug_print_stack_destruction= []
+
+panic_on_sig = []
+# debug_print_translation = []
 
 
 [profile.release]

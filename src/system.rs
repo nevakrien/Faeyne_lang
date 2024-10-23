@@ -16,7 +16,7 @@ use std::io::{Read, Write};
 use std::fs::{create_dir, read_dir, remove_dir};
 
 pub fn system<'code>(stack: &mut ValueStack<'code>, _table: &StringTable<'code>) -> Result<(), ErrList> {
-    let atom = stack.pop_atom().ok_or_else(sig_error)?;
+    let atom = stack.pop_atom().ok_or_else(|| arg_error(1,0))?;
     stack.pop_terminator().ok_or_else(sig_error)?;
 
     let func = match atom {
@@ -36,8 +36,24 @@ pub fn system<'code>(stack: &mut ValueStack<'code>, _table: &StringTable<'code>)
 }
 
 pub fn print_fn<'code>(stack:&mut ValueStack<'code>,table:&StringTable<'code>) -> Result<(),ErrList>{
-    let value = stack.pop_value().ok_or_else(sig_error)?;
-    stack.pop_terminator().ok_or_else(sig_error)?;
+    let value;
+    #[cfg(not(feature = "debug_print_vm"))] {
+        value = stack.pop_value().ok_or_else(|| arg_error(1,0))?;
+        stack.pop_terminator().ok_or_else(sig_error)?;
+    }
+    
+    #[cfg(feature = "debug_print_vm")] {
+        let args = crate::basic_ops::get_arg_vec(stack);
+        if args.len()!=1 {
+            println!("error with println got: ");
+            for v in args {
+                println!("{}",to_string_debug(&v,table));
+            }
+            return Err(sig_error());
+        }
+
+        value = args[0].clone();
+    }
 
     println!("{:?}",to_string_runtime(&value,table) );
     stack.push_value(value).unwrap();
